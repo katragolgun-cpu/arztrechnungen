@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Arztrechnungen</title>
+<meta name="theme-color" content="#0d5f6b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+/* Layout: mobile-first ledger — summary tiles, filter chips, stack of bill cards with stamp-style status marks; bottom sheet: short view first, details on demand */
+:root{
+  --bg:#f3f5f7; --surface:#ffffff; --sunken:#e8ecf0; --line:#d5dce3;
+  --ink:#16222e; --muted:#5b6b7a;
+  --accent:#0d5f6b; --accent-ink:#ffffff;
+  --ok:#1f7a45; --ok-soft:#dcefe3;
+  --warn:#9a5b00; --warn-soft:#f7ead2;
+  --bad:#b0322b; --bad-soft:#f6dedc;
+  --wait:#3e5a9a; --wait-soft:#dfe6f5;
+  --f-ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-num:ui-monospace,"Roboto Mono","SFMono-Regular",Consolas,monospace;
+  --r:12px; color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0f161c; --surface:#172129; --sunken:#1e2a34; --line:#2b3a46;
+  --ink:#e6edf2; --muted:#93a4b3; --accent:#4fb3bf; --accent-ink:#06262b;
+  --ok:#5cc489; --ok-soft:#173326; --warn:#e2a54a; --warn-soft:#3a2c14;
+  --bad:#f0827a; --bad-soft:#3d1d1b; --wait:#8fa9e6; --wait-soft:#1e2a45; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent;
+  padding:calc(12px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 110px max(16px,env(safe-area-inset-left,0px))}
+[hidden]{display:none!important}
+.wrap{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+header.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+header.top h1{font-size:22px;margin:0;font-weight:700}
+header.top p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.iconbtn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:8px 12px;font:inherit;font-size:14px}
+.banner{background:var(--warn-soft);color:var(--warn);border-radius:var(--r);padding:10px 14px;font-size:14px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:640px){.summary{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:4px;min-width:0;text-align:left;font:inherit;color:inherit}
+.tile .lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.tile .val{font-family:var(--f-num);font-size:20px;font-weight:600}
+.tile .sub{font-size:12.5px;color:var(--muted)}
+.tile.hot .val,.tile.cut .val{color:var(--bad)} .tile.wait .val{color:var(--wait)} .tile.todo .val{color:var(--warn)}
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 12px;font:inherit;font-size:13.5px;white-space:nowrap}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chip .c{font-family:var(--f-num);font-size:12px;opacity:.7;margin-left:4px}
+.list{display:flex;flex-direction:column;gap:10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:10px;text-align:left;font:inherit;color:inherit;width:100%}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row1{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.who{min-width:0}
+.prov{font-weight:600;font-size:15.5px;overflow-wrap:anywhere}
+.meta{color:var(--muted);font-size:13px;margin-top:2px}
+.amt{font-family:var(--f-num);font-weight:600;font-size:16px;white-space:nowrap}
+.pchip{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--sunken);color:var(--ink);margin-right:6px}
+.stamps{display:flex;flex-wrap:wrap;gap:6px}
+.stamp{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:3px 8px;border-radius:6px;border:1.5px solid currentColor;line-height:1.3;white-space:nowrap}
+.stamp b{font-family:var(--f-num);font-weight:600;letter-spacing:0;text-transform:none}
+.s-ok{color:var(--ok);background:var(--ok-soft)} .s-todo{color:var(--warn);background:var(--warn-soft)}
+.s-wait{color:var(--wait);background:var(--wait-soft)} .s-bad{color:var(--bad);background:var(--bad-soft)}
+.s-na{color:var(--muted);background:var(--sunken);border-style:dashed}
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:var(--r);padding:24px 16px;text-align:center;color:var(--muted)}
+.year{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;margin-top:6px}
+.fab{position:fixed;right:max(18px,calc(env(safe-area-inset-right,0px) + 18px));bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--accent);color:var(--accent-ink);border:0;border-radius:16px;padding:14px 20px;font:inherit;font-weight:700;font-size:15.5px;box-shadow:0 6px 20px rgba(0,0,0,.18);z-index:5}
+.scrim{position:fixed;inset:0;background:rgba(10,18,26,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--bg);width:100%;max-width:760px;max-height:94%;overflow-y:auto;border-radius:18px 18px 0 0;
+  padding:0 max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.sheet-head{position:sticky;top:0;background:var(--bg);display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 0 10px;z-index:2;border-bottom:1px solid var(--line)}
+.sheet-head h2{margin:0;font-size:18px;min-width:0;overflow-wrap:anywhere}
+.sec{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.sec h3{margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.hero{display:flex;flex-direction:column;gap:6px}
+.hero .big{font-family:var(--f-num);font-size:28px;font-weight:600}
+.line{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.line .t{font-weight:600}
+.line .s{font-size:13.5px;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted);min-width:0}
+label.f.full{grid-column:1/-1}
+input,select{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 10px;width:100%;min-width:0}
+input.num{font-family:var(--f-num)}
+.calc{display:flex;justify-content:space-between;gap:8px;font-size:13.5px;background:var(--sunken);border-radius:9px;padding:8px 10px}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:9px;padding:9px 13px;font:inherit;font-size:14px}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.btn.link{border:0;background:none;color:var(--accent);font-weight:600;padding:6px 0}
+.btn[disabled]{opacity:.55}
+.thumb{width:100%;max-height:220px;object-fit:cover;object-position:top;border-radius:10px;border:1px solid var(--line);background:var(--sunken)}
+.status{font-size:13.5px;color:var(--muted)} .status.err{color:var(--bad)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;z-index:40;max-width:90%}
+.checkline{background:var(--warn-soft);color:var(--warn);border-radius:9px;padding:8px 10px;font-size:13.5px}
+.inline{display:flex;gap:8px;align-items:end}
+.inline label{flex:1}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div><h1>Arztrechnungen</h1><p id="sub">Beihilfe und PKV im Blick</p></div>
+    <button class="iconbtn" id="btnSettings" type="button">Einstellungen</button>
+  </header>
+  <div id="banner" class="banner" hidden></div>
+  <section class="summary" id="summary" aria-label="Übersicht"></section>
+  <nav class="chips" id="filters" aria-label="Filter"></nav>
+  <nav class="chips" id="people" aria-label="Personen"></nav>
+  <section class="list" id="list" aria-live="polite"><div class="empty">Rechnungen werden geladen …</div></section>
+</div>
+<button class="fab" id="btnAdd" type="button">+ Rechnung</button>
+<input type="file" id="pick" accept="image/*,application/pdf" hidden>
+<input type="file" id="pickBackup" accept="application/json,.json" hidden>
+<div id="sheetHost"></div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+"use strict";
+/* ================= Speicher (IndexedDB, nur auf diesem Gerät) ================= */
+const DB_NAME="arztrechnungen",DB_VER=1;
+let _db;
+function idb(){
+  if(_db)return Promise.resolve(_db);
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open(DB_NAME,DB_VER);
+    r.onupgradeneeded=()=>{const d=r.result;
+      if(!d.objectStoreNames.contains("invoices"))d.createObjectStore("invoices",{keyPath:"id"});
+      if(!d.objectStoreNames.contains("files"))d.createObjectStore("files",{keyPath:"id"});
+      if(!d.objectStoreNames.contains("meta"))d.createObjectStore("meta",{keyPath:"key"});};
+    r.onsuccess=()=>{_db=r.result;res(_db)};r.onerror=()=>rej(r.error);
+  });
+}
+async function tx(store,mode,fn){
+  const d=await idb();
+  return new Promise((res,rej)=>{const t=d.transaction(store,mode);const s=t.objectStore(store);let out;
+    const r=fn(s);if(r&&"onsuccess" in r)r.onsuccess=()=>out=r.result;
+    t.oncomplete=()=>res(out);t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error)});
+}
+const dbAll=s=>tx(s,"readonly",st=>st.getAll());
+const dbGet=(s,k)=>tx(s,"readonly",st=>st.get(k));
+const dbPut=(s,v)=>tx(s,"readwrite",st=>st.put(v));
+const dbDel=(s,k)=>tx(s,"readwrite",st=>st.delete(k));
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+
+/* ================= Zustand ================= */
+const DEFAULT_SETTINGS={
+  people:[{name:"Olgun",group:"A"},{name:"Pinar",group:"E"},{name:"Ikra",group:"K"},{name:"Hamza",group:"K"}],
+  rates:{A:{pkv:0.3,bh:0.7},E:{pkv:0.3,bh:0.7},K:{pkv:0.2,bh:0.8}},
+  minBeihilfe:200,payDays:30,lastBackup:null
+};
+const GROUPS={A:"Antragsteller",E:"Ehepartner",K:"Kind"};
+const S={inv:[],settings:structuredClone(DEFAULT_SETTINGS),loaded:false,filter:"offen",person:"alle",edit:null};
+
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const r2=n=>Math.round((+n||0)*100)/100;
+const eur=n=>(+n||0).toLocaleString("de-DE",{style:"currency",currency:"EUR"});
+const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+const dfmt=s=>{if(!s)return "";const [y,m,d]=s.split("-");return d+"."+m+"."+y};
+const days=(a,b)=>Math.round((new Date(b)-new Date(a))/864e5);
+function toast(msg){const t=$("#toast");t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2600)}
+
+/* ================= Berechnung ================= */
+function side(inv,key){
+  const s=inv[key]||{};const rate=+s.rate||0;const amount=+inv.amount||0;
+  const expected=rate>0?r2(amount*rate-(+s.deduction||0)):0;
+  let state;
+  if(rate<=0)state="na"; else if(!s.submitted)state="todo"; else if(!s.receivedDate)state="wait"; else state="done";
+  const received=state==="done"?r2(s.received):0;
+  const diff=state==="done"?r2(expected-received):0;
+  return {rate,expected,state,received,diff,s};
+}
+function calc(inv){
+  const amount=r2(inv.amount),paid=r2(inv.payment?.amount),open=r2(amount-paid);
+  const pkv=side(inv,"pkv"),bh=side(inv,"bh");
+  const unpaid=open>0.004;
+  const age=inv.receivedDate?days(inv.receivedDate,today()):0;
+  const overdue=unpaid&&age>(+S.settings.payDays||30);
+  const cut=(pkv.diff>0.004?pkv.diff:0)+(bh.diff>0.004?bh.diff:0);
+  const todo=pkv.state==="todo"||bh.state==="todo";
+  const wait=pkv.state==="wait"||bh.state==="wait";
+  return {amount,paid,open,unpaid,overdue,age,pkv,bh,cut,todo,wait,done:!unpaid&&!todo&&!wait,check:!!inv.check||cut>0.004};
+}
+const FILTERS=[
+  {id:"offen",label:"Offen",test:c=>!c.done},
+  {id:"zahlen",label:"Zu bezahlen",test:c=>c.unpaid},
+  {id:"einreichen",label:"Einreichen",test:c=>c.todo},
+  {id:"warten",label:"Warte auf Erstattung",test:c=>c.wait},
+  {id:"pruefen",label:"Prüfen",test:c=>c.check},
+  {id:"erledigt",label:"Erledigt",test:c=>c.done},
+  {id:"alle",label:"Alle",test:()=>true}
+];
+
+/* ================= Liste ================= */
+function render(){
+  const rows=S.inv.map(i=>({i,c:calc(i)}));
+  const mine=S.person==="alle"?rows:rows.filter(r=>r.i.patient===S.person);
+  renderSummary(mine);renderBanner();
+  const f=FILTERS.find(x=>x.id===S.filter)||FILTERS[0];
+  $("#filters").innerHTML=FILTERS.map(x=>`<button type="button" class="chip" data-f="${x.id}" aria-pressed="${x.id===S.filter}">${esc(x.label)}<span class="c">${mine.filter(r=>x.test(r.c)).length}</span></button>`).join("");
+  const names=["alle",...S.settings.people.map(p=>p.name)];
+  $("#people").innerHTML=names.map(n=>`<button type="button" class="chip" data-p="${esc(n)}" aria-pressed="${n===S.person}">${n==="alle"?"Alle Personen":esc(n)}</button>`).join("");
+  const L=$("#list");
+  if(!S.loaded){L.innerHTML=`<div class="empty">Rechnungen werden geladen …</div>`;return}
+  if(!S.inv.length){L.innerHTML=`<div class="empty">Noch keine Rechnungen.<br>Tippe auf <b>+ Rechnung</b> oder spiele unter <b>Einstellungen</b> deine Startdatei ein.</div>`;return}
+  const list=mine.filter(r=>f.test(r.c)).sort((a,b)=>(b.i.invoiceDate||"").localeCompare(a.i.invoiceDate||""));
+  if(!list.length){L.innerHTML=`<div class="empty">Keine Rechnungen in dieser Ansicht.</div>`;return}
+  let html="",lastYear=null;
+  for(const {i,c} of list){
+    const y=(i.invoiceDate||"").slice(0,4);
+    if(y!==lastYear){html+=`<div class="year">${esc(y||"Ohne Datum")}</div>`;lastYear=y}
+    html+=`<button type="button" class="card" data-id="${esc(i.id)}">
+      <div class="row1"><div class="who"><div class="prov">${esc(i.provider||"Ohne Rechnungssteller")}</div>
+      <div class="meta"><span class="pchip">${esc(i.patient||"?")}</span>${dfmt(i.invoiceDate)}${i.reason?" · "+esc(i.reason):""}</div></div>
+      <div class="amt">${eur(c.amount)}</div></div>
+      <div class="stamps">${stampPay(c)}${stampSide("PKV",c.pkv)}${stampSide("Beihilfe",c.bh)}${i.check?`<span class="stamp s-todo">Prüfen</span>`:""}</div>
+    </button>`;
+  }
+  L.innerHTML=html;
+}
+function stampPay(c){
+  if(!c.unpaid)return c.open<-0.004?`<span class="stamp s-bad">Überzahlt <b>${eur(-c.open)}</b></span>`:`<span class="stamp s-ok">Bezahlt</span>`;
+  return `<span class="stamp ${c.overdue?"s-bad":"s-todo"}">Zahlen <b>${eur(c.open)}</b>${c.overdue?` · ${c.age} Tg.`:""}</span>`;
+}
+function stampSide(n,s){
+  if(s.state==="na")return `<span class="stamp s-na">${n} –</span>`;
+  if(s.state==="todo")return `<span class="stamp s-todo">${n} einreichen</span>`;
+  if(s.state==="wait")return `<span class="stamp s-wait">${n} <b>${eur(s.expected)}</b> erwartet</span>`;
+  if(s.diff>0.004)return `<span class="stamp s-bad">${n} gekürzt <b>−${eur(s.diff)}</b></span>`;
+  return `<span class="stamp s-ok">${n} erstattet</span>`;
+}
+function renderSummary(rows){
+  let pay=0,payN=0,over=0,wP=0,wB=0,todoN=0,todoB=0,cut=0,cutN=0;
+  for(const {c} of rows){
+    if(c.unpaid){pay+=c.open;payN++;if(c.overdue)over++}
+    if(c.pkv.state==="wait")wP+=c.pkv.expected;
+    if(c.bh.state==="wait")wB+=c.bh.expected;
+    if(c.todo)todoN++;
+    if(c.bh.state==="todo")todoB+=c.bh.expected;
+    if(c.cut>0.004){cut+=c.cut;cutN++}
+  }
+  const min=+S.settings.minBeihilfe||0;
+  const bhHint=todoB<=0?"Nichts offen für die Beihilfe":(todoB>=min?`Beihilfe ${eur(todoB)} – Mindestsumme erreicht`:`Beihilfe ${eur(todoB)}, noch ${eur(min-todoB)} bis ${eur(min)}`);
+  $("#summary").innerHTML=`
+   <button type="button" class="tile hot" data-f="zahlen"><span class="lbl">Zu bezahlen</span><span class="val">${eur(pay)}</span><span class="sub">${payN} Rechnung${payN===1?"":"en"}${over?` · ${over} überfällig`:""}</span></button>
+   <button type="button" class="tile wait" data-f="warten"><span class="lbl">Erstattung erwartet</span><span class="val">${eur(wP+wB)}</span><span class="sub">PKV ${eur(wP)} · Beihilfe ${eur(wB)}</span></button>
+   <button type="button" class="tile todo" data-f="einreichen"><span class="lbl">Noch einreichen</span><span class="val">${todoN}</span><span class="sub">${esc(bhHint)}</span></button>
+   <button type="button" class="tile cut" data-f="pruefen"><span class="lbl">Gekürzt</span><span class="val">${eur(cut)}</span><span class="sub">${cutN} Rechnung${cutN===1?"":"en"} mit Differenz</span></button>`;
+  $("#sub").textContent=`${S.inv.length} Rechnungen · ${S.settings.people.map(p=>p.name).join(", ")}`;
+}
+function renderBanner(){
+  const b=$("#banner");
+  if(!S.inv.length){b.hidden=true;return}
+  const last=S.settings.lastBackup;const age=last?days(last.slice(0,10),today()):null;
+  if(age===null||age>30){
+    b.innerHTML=`<span>${age===null?"Noch keine Sicherung erstellt.":`Letzte Sicherung vor ${age} Tagen.`} Die Daten liegen nur auf diesem Handy.</span><button type="button" class="btn" data-act="backup">Sichern</button>`;
+    b.hidden=false;
+  }else b.hidden=true;
+}
+
+/* ================= Ereignisse auf der Hauptseite ================= */
+document.addEventListener("click",e=>{
+  if(e.target.closest(".sheet"))return;
+  const f=e.target.closest("[data-f]");if(f){S.filter=f.dataset.f;render();return}
+  const p=e.target.closest("[data-p]");if(p){S.person=p.dataset.p;render();return}
+  const c=e.target.closest(".card[data-id]");if(c){const inv=S.inv.find(x=>x.id===c.dataset.id);if(inv)openView(inv.id);return}
+  if(e.target.closest("[data-act='backup']"))makeBackup();
+});
+$("#btnAdd").addEventListener("click",()=>pickFile(f=>openNew(f)));
+$("#btnSettings").addEventListener("click",openSettings);
+function pickFile(cb){const p=$("#pick");p.value="";p.onchange=()=>{const f=p.files[0];if(f)cb(f)};p.click()}
+
+/* ================= Rechnungs-Hilfen ================= */
+function rateFor(name){const p=S.settings.people.find(x=>x.name===name);const g=p?.group||"A";return {group:g,...(S.settings.rates[g]||{pkv:0,bh:0})}}
+function blankInvoice(){
+  const p=S.settings.people[0]?.name||"";const r=rateFor(p);
+  return {id:null,patient:p,group:r.group,invoiceDate:today(),receivedDate:today(),provider:"",invoiceNo:"",reason:"",amount:"",iban:"",
+    docUrl:"",docFileId:null,note:"",check:"",pkv:{rate:r.pkv,deduction:0},bh:{rate:r.bh,deduction:0},payment:{}};
+}
+async function saveInvoice(inv){
+  inv.updatedAt=new Date().toISOString();if(!inv.id){inv.id=uid();inv.createdAt=inv.updatedAt}
+  await dbPut("invoices",inv);
+  const i=S.inv.findIndex(x=>x.id===inv.id);if(i>=0)S.inv[i]=inv;else S.inv.push(inv);render();
+}
+async function storeFile(blob,name){const id=uid();await dbPut("files",{id,blob,name,type:blob.type});return id}
+async function fileUrl(id){const f=id&&await dbGet("files",id);return f?{url:URL.createObjectURL(f.blob),file:f}:null}
+async function shrink(file,max,q){
+  if(!file.type.startsWith("image/"))return file;
+  try{const bmp=await createImageBitmap(file);const sc=Math.min(1,max/Math.max(bmp.width,bmp.height));
+    const cv=document.createElement("canvas");cv.width=Math.round(bmp.width*sc);cv.height=Math.round(bmp.height*sc);
+    cv.getContext("2d").drawImage(bmp,0,0,cv.width,cv.height);
+    return await new Promise(res=>cv.toBlob(b=>res(b||file),"image/jpeg",q));}catch{return file}
+}
+async function shareFile(id,title){
+  const f=await dbGet("files",id);if(!f)return;
+  const file=new File([f.blob],f.name||"beleg",{type:f.type});
+  if(navigator.canShare?.({files:[file]})){try{await navigator.share({files:[file],title});}catch(e){}}
+  else{const u=URL.createObjectURL(f.blob);const a=document.createElement("a");a.href=u;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(u),5000)}
+}
+function closeSheet(){if(S.edit?.urls)S.edit.urls.forEach(u=>URL.revokeObjectURL(u));S.edit=null;$("#sheetHost").innerHTML=""}
+function sheet(title,body,headBtns){
+  $("#sheetHost").innerHTML=`<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+   <div class="sheet-head"><h2>${esc(title)}</h2><div class="btnrow">${headBtns}</div></div>${body}</div></div>`;
+  $("#scrim").addEventListener("click",e=>{if(e.target.id==="scrim")closeSheet()});
+}
+function setStatus(msg,err){const s=$("#edStatus");if(s){s.textContent=msg||"";s.className="status"+(err?" err":"")}}
+
+/* ================= Kurzansicht einer Rechnung ================= */
+async function openView(id){
+  const inv=S.inv.find(x=>x.id===id);if(!inv)return;
+  S.edit={mode:"view",id,urls:[],ask:null};
+  let thumb="";
+  if(inv.docFileId){const r=await fileUrl(inv.docFileId);if(r){S.edit.urls.push(r.url);
+    thumb=r.file.type.startsWith("image/")?`<img class="thumb" src="${r.url}" alt="Rechnungsfoto">`:""}}
+  drawView(thumb);
+}
+function sideLine(key,title,inv){
+  const c=side(inv,key);const s=c.s;let info="",btn="";
+  if(c.state==="na")info="Kein Anspruch";
+  else if(c.state==="todo"){info=`${eur(c.expected)} erwartet`;btn=`<button type="button" class="btn primary" data-act="sub" data-k="${key}">Heute eingereicht</button>`}
+  else if(c.state==="wait"){info=`${eur(c.expected)} erwartet · eingereicht ${dfmt(s.submitted)}`;btn=`<button type="button" class="btn primary" data-act="ask" data-k="${key}">Erstattung erhalten</button>`}
+  else info=`${eur(c.received)} erhalten am ${dfmt(s.receivedDate)}${c.diff>0.004?` · <b style="color:var(--bad)">${eur(c.diff)} weniger</b>`:""}`;
+  let ask="";
+  if(S.edit.ask===key)ask=`<div class="inline"><label class="f">Erhaltener Betrag (€)<input id="askAmt" class="num" inputmode="decimal" value="${c.expected.toFixed(2).replace(".",",")}"></label>
+    <button type="button" class="btn primary" data-act="got" data-k="${key}">Übernehmen</button></div>`;
+  return `<div class="line"><div><div class="t">${title}</div><div class="s">${info}</div></div>${S.edit.ask===key?"":btn}</div>${ask}`;
+}
+function drawView(thumb){
+  if(thumb!==undefined)S.edit.thumb=thumb;
+  const inv=S.inv.find(x=>x.id===S.edit.id);const c=calc(inv);
+  const payInfo=c.unpaid?`${eur(c.open)} offen${c.overdue?` · seit ${c.age} Tagen`:""}`:(c.open<-0.004?`${eur(-c.open)} zu viel überwiesen`:`Bezahlt am ${dfmt(inv.payment?.date)}`);
+  const docBtns=inv.docFileId?`<button type="button" class="btn" data-act="opendoc">Beleg öffnen</button><button type="button" class="btn" data-act="share">In Drive sichern</button>`
+    :(inv.docUrl?`<a class="btn" href="${esc(inv.docUrl)}" target="_blank" rel="noopener">Beleg in Drive öffnen</a>`:`<button type="button" class="btn" data-act="adddoc">Beleg hinzufügen</button>`);
+  sheet(inv.provider||"Rechnung",`
+    <div id="edStatus" class="status" style="margin-top:10px"></div>
+    ${inv.check?`<div class="checkline" style="margin-top:10px">Prüfen: ${esc(inv.check)} <button type="button" class="btn link" data-act="clearcheck">Erledigt</button></div>`:""}
+    <div class="sec hero">
+      <div class="big">${eur(c.amount)}</div>
+      <div class="meta"><span class="pchip">${esc(inv.patient)}</span>${dfmt(inv.invoiceDate)}${inv.invoiceNo?" · Nr. "+esc(inv.invoiceNo):""}</div>
+      <div class="stamps">${stampPay(c)}${stampSide("PKV",c.pkv)}${stampSide("Beihilfe",c.bh)}</div>
+    </div>
+    <div class="sec">
+      ${sideLine("pkv","PKV",inv)}
+      ${sideLine("bh","Beihilfe",inv)}
+      <div class="line"><div><div class="t">Zahlung</div><div class="s">${payInfo}</div></div>
+        ${c.unpaid?`<div class="btnrow">${inv.iban?`<button type="button" class="btn" data-act="iban">IBAN kopieren</button>`:""}<button type="button" class="btn primary" data-act="paid">Heute bezahlt</button></div>`:""}</div>
+    </div>
+    <div class="sec">${S.edit.thumb||""}<div class="btnrow">${docBtns}</div></div>
+    <div class="btnrow" style="margin-top:14px"><button type="button" class="btn" data-act="edit">Details anzeigen und bearbeiten</button></div>
+  `,`<button type="button" class="btn" data-act="close">Schließen</button>`);
+  $("#scrim").addEventListener("click",viewClick);
+}
+async function viewClick(e){
+  const b=e.target.closest("[data-act]");if(!b)return;
+  const inv=structuredClone(S.inv.find(x=>x.id===S.edit.id));const k=b.dataset.k;
+  switch(b.dataset.act){
+    case "close":return closeSheet();
+    case "edit":{const urls=S.edit.urls;S.edit.urls=[];urls.forEach(u=>URL.revokeObjectURL(u));return openEditor(inv)}
+    case "sub":inv[k].submitted=today();await saveInvoice(inv);toast((k==="pkv"?"PKV":"Beihilfe")+": heute eingereicht");return drawView();
+    case "ask":S.edit.ask=k;drawView();$("#askAmt")?.focus();return;
+    case "got":{const v=r2(String($("#askAmt").value).replace(",","."));inv[k].received=v;inv[k].receivedDate=today();if(!inv[k].submitted)inv[k].submitted=today();
+      S.edit.ask=null;await saveInvoice(inv);toast("Erstattung eingetragen");return drawView()}
+    case "paid":inv.payment={date:today(),amount:r2(inv.amount)};await saveInvoice(inv);toast("Als bezahlt markiert");return drawView();
+    case "iban":try{await navigator.clipboard.writeText(inv.iban);toast("IBAN kopiert")}catch{toast(inv.iban)}return;
+    case "clearcheck":inv.check="";await saveInvoice(inv);return drawView();
+    case "opendoc":{const r=await fileUrl(inv.docFileId);if(r){S.edit.urls.push(r.url);window.open(r.url,"_blank")}return}
+    case "share":return shareFile(inv.docFileId,inv.provider);
+    case "adddoc":return pickFile(async f=>{const blob=await shrink(f,2200,0.85);inv.docFileId=await storeFile(blob,fname(inv,blob));await saveInvoice(inv);openView(inv.id)});
+  }
+}
+function fname(inv,blob){return `${inv.invoiceDate||today()}_${inv.patient}_${inv.provider||"Rechnung"}`.replace(/[^\wäöüÄÖÜß.-]+/g,"_")+(blob.type==="application/pdf"?".pdf":".jpg")}
+
+/* ================= Bearbeiten / Neu ================= */
+function field(label,id,val,type="text",cls="",extra=""){
+  return `<label class="f ${cls}">${label}<input id="${id}" type="${type==="number"?"text":type}" value="${esc(type==="number"&&val!==""&&val!=null?String(val).replace(".",","):val??"")}" ${type==="number"?'inputmode="decimal" class="num"':""} ${extra}></label>`;
+}
+function sideForm(key,title){
+  const s=S.edit.inv[key]||{};const c=side(S.edit.inv,key);
+  return `<div class="sec"><h3>${title}</h3>
+    <div class="grid2">
+      ${field("Anteil in %",`${key}_rate`,Math.round((+s.rate||0)*100),"number")}
+      ${field("Abzug (€)",`${key}_deduction`,s.deduction||"","number")}
+    </div>
+    <div class="calc"><span>Erwartet</span><span class="num" id="${key}_exp">${eur(c.expected)}</span></div>
+    <div class="grid2">
+      ${field("Eingereicht am",`${key}_submitted`,s.submitted,"date")}
+      ${field("Erstattet am",`${key}_receivedDate`,s.receivedDate,"date")}
+      ${field("Erstattet (€)",`${key}_received`,s.received??"","number")}
+      ${field("Notiz",`${key}_note`,s.note)}
+    </div></div>`;
+}
+async function openNew(file){
+  const inv=blankInvoice();S.edit={mode:"edit",inv,file,urls:[]};
+  if(file.type.startsWith("image/")){const u=URL.createObjectURL(file);S.edit.urls.push(u);S.edit.preview=u}
+  drawEditor();
+  if(file.type.startsWith("image/"))ocr(file);
+}
+function openEditor(inv){S.edit={mode:"edit",inv,file:null,urls:[]};drawEditor()}
+function drawEditor(){
+  const {inv,preview,file}=S.edit;const isNew=!inv.id;
+  const opts=S.settings.people.map(p=>`<option ${p.name===inv.patient?"selected":""}>${esc(p.name)}</option>`).join("");
+  sheet(isNew?"Neue Rechnung":"Bearbeiten",`
+    <div id="edStatus" class="status" style="margin-top:10px"></div>
+    <div class="sec">
+      ${preview?`<img class="thumb" src="${preview}" alt="Rechnungsfoto">`:""}
+      <div class="grid2">
+        <label class="f">Person<select id="patient">${opts}</select></label>
+        ${field("Betrag (€)","amount",inv.amount,"number")}
+        ${field("Rechnungssteller","provider",inv.provider,"text","full",'autocomplete="off" list="provList"')}
+        ${field("Rechnungsdatum","invoiceDate",inv.invoiceDate,"date")}
+        ${field("Rechnungsnummer","invoiceNo",inv.invoiceNo)}
+      </div>
+      <datalist id="provList">${[...new Set(S.inv.map(i=>i.provider).filter(Boolean))].map(p=>`<option value="${esc(p)}">`).join("")}</datalist>
+    </div>
+    <div class="btnrow" style="margin-top:12px"><button type="button" class="btn" id="btnMore" aria-expanded="false">Weitere Angaben anzeigen</button></div>
+    <div id="more" hidden>
+      <div class="sec"><h3>Rechnung</h3><div class="grid2">
+        ${field("Eingang am","receivedDate",inv.receivedDate,"date")}
+        ${field("Grund","reason",inv.reason)}
+        ${field("IBAN","iban",inv.iban,"text","full",'autocomplete="off"')}
+        ${field("Notiz","note",inv.note,"text","full")}
+      </div></div>
+      ${sideForm("pkv","PKV")}
+      ${sideForm("bh","Beihilfe")}
+      <div class="sec"><h3>Zahlung</h3><div class="grid2">
+        ${field("Bezahlt am","pay_date",inv.payment?.date,"date")}
+        ${field("Bezahlt (€)","pay_amount",inv.payment?.amount??"","number")}
+      </div></div>
+      ${isNew?"":`<div class="sec"><h3>Löschen</h3><div class="btnrow"><button type="button" class="btn danger" data-act="del">Rechnung löschen</button></div></div>`}
+    </div>
+  `,`<button type="button" class="btn" data-act="cancel">Abbrechen</button><button type="button" class="btn primary" data-act="save" id="btnSave">Speichern</button>`);
+  const sc=$("#scrim");
+  sc.addEventListener("input",refreshCalc);
+  $("#patient").addEventListener("change",()=>{readForm();const r=rateFor(S.edit.inv.patient);
+    $("#pkv_rate").value=Math.round(r.pkv*100);$("#bh_rate").value=Math.round(r.bh*100);refreshCalc()});
+  $("#btnMore").addEventListener("click",e=>{const m=$("#more");m.hidden=!m.hidden;e.target.textContent=m.hidden?"Weitere Angaben anzeigen":"Weitere Angaben ausblenden";e.target.setAttribute("aria-expanded",String(!m.hidden))});
+  sc.addEventListener("click",editClick);
+}
+function readForm(){
+  const inv=S.edit.inv;const v=id=>$("#"+id)?.value??"";const n=id=>{const x=v(id).trim().replace(/\./g,"").replace(",",".");return x===""?"":r2(x)};
+  const nn=id=>{const x=v(id).trim();if(x==="")return "";return r2(x.includes(",")?x.replace(/\./g,"").replace(",","."):x)};
+  inv.patient=v("patient");inv.group=rateFor(inv.patient).group;
+  inv.amount=nn("amount");
+  for(const k of ["invoiceDate","receivedDate","provider","invoiceNo","reason","iban","note"])inv[k]=v(k).trim();
+  inv.iban=inv.iban.replace(/\s+/g,"").toUpperCase();
+  for(const key of ["pkv","bh"]){const s=inv[key]=inv[key]||{};
+    s.rate=r2((+nn(key+"_rate")||0)/100);s.deduction=nn(key+"_deduction")||0;
+    s.submitted=v(key+"_submitted")||null;s.receivedDate=v(key+"_receivedDate")||null;s.received=nn(key+"_received");s.note=v(key+"_note").trim()}
+  inv.payment={date:v("pay_date")||null,amount:nn("pay_amount")};
+}
+function refreshCalc(){readForm();for(const key of ["pkv","bh"]){const el=$("#"+key+"_exp");if(el)el.textContent=eur(side(S.edit.inv,key).expected)}}
+async function editClick(e){
+  const b=e.target.closest("[data-act]");if(!b)return;
+  const act=b.dataset.act;
+  if(act==="cancel"){const id=S.edit.inv.id;closeSheet();if(id)openView(id);return}
+  if(act==="save"){
+    readForm();const inv=S.edit.inv;
+    if(inv.amount===""||!inv.provider){setStatus("Bitte mindestens Rechnungssteller und Betrag eintragen.",true);return}
+    b.disabled=true;
+    try{
+      if(S.edit.file){const blob=await shrink(S.edit.file,2200,0.85);inv.docFileId=await storeFile(blob,fname(inv,blob));S.edit.file=null}
+      await saveInvoice(inv);toast("Gespeichert");const id=inv.id;closeSheet();openView(id);
+    }catch(err){setStatus("Speichern fehlgeschlagen: "+(err?.message||err),true);b.disabled=false}
+    return;
+  }
+  if(act==="del"){
+    if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Wirklich löschen? Nochmal tippen";return}
+    const inv=S.edit.inv;await dbDel("invoices",inv.id);if(inv.docFileId)await dbDel("files",inv.docFileId).catch(()=>{});
+    S.inv=S.inv.filter(x=>x.id!==inv.id);render();closeSheet();toast("Rechnung gelöscht");
+  }
+}
+
+/* ================= Texterkennung auf dem Handy ================= */
+const TESS="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+let tessWorker=null;
+function loadScript(src){return new Promise((res,rej)=>{if(window.Tesseract)return res();const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=()=>rej(new Error("load"));document.head.appendChild(s)})}
+async function ocr(file){
+  setStatus("Texterkennung startet … (beim ersten Mal etwas länger)");
+  try{
+    await loadScript(TESS);
+    if(!tessWorker)tessWorker=await Tesseract.createWorker("deu",1,{logger:m=>{if(m.status==="recognizing text")setStatus(`Rechnung wird gelesen … ${Math.round(m.progress*100)} %`)}});
+    const img=await shrink(file,2000,0.9);
+    const {data}=await tessWorker.recognize(img);
+    if(!S.edit||S.edit.mode!=="edit")return;
+    readForm();const got=parseInvoiceText(data.text||"",S.settings.people.map(p=>p.name),[...new Set(S.inv.map(i=>i.provider).filter(Boolean))]);
+    const inv=S.edit.inv;const filled=[];
+    if(got.amount!=null&&inv.amount===""){inv.amount=got.amount;filled.push("Betrag")}
+    if(got.date){inv.invoiceDate=got.date;filled.push("Datum")}
+    if(got.invoiceNo&&!inv.invoiceNo){inv.invoiceNo=got.invoiceNo;filled.push("Rechnungsnummer")}
+    if(got.iban&&!inv.iban){inv.iban=got.iban;filled.push("IBAN")}
+    if(got.provider&&!inv.provider){inv.provider=got.provider;filled.push("Rechnungssteller")}
+    if(got.patient){inv.patient=got.patient;const r=rateFor(got.patient);inv.group=r.group;inv.pkv.rate=r.pkv;inv.bh.rate=r.bh;filled.push("Person")}
+    drawEditor();
+    setStatus(filled.length?`Erkannt: ${filled.join(", ")}. Bitte prüfen.`:"Nichts sicher erkannt. Bitte Felder ausfüllen.");
+  }catch(err){setStatus("Texterkennung nicht verfügbar (offline?). Bitte Felder ausfüllen.")}
+}
+function parseInvoiceText(text,people,providers){
+  const out={};const t=text.replace(/\r/g,"");
+  const lines=t.split("\n").map(l=>l.trim()).filter(Boolean);
+  const num=s=>r2(s.replace(/\s/g,"").replace(/\./g,"").replace(",","."));
+  const amtRe=/(\d{1,3}(?:[.\s]\d{3})*,\d{2})/g;
+  const keys=/(rechnungsbetrag|gesamtbetrag|endbetrag|zu zahlen|zahlbetrag|gesamtsumme|summe|gesamt|betrag)/i;
+  let best=null;
+  for(const l of lines){if(keys.test(l)){const m=[...l.matchAll(amtRe)];if(m.length){const v=num(m[m.length-1][1]);if(v>0&&(best===null||/zu zahlen|rechnungsbetrag|endbetrag|zahlbetrag/i.test(l)||v>best))best=v}}}
+  if(best===null){const all=[...t.matchAll(amtRe)].map(m=>num(m[1])).filter(v=>v>0&&v<100000);if(all.length)best=Math.max(...all)}
+  if(best!==null)out.amount=best;
+  const dRe=/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/;
+  const iso=m=>{let y=+m[3];if(y<100)y+=2000;return `${y}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`};
+  let dm=null;for(const l of lines){if(/rechnungsdatum|datum/i.test(l)){const m=l.match(dRe);if(m){dm=m;break}}}
+  if(!dm)dm=t.match(dRe);
+  if(dm){const d=iso(dm);if(!isNaN(new Date(d)))out.date=d}
+  const nr=t.match(/rechnungs?[-\s]?(?:nr\.?|nummer|no\.?)\s*[:.]?\s*([A-Z0-9][A-Z0-9\/\-]{2,})/i);if(nr)out.invoiceNo=nr[1];
+  const ib=t.replace(/[ \t]/g,"").match(/DE\d{20}/i);if(ib)out.iban=ib[0].toUpperCase();
+  const low=t.toLowerCase();
+  // Patient: zuerst eine Zeile mit "Patient", sonst ein anderer Name als der Empfänger (Antragsteller steht meist in der Anschrift)
+  const has=(s,n)=>new RegExp("\\b"+n.toLowerCase()+"\\b").test(s.toLowerCase());
+  const pl=lines.find(l=>/patient|behandelt|leistungsempf/i.test(l)&&people.some(n=>has(l,n)));
+  const found=people.filter(n=>has(low,n));
+  const p=pl?people.find(n=>has(pl,n)):(found.find(n=>n!==people[0])||found[0]);
+  if(p)out.patient=p;
+  const prov=providers.find(pr=>{const w=pr.toLowerCase().split(/\s+/).slice(0,2).join(" ");return w.length>3&&low.includes(w)});if(prov)out.provider=prov;
+  return out;
+}
+
+/* ================= Einstellungen & Sicherung ================= */
+async function saveSettings(){await dbPut("meta",{key:"settings",...S.settings})}
+function openSettings(){
+  const s=S.settings;
+  S.edit={mode:"settings",urls:[]};
+  const rows=s.people.map((p,i)=>`<div class="grid2">
+    <label class="f">Name<input id="pn${i}" value="${esc(p.name)}"></label>
+    <label class="f">Gruppe<select id="pg${i}">${Object.entries(GROUPS).map(([k,v])=>`<option value="${k}" ${k===p.group?"selected":""}>${v}</option>`).join("")}</select></label></div>`).join("");
+  const rates=Object.entries(GROUPS).map(([g,v])=>`<div class="grid2">
+    ${field(v+" · PKV %","rp"+g,Math.round((s.rates[g]?.pkv||0)*100),"number")}
+    ${field(v+" · Beihilfe %","rb"+g,Math.round((s.rates[g]?.bh||0)*100),"number")}</div>`).join("");
+  sheet("Einstellungen",`
+    <div id="edStatus" class="status" style="margin-top:10px"></div>
+    <div class="sec"><h3>Sicherung</h3>
+      <p class="status" style="margin:0">Alle Daten liegen nur auf diesem Handy. Erstelle regelmäßig eine Sicherung und lege sie in Google Drive ab.${s.lastBackup?` Letzte Sicherung: ${dfmt(s.lastBackup.slice(0,10))}.`:""}</p>
+      <div class="btnrow"><button type="button" class="btn primary" data-act="backup">Sicherung erstellen</button><button type="button" class="btn" data-act="restore">Sicherung einspielen</button></div></div>
+    <div class="sec"><h3>Anteile</h3>${rates}<p class="status" style="margin:0">Gilt für neue Rechnungen.</p></div>
+    <div class="sec"><h3>Personen</h3>${rows}<div class="btnrow"><button type="button" class="btn" data-act="addp">Person hinzufügen</button></div></div>
+    <div class="sec"><h3>Regeln</h3><div class="grid2">
+      ${field("Mindestsumme Beihilfe (€)","minB",s.minBeihilfe,"number")}
+      ${field("Zahlungsfrist (Tage)","payD",s.payDays,"number")}</div></div>
+  `,`<button type="button" class="btn" data-act="close">Abbrechen</button><button type="button" class="btn primary" data-act="save">Speichern</button>`);
+  $("#scrim").addEventListener("click",async e=>{
+    const b=e.target.closest("[data-act]");if(!b)return;
+    const n=id=>+String($("#"+id).value).replace(",",".")||0;
+    switch(b.dataset.act){
+      case "close":return closeSheet();
+      case "backup":return makeBackup();
+      case "restore":{const p=$("#pickBackup");p.value="";p.onchange=()=>{const f=p.files[0];if(f)restoreBackup(f)};p.click();return}
+      case "addp":S.settings.people=[...collectPeople(),{name:"",group:"K"}];return openSettings();
+      case "save":
+        S.settings={...S.settings,people:collectPeople().filter(p=>p.name),
+          rates:Object.fromEntries(Object.keys(GROUPS).map(g=>[g,{pkv:r2(n("rp"+g)/100),bh:r2(n("rb"+g)/100)}])),
+          minBeihilfe:n("minB"),payDays:n("payD")||30};
+        await saveSettings();toast("Einstellungen gespeichert");closeSheet();render();
+    }
+  });
+}
+function collectPeople(){return S.settings.people.map((p,i)=>({name:($("#pn"+i)?.value??p.name).trim(),group:$("#pg"+i)?.value??p.group}))}
+function blobToB64(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(blob)})}
+async function makeBackup(){
+  try{
+    const files=await dbAll("files");const packed=[];
+    for(const f of files)packed.push({id:f.id,name:f.name,type:f.type,data:await blobToB64(f.blob)});
+    const {lastBackup,...settings}=S.settings;
+    const json=JSON.stringify({app:"arztrechnungen",version:1,createdAt:new Date().toISOString(),settings,invoices:S.inv,files:packed});
+    const file=new File([json],`Arztrechnungen_Sicherung_${today()}.json`,{type:"application/json"});
+    let done=false;
+    if(navigator.canShare?.({files:[file]})){try{await navigator.share({files:[file],title:"Arztrechnungen Sicherung"});done=true}catch(e){if(e.name==="AbortError")return}}
+    if(!done){const u=URL.createObjectURL(file);const a=document.createElement("a");a.href=u;a.download=file.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),5000)}
+    S.settings.lastBackup=new Date().toISOString();await saveSettings();render();toast("Sicherung erstellt");
+  }catch(err){toast("Sicherung fehlgeschlagen")}
+}
+async function restoreBackup(file){
+  try{
+    const d=JSON.parse(await file.text());
+    if(d.app!=="arztrechnungen"||!Array.isArray(d.invoices))throw new Error("Keine Sicherung dieser App");
+    for(const f of d.files||[]){const bin=Uint8Array.from(atob(f.data),c=>c.charCodeAt(0));await dbPut("files",{id:f.id,name:f.name,type:f.type,blob:new Blob([bin],{type:f.type})})}
+    for(const inv of d.invoices)await dbPut("invoices",inv);
+    if(d.settings){S.settings={...DEFAULT_SETTINGS,...d.settings,lastBackup:S.settings.lastBackup};await saveSettings()}
+    S.inv=await dbAll("invoices");closeSheet();render();toast(`${d.invoices.length} Rechnungen eingespielt`);
+  }catch(err){setStatus("Einspielen fehlgeschlagen: "+(err?.message||err),true)}
+}
+
+/* ================= Start ================= */
+(async()=>{
+  render();
+  try{
+    const st=await dbGet("meta","settings");if(st){const {key,...rest}=st;S.settings={...DEFAULT_SETTINGS,...rest}}
+    S.inv=await dbAll("invoices");
+  }catch(err){$("#list").innerHTML=`<div class="empty">Speicher nicht verfügbar. Bitte die App nicht im privaten Modus öffnen.</div>`;return}
+  S.loaded=true;render();
+  try{await navigator.storage?.persist?.()}catch{}
+  if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+})();
+</script>
+</body>
+</html>
