@@ -583,6 +583,7 @@ function openSettings(){
         ?"Rechnungen, Fotos und Leistungsnachweise werden im Drive-Ordner „Arztrechnungen“ gespeichert."
         :"Nach dem Verbinden liegen alle Rechnungen, Fotos und Leistungsnachweise im Drive-Ordner „Arztrechnungen“."}</p>
       <p class="status" id="driveStatus" style="margin:0;font-weight:600"></p>
+      <details><summary class="status">Verlauf anzeigen</summary><pre class="status" style="white-space:pre-wrap;margin:6px 0 0;font-size:12px">${esc((()=>{try{return JSON.parse(localStorage.getItem("glog")||"[]").join("\n")}catch{return ""}})()||"Noch keine Einträge.")}</pre></details>
       <div class="btnrow">${s.driveLinked
         ?`<button type="button" class="btn primary" data-act="sync">Jetzt abgleichen</button><button type="button" class="btn" data-act="unlink">Drive trennen</button>`
         :`<button type="button" class="btn primary" data-act="link">Mit Google Drive verbinden</button>`}</div></div>
@@ -657,8 +658,11 @@ try{const t=JSON.parse(localStorage.getItem("gtok")||"null");if(t&&t.exp>Date.no
 const tokenValid=()=>!!G.token&&Date.now()<G.exp-60000;
 // Anmeldung per Weiterleitung: funktioniert auch in der installierten App (Anmeldefenster als Popup kommt dort nicht zurück)
 const REDIRECT_URI=new URL("./",location.href).href;
+// Kurzer Verlauf für die Fehlersuche (bleibt auf dem Gerät)
+function glog(msg){try{const l=JSON.parse(localStorage.getItem("glog")||"[]");l.push(new Date().toLocaleTimeString("de-DE")+" "+msg);localStorage.setItem("glog",JSON.stringify(l.slice(-12)))}catch{}}
 function connectDrive(silent){
   const state=uid();
+  glog((silent?"Stille ":"")+"Anmeldung gestartet ("+(matchMedia("(display-mode: standalone)").matches?"App":"Browser")+")");
   try{localStorage.setItem("gstate",JSON.stringify({state,silent:!!silent}))}catch{}
   const p=new URLSearchParams({client_id:GOOGLE_CLIENT_ID,redirect_uri:REDIRECT_URI,response_type:"token",scope:DRIVE_SCOPE,
     include_granted_scopes:"true",state});
@@ -671,8 +675,9 @@ function readAuthRedirect(){
   const h=new URLSearchParams(location.hash.slice(1));
   history.replaceState(null,"",location.pathname+location.search);
   let saved=null;try{saved=JSON.parse(localStorage.getItem("gstate")||"null");localStorage.removeItem("gstate")}catch{}
-  if(!saved||h.get("state")!==saved.state)return {error:"state"};
-  if(h.get("error"))return {error:h.get("error"),silent:saved.silent};
+  if(h.get("error")){glog("Google meldet: "+h.get("error"));return {error:h.get("error"),silent:!!saved?.silent}}
+  if(saved&&h.get("state")!==saved.state){glog("Rückkehr mit falscher Kennung");return {error:"state"}}
+  glog("Rückkehr von Google: Zugang erhalten"+(saved?"":" (ohne gespeicherte Kennung)"));
   return {token:h.get("access_token"),expires:+h.get("expires_in")||3600};
 }
 const AUTH=readAuthRedirect();
@@ -680,7 +685,8 @@ if(AUTH?.token){G.token=AUTH.token;G.exp=Date.now()+AUTH.expires*1000;try{localS
 async function gfetch(url,opts={}){
   const r=await fetch(url,{...opts,headers:{...(opts.headers||{}),Authorization:"Bearer "+G.token}});
   if(r.status===401){G.token=null;try{localStorage.removeItem("gtok")}catch{};const e=new Error("auth");e.code="auth";throw e}
-  if(!r.ok){const e=new Error("drive "+r.status);e.code="fail";throw e}
+  if(!r.ok){let t="";try{t=(await r.text()).replace(/\s+/g," ").slice(0,160)}catch{}
+    glog("Drive-Fehler "+r.status+": "+t);const e=new Error("drive "+r.status);e.code="fail";throw e}
   return r;
 }
 const q=s=>encodeURIComponent(s);
@@ -764,8 +770,8 @@ async function syncNow(){
     const up=await uploadMultipart(S.settings.driveDataId?{}:{name:DATA_NAME,parents:[S.settings.driveFolderId]},blob,S.settings.driveDataId);
     if(!S.settings.driveDataId)S.settings.driveDataId=up.id;
     await dbPut("meta",{key:"settings",...S.settings});
-    G.last=new Date();
-  }catch(e){G.err=e.code==="auth"?"auth":"fail";G.dirty=true}
+    G.last=new Date();glog("Abgleich erfolgreich ("+S.inv.length+" Rechnungen)");
+  }catch(e){G.err=e.code==="auth"?"auth":"fail";G.dirty=true;glog("Abgleich fehlgeschlagen: "+(e?.message||e))}
   finally{G.busy=false;updateChip();render()}
   if(G.dirty&&!G.err)scheduleSync();
 }
@@ -801,7 +807,7 @@ async function driveBlob(driveId){if(!tokenValid()||!driveId)return null;try{ret
   if(AUTH?.error){
     // stille Anmeldung nicht möglich -> normal mit Bestätigung anmelden
     if(AUTH.silent&&/interaction_required|login_required|consent_required/.test(AUTH.error))return connectDrive(false);
-    if(AUTH.error!=="state")toast(AUTH.error==="access_denied"?"Anmeldung abgebrochen":"Anmeldung bei Google fehlgeschlagen");
+    toast(AUTH.error==="access_denied"?"Anmeldung abgebrochen":"Anmeldung bei Google fehlgeschlagen ("+AUTH.error+")");
   }
   if(S.settings.driveLinked&&tokenValid())syncNow();
   try{await navigator.storage?.persist?.()}catch{}
