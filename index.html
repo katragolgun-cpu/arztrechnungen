@@ -443,6 +443,7 @@ function drawEditor(){
   const opts=S.settings.people.map(p=>`<option ${p.name===inv.patient?"selected":""}>${esc(p.name)}</option>`).join("");
   sheet(isNew?"Neue Rechnung":"Bearbeiten",`
     <div id="edStatus" class="status" style="margin-top:10px"></div>
+    <div id="dupBox"></div>
     <div class="sec">
       ${preview?`<img class="thumb" src="${preview}" alt="Rechnungsfoto">`:""}
       <div class="grid2">
@@ -458,7 +459,8 @@ function drawEditor(){
     <div id="more" hidden>
       <div class="sec"><h3>Rechnung</h3><div class="grid2">
         ${field("Eingang am","receivedDate",inv.receivedDate,"date")}
-        ${field("Grund","reason",inv.reason)}
+        ${field("Grund","reason",inv.reason,"text","",'autocomplete="off" list="reasonList"')}
+        <datalist id="reasonList">${[...new Set(S.inv.map(i=>i.reason).filter(Boolean))].map(p=>`<option value="${esc(p)}">`).join("")}</datalist>
         ${field("IBAN","iban",inv.iban,"text","full",'autocomplete="off"')}
         ${field("Notiz","note",inv.note,"text","full")}
       </div></div>
@@ -476,7 +478,38 @@ function drawEditor(){
   $("#patient").addEventListener("change",()=>{readForm();const r=rateFor(S.edit.inv.patient);
     $("#pkv_rate").value=Math.round(r.pkv*100);$("#bh_rate").value=Math.round(r.bh*100);refreshCalc()});
   $("#btnMore").addEventListener("click",e=>{const m=$("#more");m.hidden=!m.hidden;e.target.textContent=m.hidden?"Weitere Angaben anzeigen":"Weitere Angaben ausblenden";e.target.setAttribute("aria-expanded",String(!m.hidden))});
+  $("#provider").addEventListener("change",suggestFromProvider);
+  for(const id of ["invoiceNo","amount","invoiceDate"])$("#"+id).addEventListener("change",()=>{readForm();showDup()});
   sc.addEventListener("click",editClick);
+  showDup();
+}
+/* ---- Vorschläge aus vorhandenen Rechnungen ---- */
+function suggestFromProvider(){
+  readForm();const inv=S.edit.inv;const name=inv.provider.trim().toLowerCase();if(!name)return;
+  const prev=S.inv.filter(x=>x.id!==inv.id&&(x.provider||"").trim().toLowerCase()===name).sort((a,b)=>(b.invoiceDate||"").localeCompare(a.invoiceDate||""));
+  if(!prev.length)return;
+  const filled=[];
+  const ib=prev.find(x=>x.iban)?.iban;if(ib&&!$("#iban").value){$("#iban").value=ib;filled.push("IBAN")}
+  const rs=prev.find(x=>x.reason)?.reason;if(rs&&!$("#reason").value){$("#reason").value=rs;filled.push("Grund")}
+  const pats=[...new Set(prev.map(x=>x.patient).filter(Boolean))];
+  if(!inv.id&&pats.length===1&&S.settings.people.some(p=>p.name===pats[0])&&$("#patient").value!==pats[0]){
+    $("#patient").value=pats[0];const r=rateFor(pats[0]);$("#pkv_rate").value=Math.round(r.pkv*100);$("#bh_rate").value=Math.round(r.bh*100);filled.push("Person")}
+  readForm();refreshCalc();showDup();
+  if(filled.length)setStatus(`Von der letzten Rechnung übernommen: ${filled.join(", ")}.`);
+}
+/* ---- Doppelte Rechnungen erkennen ---- */
+const normNo=s=>String(s||"").replace(/[\s\/\-.]/g,"").toLowerCase();
+function findDuplicate(inv){
+  const no=normNo(inv.invoiceNo),prov=(inv.provider||"").trim().toLowerCase();
+  return S.inv.find(x=>x.id!==inv.id&&(
+    (no.length>=3&&normNo(x.invoiceNo)===no)||
+    (prov&&inv.invoiceDate&&inv.amount!==""&&(x.provider||"").trim().toLowerCase()===prov&&x.invoiceDate===inv.invoiceDate&&r2(x.amount)===r2(inv.amount))));
+}
+function showDup(){
+  const box=$("#dupBox");if(!box||!S.edit||S.edit.inv.id)return;
+  const d=findDuplicate(S.edit.inv);S.edit.dup=d||null;
+  box.innerHTML=d?`<div class="checkline" style="margin-top:10px">Diese Rechnung gibt es vermutlich schon: <b>${esc(d.provider)}</b>, ${dfmt(d.invoiceDate)}, ${eur(d.amount)} (${esc(d.patient)}${d.invoiceNo?", Nr. "+esc(d.invoiceNo):""}).
+    <div class="btnrow" style="margin-top:8px"><button type="button" class="btn" data-act="dupopen">Vorhandene öffnen</button><button type="button" class="btn" data-act="dupsave">Trotzdem speichern</button></div></div>`:"";
 }
 function readForm(){
   const inv=S.edit.inv;const v=id=>$("#"+id)?.value??"";const n=id=>{const x=v(id).trim().replace(/\./g,"").replace(",",".");return x===""?"":r2(x)};
@@ -495,9 +528,12 @@ async function editClick(e){
   const b=e.target.closest("[data-act]");if(!b)return;
   const act=b.dataset.act;
   if(act==="cancel"){const id=S.edit.inv.id;closeSheet();if(id)openView(id);return}
+  if(act==="dupopen"){const id=S.edit.dup?.id;closeSheet();if(id)openView(id);return}
+  if(act==="dupsave"){S.edit.dupOk=true;$("#dupBox").innerHTML="";return editClick({target:$("#btnSave")})}
   if(act==="save"){
     readForm();const inv=S.edit.inv;
     if(inv.amount===""||!inv.provider){setStatus("Bitte mindestens Rechnungssteller und Betrag eintragen.",true);return}
+    if(!inv.id&&!S.edit.dupOk&&findDuplicate(inv)){showDup();$("#dupBox").scrollIntoView({block:"center"});setStatus("Bitte prüfen: möglicherweise doppelt.",true);return}
     b.disabled=true;
     try{
       if(S.edit.file){const blob=await shrink(S.edit.file,2200,0.85);inv.docFileId=await storeFile(blob,fname(inv,blob));inv.docDriveId=null;inv.docUrl="";S.edit.file=null}
@@ -534,6 +570,7 @@ async function ocr(file){
     if(got.provider&&!inv.provider){inv.provider=got.provider;filled.push("Rechnungssteller")}
     if(got.patient){inv.patient=got.patient;const r=rateFor(got.patient);inv.group=r.group;inv.pkv.rate=r.pkv;inv.bh.rate=r.bh;filled.push("Person")}
     drawEditor();
+    if(got.provider)suggestFromProvider();
     setStatus(filled.length?`Erkannt: ${filled.join(", ")}. Bitte prüfen.`:"Nichts sicher erkannt. Bitte Felder ausfüllen.");
   }catch(err){setStatus("Texterkennung nicht verfügbar (offline?). Bitte Felder ausfüllen.")}
 }
