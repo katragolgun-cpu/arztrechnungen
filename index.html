@@ -55,7 +55,8 @@ header.top p{margin:2px 0 0;color:var(--muted);font-size:13px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:10px;text-align:left;font:inherit;color:inherit;width:100%}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .row1{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
-.who{min-width:0}
+.who{min-width:0;flex:1}
+.row1 .tick+.who{margin-left:2px}
 .prov{font-weight:600;font-size:15.5px;overflow-wrap:anywhere}
 .meta{color:var(--muted);font-size:13px;margin-top:2px}
 .amt{font-family:var(--f-num);font-weight:600;font-size:16px;white-space:nowrap}
@@ -106,6 +107,18 @@ input.num{font-family:var(--f-num)}
 .sumbar .chev{color:var(--muted);font-size:13px;white-space:nowrap}
 .summary-wrap{display:flex;flex-direction:column;gap:10px}
 .sub-actions{display:flex;gap:14px;flex-wrap:wrap;margin-top:-4px}
+.next{font-size:13.5px;font-weight:600}
+.next.s-einreichen{color:var(--warn)} .next.s-warten{color:var(--wait)} .next.s-ueberweisen{color:var(--accent)}
+.due{font-size:12.5px;color:var(--muted)} .due.warn{color:var(--warn);font-weight:600} .due.bad{color:var(--bad);font-weight:600}
+.listtools{justify-content:flex-end}
+.card.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.tick{flex:none;width:22px;height:22px;border-radius:6px;border:2px solid var(--accent);display:grid;place-items:center;color:var(--accent);font-weight:700;font-size:14px;margin-top:2px}
+.selbar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px;
+  padding:12px max(16px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.selinfo{font-size:13.5px;color:var(--muted)}
+.paygrid{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px 10px;align-items:center;font-size:14px}
+.paygrid .k{color:var(--muted);font-size:12.5px}
+.paygrid .v{overflow-wrap:anywhere;font-family:var(--f-num)}
 .inline{display:flex;gap:8px;align-items:end}
 .inline label{flex:1}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}}
@@ -125,6 +138,7 @@ input.num{font-family:var(--f-num)}
   <section class="list" id="list" aria-live="polite"><div class="empty">Rechnungen werden geladen …</div></section>
 </div>
 <button class="fab" id="btnAdd" type="button">+ Rechnung</button>
+<div class="selbar" id="selBar" hidden></div>
 <input type="file" id="pick" accept="image/*,application/pdf" hidden>
 <input type="file" id="pickBackup" accept="application/json,.json" hidden>
 <div id="sheetHost"></div>
@@ -162,10 +176,10 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const DEFAULT_SETTINGS={
   people:[{name:"Olgun",group:"A"},{name:"Pinar",group:"E"},{name:"Ikra",group:"K"},{name:"Hamza",group:"K"}],
   rates:{A:{pkv:0.3,bh:0.7},E:{pkv:0.3,bh:0.7},K:{pkv:0.2,bh:0.8}},
-  minBeihilfe:200,payDays:30,lastBackup:null
+  minBeihilfe:200,payDays:30,warnDays:7,lastBackup:null
 };
 const GROUPS={A:"Antragsteller",E:"Ehepartner",K:"Kind"};
-const S={inv:[],deleted:{},settings:structuredClone(DEFAULT_SETTINGS),loaded:false,filter:"offen",person:"alle",edit:null};
+const S={inv:[],deleted:{},settings:structuredClone(DEFAULT_SETTINGS),loaded:false,filter:"einreichen",person:"alle",edit:null,select:null};
 
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -191,21 +205,46 @@ function calc(inv){
   const pkv=side(inv,"pkv"),bh=side(inv,"bh");
   const unpaid=open>0.004;
   const age=inv.receivedDate?days(inv.receivedDate,today()):0;
-  const overdue=unpaid&&age>(+S.settings.payDays||30);
+  const due=dueDate(inv);
+  const daysLeft=due?days(today(),due):null;
+  const overdue=unpaid&&daysLeft!==null&&daysLeft<0;
+  const dueSoon=unpaid&&daysLeft!==null&&daysLeft>=0&&daysLeft<=(+S.settings.warnDays||7);
   const cut=(pkv.diff>0.004?pkv.diff:0)+(bh.diff>0.004?bh.diff:0);
   const todo=pkv.state==="todo"||bh.state==="todo";
   const wait=pkv.state==="wait"||bh.state==="wait";
-  return {amount,paid,open,unpaid,overdue,age,pkv,bh,cut,todo,wait,done:!unpaid&&!todo&&!wait,check:!!inv.check||cut>0.004};
+  const step=todo?"einreichen":wait?"warten":unpaid?"ueberweisen":"erledigt";
+  return {amount,paid,open,unpaid,overdue,dueSoon,due,daysLeft,age,pkv,bh,cut,todo,wait,step,done:step==="erledigt",check:!!inv.check||cut>0.004};
 }
+// Fälligkeit: eigenes Datum von der Rechnung, sonst Eingang + Zahlungsfrist
+function dueDate(inv){
+  if(inv.dueDate)return inv.dueDate;
+  const base=inv.receivedDate||inv.invoiceDate;if(!base)return null;
+  const d=new Date(base+"T12:00:00");d.setDate(d.getDate()+(+S.settings.payDays||30));
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+// Schritte wie im echten Ablauf: einreichen -> auf Erstattung warten -> überweisen -> erledigt
 const FILTERS=[
-  {id:"offen",label:"Offen",test:c=>!c.done},
-  {id:"zahlen",label:"Zu bezahlen",test:c=>c.unpaid},
-  {id:"einreichen",label:"Einreichen",test:c=>c.todo},
-  {id:"warten",label:"Warte auf Erstattung",test:c=>c.wait},
+  {id:"einreichen",label:"1 Einreichen",test:c=>c.step==="einreichen"},
+  {id:"warten",label:"2 Warten",test:c=>c.step==="warten"},
+  {id:"ueberweisen",label:"3 Überweisen",test:c=>c.step==="ueberweisen"},
+  {id:"erledigt",label:"Erledigt",test:c=>c.step==="erledigt"},
   {id:"pruefen",label:"Prüfen",test:c=>c.check},
-  {id:"erledigt",label:"Erledigt",test:c=>c.done},
-  {id:"alle",label:"Alle",test:()=>true}
+  {id:"alle",label:"Alle",test:()=>true},
+  {id:"zahlen",label:"Unbezahlt",test:c=>c.unpaid,hidden:true},
+  {id:"faellig",label:"Fällig",test:c=>c.dueSoon||c.overdue,hidden:true}
 ];
+function nextStepText(i,c){
+  if(c.step==="einreichen"){const w=[c.pkv.state==="todo"&&"PKV",c.bh.state==="todo"&&"Beihilfe"].filter(Boolean);return `Einreichen bei ${w.join(" und ")}`}
+  if(c.step==="warten"){const w=[c.pkv.state==="wait"&&`PKV ${eur(c.pkv.expected)}`,c.bh.state==="wait"&&`Beihilfe ${eur(c.bh.expected)}`].filter(Boolean);return `Warten auf ${w.join(" und ")}`}
+  if(c.step==="ueberweisen")return `Jetzt ${eur(c.open)} überweisen`;
+  return "";
+}
+function dueText(c){
+  if(!c.unpaid||!c.due)return "";
+  if(c.overdue)return `<span class="due bad">Fällig seit ${dfmt(c.due)} (${-c.daysLeft} Tg. überfällig)</span>`;
+  if(c.dueSoon)return `<span class="due warn">Fällig am ${dfmt(c.due)} (${c.daysLeft===0?"heute":"in "+c.daysLeft+" Tg."})</span>`;
+  return `<span class="due">Fällig am ${dfmt(c.due)}</span>`;
+}
 
 /* ================= Liste ================= */
 function render(){
@@ -213,26 +252,56 @@ function render(){
   const mine=S.person==="alle"?rows:rows.filter(r=>r.i.patient===S.person);
   renderSummary(mine);renderBanner();
   const f=FILTERS.find(x=>x.id===S.filter)||FILTERS[0];
-  $("#filters").innerHTML=FILTERS.map(x=>`<button type="button" class="chip" data-f="${x.id}" aria-pressed="${x.id===S.filter}">${esc(x.label)}<span class="c">${mine.filter(r=>x.test(r.c)).length}</span></button>`).join("");
+  $("#filters").innerHTML=FILTERS.filter(x=>!x.hidden||x.id===S.filter).map(x=>`<button type="button" class="chip" data-f="${x.id}" aria-pressed="${x.id===S.filter}">${esc(x.label)}<span class="c">${mine.filter(r=>x.test(r.c)).length}</span></button>`).join("");
+  if(S.select&&f.id!=="einreichen")S.select=null;
+  renderSelectBar();
   const names=["alle",...S.settings.people.map(p=>p.name)];
   $("#people").innerHTML=names.map(n=>`<button type="button" class="chip" data-p="${esc(n)}" aria-pressed="${n===S.person}">${n==="alle"?"Alle Personen":esc(n)}</button>`).join("");
   const L=$("#list");
   if(!S.loaded){L.innerHTML=`<div class="empty">Rechnungen werden geladen …</div>`;return}
   if(!S.inv.length){L.innerHTML=`<div class="empty">Noch keine Rechnungen.<br>Tippe auf <b>+ Rechnung</b> oder spiele unter <b>Einstellungen</b> deine Startdatei ein.</div>`;return}
   const list=mine.filter(r=>f.test(r.c)).sort((a,b)=>(b.i.invoiceDate||"").localeCompare(a.i.invoiceDate||""));
-  if(!list.length){L.innerHTML=`<div class="empty">Keine Rechnungen in dieser Ansicht.</div>`;return}
-  let html="",lastYear=null;
+  const emptyTxt={einreichen:"Nichts einzureichen.",warten:"Keine offenen Erstattungen.",ueberweisen:"Nichts zu überweisen.",erledigt:"Noch nichts erledigt."}[f.id]||"Keine Rechnungen in dieser Ansicht.";
+  let html="";
+  if(f.id==="einreichen"&&list.length>1)html+=`<div class="btnrow listtools">${S.select
+    ?`<button type="button" class="btn" data-act="selall">Alle auswählen</button><button type="button" class="btn" data-act="selnone">Auswahl beenden</button>`
+    :`<button type="button" class="btn" data-act="selstart">Mehrere auswählen</button>`}</div>`;
+  if(!list.length){L.innerHTML=`<div class="empty">${emptyTxt}</div>`;return}
+  let lastYear=null;
   for(const {i,c} of list){
     const y=(i.invoiceDate||"").slice(0,4);
     if(y!==lastYear){html+=`<div class="year">${esc(y||"Ohne Datum")}</div>`;lastYear=y}
-    html+=`<button type="button" class="card" data-id="${esc(i.id)}">
-      <div class="row1"><div class="who"><div class="prov">${esc(i.provider||"Ohne Rechnungssteller")}</div>
+    const sel=S.select?S.select.has(i.id):null;
+    const nx=nextStepText(i,c);
+    html+=`<button type="button" class="card${sel?" selected":""}" data-id="${esc(i.id)}" ${S.select?`aria-pressed="${!!sel}"`:""}>
+      <div class="row1">${S.select?`<span class="tick" aria-hidden="true">${sel?"✓":""}</span>`:""}<div class="who"><div class="prov">${esc(i.provider||"Ohne Rechnungssteller")}</div>
       <div class="meta"><span class="pchip">${esc(i.patient||"?")}</span>${dfmt(i.invoiceDate)}${i.reason?" · "+esc(i.reason):""}</div></div>
       <div class="amt">${eur(c.amount)}</div></div>
+      ${nx?`<div class="next s-${c.step}">${esc(nx)}</div>`:""}
+      ${dueText(c)}
       <div class="stamps">${stampPay(c)}${stampSide("PKV",c.pkv)}${stampSide("Beihilfe",c.bh)}${i.check?`<span class="stamp s-todo">Prüfen</span>`:""}</div>
     </button>`;
   }
   L.innerHTML=html;
+}
+/* ---- Mehrere auf einmal als eingereicht markieren ---- */
+function renderSelectBar(){
+  const bar=$("#selBar");
+  if(!S.select){bar.hidden=true;$("#btnAdd").hidden=false;return}
+  const n=S.select.size;bar.hidden=false;$("#btnAdd").hidden=true;
+  bar.innerHTML=`<div class="selinfo">${n} ausgewählt · heute eingereicht bei:</div>
+    <div class="btnrow"><button type="button" class="btn" data-act="bulk" data-k="pkv" ${n?"":"disabled"}>PKV</button>
+    <button type="button" class="btn" data-act="bulk" data-k="bh" ${n?"":"disabled"}>Beihilfe</button>
+    <button type="button" class="btn primary" data-act="bulk" data-k="both" ${n?"":"disabled"}>Beiden</button></div>`;
+}
+async function bulkSubmit(which){
+  const keys=which==="both"?["pkv","bh"]:[which];let n=0;
+  for(const id of S.select){
+    const inv=structuredClone(S.inv.find(x=>x.id===id));if(!inv)continue;let ch=false;
+    for(const k of keys){const s=side(inv,k);if(s.state==="todo"){inv[k].submitted=today();ch=true}}
+    if(ch){await saveInvoice(inv);n++}
+  }
+  S.select=null;render();toast(`${n} Rechnung${n===1?"":"en"} als eingereicht markiert`);
 }
 function stampPay(c){
   if(!c.unpaid)return c.open<-0.004?`<span class="stamp s-bad">Überzahlt <b>${eur(-c.open)}</b></span>`:`<span class="stamp s-ok">Bezahlt</span>`;
@@ -284,9 +353,19 @@ function renderBanner(){
 /* ================= Ereignisse auf der Hauptseite ================= */
 document.addEventListener("click",e=>{
   if(e.target.closest(".sheet"))return;
-  const f=e.target.closest("[data-f]");if(f){S.filter=f.dataset.f;render();return}
+  const f=e.target.closest("[data-f]");if(f){S.filter=f.dataset.f;S.select=null;render();return}
   const p=e.target.closest("[data-p]");if(p){S.person=p.dataset.p;render();return}
-  const c=e.target.closest(".card[data-id]");if(c){const inv=S.inv.find(x=>x.id===c.dataset.id);if(inv)openView(inv.id);return}
+  const a=e.target.closest("[data-act]");
+  if(a){const act=a.dataset.act;
+    if(act==="selstart"){S.select=new Set();render();return}
+    if(act==="selnone"){S.select=null;render();return}
+    if(act==="selall"){S.select=new Set([...document.querySelectorAll(".card[data-id]")].map(x=>x.dataset.id));render();return}
+    if(act==="bulk"){bulkSubmit(a.dataset.k);return}
+  }
+  const c=e.target.closest(".card[data-id]");
+  if(c){const id=c.dataset.id;
+    if(S.select){S.select.has(id)?S.select.delete(id):S.select.add(id);render();return}
+    if(S.inv.some(x=>x.id===id))openView(id);return}
   if(e.target.closest("[data-act='backup']"))makeBackup();
 });
 $("#btnAdd").addEventListener("click",()=>pickFile(f=>openNew(f)));
@@ -360,6 +439,25 @@ function sideLine(key,title,inv){
     :(c.state!=="todo"?`<div class="sub-actions"><button type="button" class="btn link" data-act="proofadd" data-k="${key}">+ Leistungsnachweis</button></div>`:""));
   return `<div class="line"><div><div class="t">${title}</div><div class="s">${info}</div></div>${S.edit.ask===key?"":btn}</div>${ask}${proof}`;
 }
+/* ---- Überweisen: Daten zum Kopieren und GiroCode ---- */
+function payData(inv,c){
+  const purpose=(inv.invoiceNo?`Rechnung ${inv.invoiceNo}`:`Rechnung vom ${dfmt(inv.invoiceDate)}`)+` ${inv.patient||""}`.trimEnd();
+  return {name:(inv.provider||"").slice(0,70),iban:(inv.iban||"").replace(/\s+/g,"").toUpperCase(),amount:r2(c.open),purpose:purpose.slice(0,140)};
+}
+function paySection(inv,c){
+  const p=payData(inv,c);
+  const row=(k,label,val)=>`<span class="k">${label}</span><span class="v">${esc(val)||"–"}</span>${val?`<button type="button" class="btn" data-act="copy" data-k="${k}">Kopieren</button>`:"<span></span>"}`;
+  return `<div class="sec"><h3>Überweisen</h3>
+    <div class="paygrid">
+      ${row("name","Empfänger",p.name)}
+      ${row("iban","IBAN",p.iban)}
+      ${row("amount","Betrag",p.amount.toFixed(2).replace(".",","))}
+      ${row("purpose","Zweck",p.purpose)}
+    </div>
+    ${p.iban?"":`<p class="status" style="margin:0">Die IBAN fehlt. Trag sie unter „Details anzeigen und bearbeiten“ ein, dann wird sie für diesen Rechnungssteller künftig vorgeschlagen.</p>`}
+    <div class="btnrow"><button type="button" class="btn primary" data-act="paid">Heute bezahlt</button></div>
+  </div>`;
+}
 function drawView(thumb){
   if(thumb!==undefined)S.edit.thumb=thumb;
   const inv=S.inv.find(x=>x.id===S.edit.id);const c=calc(inv);
@@ -379,9 +477,11 @@ function drawView(thumb){
     <div class="sec">
       ${sideLine("pkv","PKV",inv)}
       ${sideLine("bh","Beihilfe",inv)}
-      <div class="line"><div><div class="t">Zahlung</div><div class="s">${payInfo}</div></div>
-        ${c.unpaid?`<div class="btnrow">${inv.iban?`<button type="button" class="btn" data-act="iban">IBAN kopieren</button>`:""}<button type="button" class="btn primary" data-act="paid">Heute bezahlt</button></div>`:""}</div>
+      <div class="line"><div><div class="t">Zahlung</div><div class="s">${payInfo}</div>${dueText(c)}</div>
+        ${c.unpaid&&c.step!=="ueberweisen"?`<button type="button" class="btn" data-act="paysec">Überweisen</button>`:""}</div>
     </div>
+    ${c.unpaid&&(c.step==="ueberweisen"||S.edit.showPay)?paySection(inv,c):""}
+    ${c.step==="einreichen"&&inv.docName&&inv.docDriveId?`<div class="sec"><h3>Zum Einreichen</h3><p class="status" style="margin:0">In der Beihilfe- und AXA-App findest du die Rechnung in Google Drive unter <b>Arztrechnungen › Zum Einreichen</b>:</p><div class="v num" style="overflow-wrap:anywhere">${esc(inv.docName)}</div></div>`:""}
     <div class="sec">${S.edit.thumb||""}<div class="btnrow">${docBtns}</div></div>
     <div class="btnrow" style="margin-top:14px"><button type="button" class="btn" data-act="edit">Details anzeigen und bearbeiten</button></div>
   `,`<button type="button" class="btn" data-act="close">Schließen</button>`);
@@ -399,6 +499,9 @@ async function viewClick(e){
       S.edit.ask=null;await saveInvoice(inv);toast("Erstattung eingetragen");return drawView()}
     case "paid":inv.payment={date:today(),amount:r2(inv.amount)};await saveInvoice(inv);toast("Als bezahlt markiert");return drawView();
     case "iban":try{await navigator.clipboard.writeText(inv.iban);toast("IBAN kopiert")}catch{toast(inv.iban)}return;
+    case "paysec":S.edit.showPay=true;return drawView();
+    case "copy":{const p=payData(inv,calc(inv));let v=p[k];if(k==="amount")v=p.amount.toFixed(2).replace(".",",");
+      try{await navigator.clipboard.writeText(String(v));toast("Kopiert: "+v)}catch{toast(String(v))}return}
     case "clearcheck":inv.check="";await saveInvoice(inv);return drawView();
     case "opendoc":{const r=await fileUrl(inv.docFileId);if(r){S.edit.urls.push(r.url);window.open(r.url,"_blank")}return}
     case "share":return shareFile(inv.docFileId,inv.provider);
@@ -467,6 +570,7 @@ function drawEditor(){
       ${sideForm("pkv","PKV")}
       ${sideForm("bh","Beihilfe")}
       <div class="sec"><h3>Zahlung</h3><div class="grid2">
+        ${field("Fällig am (leer = automatisch)","dueDate",inv.dueDate,"date","full")}
         ${field("Bezahlt am","pay_date",inv.payment?.date,"date")}
         ${field("Bezahlt (€)","pay_amount",inv.payment?.amount??"","number")}
       </div></div>
@@ -516,7 +620,7 @@ function readForm(){
   const nn=id=>{const x=v(id).trim();if(x==="")return "";return r2(x.includes(",")?x.replace(/\./g,"").replace(",","."):x)};
   inv.patient=v("patient");inv.group=rateFor(inv.patient).group;
   inv.amount=nn("amount");
-  for(const k of ["invoiceDate","receivedDate","provider","invoiceNo","reason","iban","note"])inv[k]=v(k).trim();
+  for(const k of ["invoiceDate","receivedDate","provider","invoiceNo","reason","iban","note","dueDate"])inv[k]=v(k).trim();
   inv.iban=inv.iban.replace(/\s+/g,"").toUpperCase();
   for(const key of ["pkv","bh"]){const s=inv[key]=inv[key]||{};
     s.rate=r2((+nn(key+"_rate")||0)/100);s.deduction=nn(key+"_deduction")||0;
@@ -631,7 +735,8 @@ function openSettings(){
     <div class="sec"><h3>Personen</h3>${rows}<div class="btnrow"><button type="button" class="btn" data-act="addp">Person hinzufügen</button></div></div>
     <div class="sec"><h3>Regeln</h3><div class="grid2">
       ${field("Mindestsumme Beihilfe (€)","minB",s.minBeihilfe,"number")}
-      ${field("Zahlungsfrist (Tage)","payD",s.payDays,"number")}</div></div>
+      ${field("Zahlungsfrist (Tage)","payD",s.payDays,"number")}
+      ${field("Warnen vor Fälligkeit (Tage)","warnD",s.warnDays??7,"number")}</div></div>
   `,`<button type="button" class="btn" data-act="close">Abbrechen</button><button type="button" class="btn primary" data-act="save">Speichern</button>`);
   updateChip();
   $("#scrim").addEventListener("click",async e=>{
@@ -653,7 +758,7 @@ function openSettings(){
       case "save":
         S.settings={...S.settings,people:collectPeople().filter(p=>p.name),
           rates:Object.fromEntries(Object.keys(GROUPS).map(g=>[g,{pkv:r2(n("rp"+g)/100),bh:r2(n("rb"+g)/100)}])),
-          minBeihilfe:n("minB"),payDays:n("payD")||30};
+          minBeihilfe:n("minB"),payDays:n("payD")||30,warnDays:n("warnD")};
         await saveSettings();toast("Einstellungen gespeichert");closeSheet();render();
     }
   });
@@ -690,7 +795,7 @@ const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.file";
 const API="https://www.googleapis.com/drive/v3/files",UPLOAD="https://www.googleapis.com/upload/drive/v3/files";
 const DATA_NAME="arztrechnungen-daten.json",FOLDER_NAME="Arztrechnungen";
 const G={token:null,exp:0,client:null,busy:false,dirty:false,last:null,err:null,timer:null};
-const LOCAL_KEYS=["driveLinked","lastBackup","driveFolderId","driveBelegeId","driveDataId"];
+const LOCAL_KEYS=["driveLinked","lastBackup","driveFolderId","driveBelegeId","driveDataId","driveAppId","driveInboxId","driveFolderMap"];
 try{const t=JSON.parse(localStorage.getItem("gtok")||"null");if(t&&t.exp>Date.now()){G.token=t.token;G.exp=t.exp}}catch{}
 const tokenValid=()=>!!G.token&&Date.now()<G.exp-60000;
 // Anmeldung per Weiterleitung: funktioniert auch in der installierten App (Anmeldefenster als Popup kommt dort nicht zurück)
@@ -734,15 +839,76 @@ async function findOrCreateFolder(name,parent){
   const c=await (await gfetch(`${API}?fields=id`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,mimeType:"application/vnd.google-apps.folder",...(parent?{parents:[parent]}:{})})})).json();
   return c.id;
 }
+/* Ordnung in Drive:
+   Arztrechnungen/Zum Einreichen          neue Rechnungen, bis PKV und Beihilfe eingereicht sind
+   Arztrechnungen/2026/06 Juni/Rechnungen
+   Arztrechnungen/2026/06 Juni/Leistungsnachweise
+   Arztrechnungen/_App-Daten/arztrechnungen-daten.json */
+const MONTHS=["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+async function findFile(name,parent){
+  const r=await (await gfetch(`${API}?q=${q(`name='${name}' and '${parent}' in parents and trashed=false`)}&fields=files(id)`)).json();
+  return r.files?.[0]?.id||null;
+}
+async function moveFile(id,target,name){
+  const meta=await (await gfetch(`${API}/${id}?fields=parents`)).json();
+  const remove=(meta.parents||[]).filter(p=>p!==target).join(",");
+  let url=`${API}/${id}?fields=id,webViewLink&addParents=${target}`;if(remove)url+=`&removeParents=${remove}`;
+  return (await gfetch(url,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(name?{name}:{})})).json();
+}
 async function ensureFolders(){
   const s=S.settings;let changed=false;
   if(!s.driveFolderId){s.driveFolderId=await findOrCreateFolder(FOLDER_NAME);changed=true}
-  if(!s.driveBelegeId){s.driveBelegeId=await findOrCreateFolder("Belege",s.driveFolderId);changed=true}
+  if(!s.driveAppId){s.driveAppId=await findOrCreateFolder("_App-Daten",s.driveFolderId);changed=true}
+  if(!s.driveInboxId){s.driveInboxId=await findOrCreateFolder("Zum Einreichen",s.driveFolderId);changed=true}
   if(!s.driveDataId){
-    const r=await (await gfetch(`${API}?q=${q(`name='${DATA_NAME}' and '${s.driveFolderId}' in parents and trashed=false`)}&fields=files(id)`)).json();
-    if(r.files?.length){s.driveDataId=r.files[0].id;changed=true}
+    let id=await findFile(DATA_NAME,s.driveAppId);
+    if(!id){const old=await findFile(DATA_NAME,s.driveFolderId);if(old){await moveFile(old,s.driveAppId);id=old;glog("Datendatei nach _App-Daten verschoben")}}
+    if(id){s.driveDataId=id;changed=true}
   }
   if(changed)await dbPut("meta",{key:"settings",...s});
+}
+async function ensurePath(parts){
+  const s=S.settings;s.driveFolderMap=s.driveFolderMap||{};
+  let parent=s.driveFolderId,key="";
+  for(const p of parts){key+="/"+p;
+    if(!s.driveFolderMap[key]){s.driveFolderMap[key]=await findOrCreateFolder(p,parent);await dbPut("meta",{key:"settings",...s})}
+    parent=s.driveFolderMap[key];}
+  return parent;
+}
+const cleanName=s=>String(s||"").replace(/[\\/:*?"<>|#%]+/g," ").replace(/\s+/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,"").slice(0,60);
+function ymParts(inv){const d=inv.invoiceDate||today();const m=+d.slice(5,7)||1;return [d.slice(0,4),String(m).padStart(2,"0")+" "+MONTHS[m-1]]}
+function wantedName(inv,k){
+  const base=`${inv.invoiceDate||today()}_${cleanName(inv.patient)}_${cleanName(inv.provider||"Rechnung")}`;
+  return k==="doc"?`${base}_${r2(inv.amount).toFixed(2).replace(".",",")}.pdf`:`${base}_${k==="pkv"?"PKV":"Beihilfe"}.pdf`;
+}
+async function wantedFolder(inv,k){
+  if(k==="doc"&&calc(inv).todo)return S.settings.driveInboxId;
+  return ensurePath([...ymParts(inv),k==="doc"?"Rechnungen":"Leistungsnachweise"]);
+}
+/* Foto -> PDF (eine A4-Seite), damit Beihilfe- und AXA-App die Datei auswählen können */
+async function toPdf(blob){
+  if(blob.type==="application/pdf")return blob;
+  const bmp=await createImageBitmap(blob);const sc=Math.min(1,2000/Math.max(bmp.width,bmp.height));
+  const w=Math.round(bmp.width*sc),h=Math.round(bmp.height*sc);
+  const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,w,h);ctx.drawImage(bmp,0,0,w,h);
+  const jpg=new Uint8Array(await (await new Promise(r=>cv.toBlob(r,"image/jpeg",0.85))).arrayBuffer());
+  return jpegToPdf(jpg,w,h);
+}
+function jpegToPdf(jpg,w,h){
+  const enc=new TextEncoder(),parts=[],off=[];let pos=0;
+  const push=x=>{const b=typeof x==="string"?enc.encode(x):x;parts.push(b);pos+=b.length};
+  const pw=595.28,ph=841.89,s=Math.min(pw/w,ph/h),dw=+(w*s).toFixed(2),dh=+(h*s).toFixed(2),x=+((pw-dw)/2).toFixed(2),y=+((ph-dh)/2).toFixed(2);
+  const content=`q ${dw} 0 0 ${dh} ${x} ${y} cm /Im0 Do Q`;
+  push(new Uint8Array([37,80,68,70,45,49,46,52,10,37,226,227,207,211,10]));
+  const obj=(n,body)=>{off[n]=pos;push(`${n} 0 obj\n${body}\nendobj\n`)};
+  obj(1,"<< /Type /Catalog /Pages 2 0 R >>");
+  obj(2,"<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+  obj(3,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
+  off[4]=pos;push(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`);push(jpg);push("\nendstream\nendobj\n");
+  obj(5,`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  const xref=pos;let t="xref\n0 6\n0000000000 65535 f \n";for(let i=1;i<=5;i++)t+=String(off[i]).padStart(10,"0")+" 00000 n \n";
+  push(t+`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts,{type:"application/pdf"});
 }
 async function uploadMultipart(meta,blob,fileId){
   const b="b"+uid();
@@ -753,7 +919,8 @@ async function uploadMultipart(meta,blob,fileId){
 // Anhänge: Rechnung + Leistungsnachweis PKV/Beihilfe
 const SLOTS=["doc","pkv","bh"];
 function slot(inv,k){const o=k==="doc"?inv:(inv[k]=inv[k]||{});const p=k==="doc"?"doc":"proof";
-  return {get fileId(){return o[p+"FileId"]},set fileId(v){o[p+"FileId"]=v},get driveId(){return o[p+"DriveId"]},set driveId(v){o[p+"DriveId"]=v},get url(){return o[p+"Url"]},set url(v){o[p+"Url"]=v}}}
+  const prop=n=>({get(){return o[p+n]},set(v){o[p+n]=v},enumerable:true});
+  return Object.defineProperties({},{fileId:prop("FileId"),driveId:prop("DriveId"),url:prop("Url"),folder:prop("Folder"),name:prop("Name")})}
 function stripLocal(inv){const c=structuredClone(inv);delete c.docFileId;if(c.pkv)delete c.pkv.proofFileId;if(c.bh)delete c.bh.proofFileId;return c}
 function scheduleSync(){if(!S.settings.driveLinked)return;G.dirty=true;updateChip();clearTimeout(G.timer);G.timer=setTimeout(syncNow,1500)}
 async function syncNow(){
@@ -781,12 +948,24 @@ async function syncNow(){
       }
     }
     for(const [id,t] of Object.entries(S.deleted)){const i=map.get(id);if(i&&t>=(i.updatedAt||""))map.delete(id)}
-    // Neue Belege hochladen
+    // Belege als PDF hochladen bzw. in den richtigen Ordner verschieben und benennen
     for(const inv of map.values()){
       for(const k of SLOTS){const s=slot(inv,k);
-        if(s.fileId&&!s.driveId){const f=await dbGet("files",s.fileId);if(!f)continue;
-          const up=await uploadMultipart({name:f.name||"beleg",parents:[S.settings.driveBelegeId]},f.blob);
-          s.driveId=up.id;s.url=up.webViewLink||`https://drive.google.com/file/d/${up.id}/view`;inv.updatedAt=new Date().toISOString()}}
+        if(k!=="doc"&&!(+inv[k]?.rate>0)&&!s.fileId&&!s.driveId)continue;
+        if(s.fileId&&!s.driveId){
+          const f=await dbGet("files",s.fileId);if(!f)continue;
+          const target=await wantedFolder(inv,k),name=wantedName(inv,k);
+          const up=await uploadMultipart({name,parents:[target]},await toPdf(f.blob));
+          s.driveId=up.id;s.url=up.webViewLink||`https://drive.google.com/file/d/${up.id}/view`;s.folder=target;s.name=name;
+          inv.updatedAt=new Date().toISOString();glog("Hochgeladen: "+name);
+        }else if(s.driveId){
+          const target=await wantedFolder(inv,k),name=wantedName(inv,k);
+          if(s.folder!==target||s.name!==name){
+            try{await moveFile(s.driveId,target,name);s.folder=target;s.name=name;inv.updatedAt=new Date().toISOString()}
+            catch(e){if(e.code==="auth")throw e;glog("Verschieben nicht möglich: "+(s.name||s.driveId))}
+          }
+        }
+      }
     }
     // Einstellungen: neuere gewinnt
     if(remote?.settings&&(remote.settingsUpdatedAt||"")>(S.settings.updatedAt||"")){
@@ -804,7 +983,7 @@ async function syncNow(){
     const data={app:"arztrechnungen",version:2,updatedAt:new Date().toISOString(),settings:shared,settingsUpdatedAt:S.settings.updatedAt||null,
       invoices:S.inv.map(stripLocal),deleted:S.deleted};
     const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
-    const up=await uploadMultipart(S.settings.driveDataId?{}:{name:DATA_NAME,parents:[S.settings.driveFolderId]},blob,S.settings.driveDataId);
+    const up=await uploadMultipart(S.settings.driveDataId?{}:{name:DATA_NAME,parents:[S.settings.driveAppId]},blob,S.settings.driveDataId);
     if(!S.settings.driveDataId)S.settings.driveDataId=up.id;
     await dbPut("meta",{key:"settings",...S.settings});
     G.last=new Date();glog("Abgleich erfolgreich ("+S.inv.length+" Rechnungen)");
@@ -846,7 +1025,17 @@ async function driveBlob(driveId){if(!tokenValid()||!driveId)return null;try{ret
     if(AUTH.silent&&/interaction_required|login_required|consent_required/.test(AUTH.error))return connectDrive(false);
     toast(AUTH.error==="access_denied"?"Anmeldung abgebrochen":"Anmeldung bei Google fehlgeschlagen ("+AUTH.error+")");
   }
+  if(AUTH?.token){toast("Mit Google Drive verbunden");glog("Verbunden in "+(matchMedia("(display-mode: standalone)").matches?"App":"Browser"))}
   if(S.settings.driveLinked&&tokenValid())syncNow();
+  // Falls die Google-Anmeldung in einem anderen Fenster zurückkam: beim Zurückwechseln Zugang übernehmen
+  document.addEventListener("visibilitychange",async()=>{
+    if(document.visibilityState!=="visible")return;
+    try{const t=JSON.parse(localStorage.getItem("gtok")||"null");if(t&&t.exp>Date.now()&&t.token!==G.token){G.token=t.token;G.exp=t.exp;glog("Zugang aus anderem Fenster übernommen")}}catch{}
+    try{const st=await dbGet("meta","settings");if(st?.driveLinked&&!S.settings.driveLinked){const {key,...rest}=st;S.settings={...DEFAULT_SETTINGS,...rest}}}catch{}
+    if(tokenValid()&&!S.settings.driveLinked){S.settings.driveLinked=true;await dbPut("meta",{key:"settings",...S.settings})}
+    updateChip();render();
+    if(S.settings.driveLinked&&tokenValid()&&(G.dirty||!G.last||Date.now()-G.last>60000))syncNow();
+  });
   try{await navigator.storage?.persist?.()}catch{}
   if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 })();
