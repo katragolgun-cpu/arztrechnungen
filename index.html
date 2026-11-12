@@ -579,7 +579,7 @@ function drawEditor(){
   `,`<button type="button" class="btn" data-act="cancel">Abbrechen</button><button type="button" class="btn primary" data-act="save" id="btnSave">Speichern</button>`);
   const sc=$("#scrim");
   sc.addEventListener("input",refreshCalc);
-  $("#patient").addEventListener("change",()=>{readForm();const r=rateFor(S.edit.inv.patient);
+  $("#patient").addEventListener("change",()=>{S.edit.patientLocked=true;readForm();const r=rateFor(S.edit.inv.patient);
     $("#pkv_rate").value=Math.round(r.pkv*100);$("#bh_rate").value=Math.round(r.bh*100);refreshCalc()});
   $("#btnMore").addEventListener("click",e=>{const m=$("#more");m.hidden=!m.hidden;e.target.textContent=m.hidden?"Weitere Angaben anzeigen":"Weitere Angaben ausblenden";e.target.setAttribute("aria-expanded",String(!m.hidden))});
   $("#provider").addEventListener("change",suggestFromProvider);
@@ -596,7 +596,7 @@ function suggestFromProvider(){
   const ib=prev.find(x=>x.iban)?.iban;if(ib&&!$("#iban").value){$("#iban").value=ib;filled.push("IBAN")}
   const rs=prev.find(x=>x.reason)?.reason;if(rs&&!$("#reason").value){$("#reason").value=rs;filled.push("Grund")}
   const pats=[...new Set(prev.map(x=>x.patient).filter(Boolean))];
-  if(!inv.id&&pats.length===1&&S.settings.people.some(p=>p.name===pats[0])&&$("#patient").value!==pats[0]){
+  if(!inv.id&&!S.edit.patientLocked&&pats.length===1&&S.settings.people.some(p=>p.name===pats[0])&&$("#patient").value!==pats[0]){
     $("#patient").value=pats[0];const r=rateFor(pats[0]);$("#pkv_rate").value=Math.round(r.pkv*100);$("#bh_rate").value=Math.round(r.bh*100);filled.push("Person")}
   readForm();refreshCalc();showDup();
   if(filled.length)setStatus(`Von der letzten Rechnung übernommen: ${filled.join(", ")}.`);
@@ -673,7 +673,7 @@ async function ocr(file){
     if(got.invoiceNo&&!inv.invoiceNo){inv.invoiceNo=got.invoiceNo;filled.push("Rechnungsnummer")}
     if(got.iban&&!inv.iban){inv.iban=got.iban;filled.push("IBAN")}
     if(got.provider&&!inv.provider){inv.provider=got.provider;filled.push("Rechnungssteller")}
-    if(got.patient){inv.patient=got.patient;const r=rateFor(got.patient);inv.group=r.group;inv.pkv.rate=r.pkv;inv.bh.rate=r.bh;filled.push("Person")}
+    if(got.patient){S.edit.patientLocked=true;inv.patient=got.patient;const r=rateFor(got.patient);inv.group=r.group;inv.pkv.rate=r.pkv;inv.bh.rate=r.bh;filled.push("Person")}
     drawEditor();
     if(got.provider)suggestFromProvider();
     setStatus(filled.length?`Erkannt: ${filled.join(", ")}. Bitte prüfen.`:"Nichts sicher erkannt. Bitte Felder ausfüllen.");
@@ -749,11 +749,24 @@ function parseInvoiceText(text,people,providers){
   const low=t.toLowerCase();
   // Patient: zuerst eine Zeile mit "Patient", sonst ein anderer Name als der Empfänger (Antragsteller steht meist in der Anschrift)
   const has=(s,n)=>new RegExp("\\b"+n.toLowerCase()+"\\b").test(s.toLowerCase());
-  const pl=lines.find(l=>/patient|behandelt|leistungsempf/i.test(l)&&people.some(n=>has(l,n)));
+  const pl=lines.find(l=>/patient|behandelt|leistungsempf|^name\b/i.test(l)&&people.some(n=>has(l,n)));
   const found=people.filter(n=>has(low,n));
   const p=pl?people.find(n=>has(pl,n)):(found.find(n=>n!==people[0])||found[0]);
   if(p)out.patient=p;
-  const prov=providers.find(pr=>{const w=pr.toLowerCase().split(/\s+/).slice(0,2).join(" ");return w.length>3&&low.includes(w)});if(prov)out.provider=prov;
+  // Rechnungssteller: nur über unterscheidende Wörter erkennen (nicht über "Dr.", "med.", "GmbH" usw.)
+  const STOP=new Set(["dr","med","prof","dipl","gmbh","ggmbh","mbh","mvz","co","kg","ag","ug","und","u","der","die","das","fuer","für","praxis","gemeinschaftspraxis","zentrum","ohg","gbr","e","v"]);
+  const words=s=>s.toLowerCase().replace(/[^a-zäöüß0-9]+/g," ").split(" ").filter(w=>w.length>=4&&!STOP.has(w));
+  const textWords=new Set(words(t));
+  const hit=w=>textWords.has(w)||[...textWords].some(x=>x.length>=5&&(x.startsWith(w)||w.startsWith(x)));
+  let bestProv=null,bestScore=0;
+  for(const pr of providers){const ws=[...new Set(words(pr))];if(!ws.length)continue;
+    const n=ws.filter(hit).length;if(n<Math.min(2,ws.length))continue;
+    const score=n/ws.length+n*0.01;if(score>bestScore){bestScore=score;bestProv=pr}}
+  if(bestProv)out.provider=bestProv;
+  else{ // unbekannter Rechnungssteller: Briefkopf in den ersten Zeilen
+    const head=lines.slice(0,10).find(l=>/(gmbh|praxis|mvz|klinik|apotheke|labor|pvs|zahnarzt|dr\.\s*med)/i.test(l)&&!/herr|frau|str\.|straße|\d{5}/i.test(l));
+    if(head)out.provider=head.replace(/[•·|].*$/,"").trim().slice(0,60);
+  }
   return out;
 }
 
