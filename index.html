@@ -603,10 +603,10 @@ function openSettings(){
       case "close":return closeSheet();
       case "backup":return makeBackup();
       case "link":closeSheet();return connectDrive();
-      case "sync":closeSheet();return tokenValid()?syncNow():connectDrive();
+      case "sync":closeSheet();return tokenValid()?syncNow():connectDrive(true);
       case "unlink":
         if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Wirklich trennen? Nochmal tippen";return}
-        try{if(G.token&&window.google?.accounts?.oauth2)google.accounts.oauth2.revoke(G.token,()=>{})}catch{}
+        try{if(G.token)fetch("https://oauth2.googleapis.com/revoke?token="+encodeURIComponent(G.token),{method:"POST"}).catch(()=>{})}catch{}
         G.token=null;try{localStorage.removeItem("gtok")}catch{}
         for(const k of LOCAL_KEYS.filter(k=>k.startsWith("drive")))S.settings[k]=k==="driveLinked"?false:null;
         await dbPut("meta",{key:"settings",...S.settings});closeSheet();updateChip();render();toast("Drive getrennt. Die Daten in Drive bleiben erhalten.");return;
@@ -655,25 +655,28 @@ const G={token:null,exp:0,client:null,busy:false,dirty:false,last:null,err:null,
 const LOCAL_KEYS=["driveLinked","lastBackup","driveFolderId","driveBelegeId","driveDataId"];
 try{const t=JSON.parse(localStorage.getItem("gtok")||"null");if(t&&t.exp>Date.now()){G.token=t.token;G.exp=t.exp}}catch{}
 const tokenValid=()=>!!G.token&&Date.now()<G.exp-60000;
-function loadGis(){
-  if(window.google?.accounts?.oauth2)return Promise.resolve();
-  if(loadGis.p)return loadGis.p;
-  return loadGis.p=new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://accounts.google.com/gsi/client";s.async=true;s.onload=res;s.onerror=()=>{loadGis.p=null;rej(new Error("gis"))};document.head.appendChild(s)});
+// Anmeldung per Weiterleitung: funktioniert auch in der installierten App (Anmeldefenster als Popup kommt dort nicht zurück)
+const REDIRECT_URI=new URL("./",location.href).href;
+function connectDrive(silent){
+  const state=uid();
+  try{localStorage.setItem("gstate",JSON.stringify({state,silent:!!silent}))}catch{}
+  const p=new URLSearchParams({client_id:GOOGLE_CLIENT_ID,redirect_uri:REDIRECT_URI,response_type:"token",scope:DRIVE_SCOPE,
+    include_granted_scopes:"true",state});
+  if(silent)p.set("prompt","none");
+  location.href="https://accounts.google.com/o/oauth2/v2/auth?"+p.toString();
 }
-function connectDrive(){
-  // muss direkt aus einem Tipp heraus laufen, sonst blockiert der Browser das Anmeldefenster
-  if(!window.google?.accounts?.oauth2){loadGis().then(()=>toast("Bitte noch einmal tippen")).catch(()=>toast("Keine Verbindung zu Google"));return}
-  if(!G.client)G.client=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:DRIVE_SCOPE,callback:()=>{}});
-  G.client.callback=async r=>{
-    if(r.error){G.err="auth";updateChip();toast("Anmeldung abgebrochen");return}
-    G.token=r.access_token;G.exp=Date.now()+(+r.expires_in||3600)*1000;G.err=null;
-    try{localStorage.setItem("gtok",JSON.stringify({token:G.token,exp:G.exp}))}catch{}
-    if(!S.settings.driveLinked){S.settings.driveLinked=true;await dbPut("meta",{key:"settings",...S.settings})}
-    syncNow();
-  };
-  G.client.error_callback=()=>{G.err="auth";updateChip()};
-  G.client.requestAccessToken({prompt:S.settings.driveLinked?"":"consent"});
+// Rückkehr von Google auswerten (Token steht im #-Teil der Adresse)
+function readAuthRedirect(){
+  if(!location.hash||!/access_token=|error=/.test(location.hash))return null;
+  const h=new URLSearchParams(location.hash.slice(1));
+  history.replaceState(null,"",location.pathname+location.search);
+  let saved=null;try{saved=JSON.parse(localStorage.getItem("gstate")||"null");localStorage.removeItem("gstate")}catch{}
+  if(!saved||h.get("state")!==saved.state)return {error:"state"};
+  if(h.get("error"))return {error:h.get("error"),silent:saved.silent};
+  return {token:h.get("access_token"),expires:+h.get("expires_in")||3600};
 }
+const AUTH=readAuthRedirect();
+if(AUTH?.token){G.token=AUTH.token;G.exp=Date.now()+AUTH.expires*1000;try{localStorage.setItem("gtok",JSON.stringify({token:G.token,exp:G.exp}))}catch{}}
 async function gfetch(url,opts={}){
   const r=await fetch(url,{...opts,headers:{...(opts.headers||{}),Authorization:"Bearer "+G.token}});
   if(r.status===401){G.token=null;try{localStorage.removeItem("gtok")}catch{};const e=new Error("auth");e.code="auth";throw e}
@@ -794,7 +797,12 @@ async function driveBlob(driveId){if(!tokenValid()||!driveId)return null;try{ret
     const del=await dbGet("meta","deleted");S.deleted=del?.items||{};
   }catch(err){$("#list").innerHTML=`<div class="empty">Speicher nicht verfügbar. Bitte die App nicht im privaten Modus öffnen.</div>`;return}
   S.loaded=true;render();updateChip();
-  loadGis().catch(()=>{});
+  if(AUTH?.token&&!S.settings.driveLinked){S.settings.driveLinked=true;await dbPut("meta",{key:"settings",...S.settings});updateChip()}
+  if(AUTH?.error){
+    // stille Anmeldung nicht möglich -> normal mit Bestätigung anmelden
+    if(AUTH.silent&&/interaction_required|login_required|consent_required/.test(AUTH.error))return connectDrive(false);
+    if(AUTH.error!=="state")toast(AUTH.error==="access_denied"?"Anmeldung abgebrochen":"Anmeldung bei Google fehlgeschlagen");
+  }
   if(S.settings.driveLinked&&tokenValid())syncNow();
   try{await navigator.storage?.persist?.()}catch{}
   if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
