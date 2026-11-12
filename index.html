@@ -662,13 +662,14 @@ async function ocr(file){
   try{
     await loadScript(TESS);
     if(!tessWorker)tessWorker=await Tesseract.createWorker("deu",1,{logger:m=>{if(m.status==="recognizing text")setStatus(`Rechnung wird gelesen … ${Math.round(m.progress*100)} %`)}});
-    const img=await shrink(file,2000,0.9);
+    const img=await prepareForOcr(file);
     const {data}=await tessWorker.recognize(img);
     if(!S.edit||S.edit.mode!=="edit")return;
     readForm();const got=parseInvoiceText(data.text||"",S.settings.people.map(p=>p.name),[...new Set(S.inv.map(i=>i.provider).filter(Boolean))]);
     const inv=S.edit.inv;const filled=[];
     if(got.amount!=null&&inv.amount===""){inv.amount=got.amount;filled.push("Betrag")}
     if(got.date){inv.invoiceDate=got.date;filled.push("Datum")}
+    if(got.due&&!inv.dueDate){inv.dueDate=got.due;filled.push("Fälligkeit")}
     if(got.invoiceNo&&!inv.invoiceNo){inv.invoiceNo=got.invoiceNo;filled.push("Rechnungsnummer")}
     if(got.iban&&!inv.iban){inv.iban=got.iban;filled.push("IBAN")}
     if(got.provider&&!inv.provider){inv.provider=got.provider;filled.push("Rechnungssteller")}
@@ -677,6 +678,37 @@ async function ocr(file){
     if(got.provider)suggestFromProvider();
     setStatus(filled.length?`Erkannt: ${filled.join(", ")}. Bitte prüfen.`:"Nichts sicher erkannt. Bitte Felder ausfüllen.");
   }catch(err){setStatus("Texterkennung nicht verfügbar (offline?). Bitte Felder ausfüllen.")}
+}
+/* Foto für die Texterkennung vorbereiten: Graustufen, Schatten ausgleichen (Bild durch weichgezeichneten Hintergrund teilen) */
+async function prepareForOcr(file){
+  try{
+    const bmp=await createImageBitmap(file);const sc=Math.min(1,2600/Math.max(bmp.width,bmp.height));
+    const w=Math.round(bmp.width*sc),h=Math.round(bmp.height*sc);
+    const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d",{willReadFrequently:true});
+    ctx.drawImage(bmp,0,0,w,h);
+    const bg=document.createElement("canvas");bg.width=w;bg.height=h;const bx=bg.getContext("2d",{willReadFrequently:true});
+    bx.filter=`blur(${Math.round(Math.max(w,h)/80)}px)`;bx.drawImage(cv,0,0);
+    const a=ctx.getImageData(0,0,w,h),b=bx.getImageData(0,0,w,h),d=a.data,e=b.data;
+    if(e[0]===d[0]&&e[1]===d[1]&&e[w*4*Math.floor(h/2)]===d[w*4*Math.floor(h/2)]){} // Weichzeichnen evtl. nicht unterstützt
+    for(let i=0;i<d.length;i+=4){
+      const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2],bgv=Math.max(1,0.299*e[i]+0.587*e[i+1]+0.114*e[i+2]);
+      const v=Math.min(255,g/bgv*255);d[i]=d[i+1]=d[i+2]=v;
+    }
+    ctx.putImageData(a,0,0);
+    return await new Promise(r=>cv.toBlob(x=>r(x||file),"image/png"));
+  }catch{return shrink(file,2000,0.9)}
+}
+// IBAN prüfen (Prüfziffer nach ISO 13616), typische Lesefehler korrigieren
+function ibanOk(s){if(!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(s))return false;
+  const r=(s.slice(4)+s.slice(0,4)).replace(/[A-Z]/g,c=>c.charCodeAt(0)-55);let m=0;for(const ch of r)m=(m*10+ +ch)%97;return m===1}
+function findIban(t){
+  const fix=s=>s.replace(/[Oo]/g,"0").replace(/[Il|!]/g,"1").replace(/S/g,"5").replace(/B/g,"8").replace(/Z/g,"2");
+  const cands=[];
+  for(const m of t.matchAll(/IBAN[\s:.]*([A-Z]{2}[0-9OoIl|SBZ ]{18,34})/gi))cands.push(m[1]);
+  for(const m of t.matchAll(/\b(DE[0-9OoIl| ]{20,30})/g))cands.push(m[1]);
+  for(const c of cands){const raw=c.replace(/\s+/g,"");const cc=raw.slice(0,2).toUpperCase();
+    for(let len=22;len<=Math.min(34,raw.length);len++){const iban=cc+fix(raw.slice(2,len));if(cc==="DE"&&len!==22)break;if(ibanOk(iban))return iban}}
+  return null;
 }
 function parseInvoiceText(text,people,providers){
   const out={};const t=text.replace(/\r/g,"");
@@ -688,13 +720,32 @@ function parseInvoiceText(text,people,providers){
   for(const l of lines){if(keys.test(l)){const m=[...l.matchAll(amtRe)];if(m.length){const v=num(m[m.length-1][1]);if(v>0&&(best===null||/zu zahlen|rechnungsbetrag|endbetrag|zahlbetrag/i.test(l)||v>best))best=v}}}
   if(best===null){const all=[...t.matchAll(amtRe)].map(m=>num(m[1])).filter(v=>v>0&&v<100000);if(all.length)best=Math.max(...all)}
   if(best!==null)out.amount=best;
-  const dRe=/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/;
-  const iso=m=>{let y=+m[3];if(y<100)y+=2000;return `${y}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`};
-  let dm=null;for(const l of lines){if(/rechnungsdatum|datum/i.test(l)){const m=l.match(dRe);if(m){dm=m;break}}}
-  if(!dm)dm=t.match(dRe);
-  if(dm){const d=iso(dm);if(!isNaN(new Date(d)))out.date=d}
-  const nr=t.match(/rechnungs?[-\s]?(?:nr\.?|nummer|no\.?)\s*[:.]?\s*([A-Z0-9][A-Z0-9\/\-]{2,})/i);if(nr)out.invoiceNo=nr[1];
-  const ib=t.replace(/[ \t]/g,"").match(/DE\d{20}/i);if(ib)out.iban=ib[0].toUpperCase();
+  const dRe=/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/,dReG=/(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2}(?!\d))/g;
+  const iso=m=>{let y=+m[3];if(y<100)y+=2000;const d=`${y}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`;return isNaN(new Date(d))||+m[2]>12||+m[1]>31?null:d};
+  // Fälligkeit: "bis zum 28.11.2026", "zahlbar bis", "fällig am"
+  const dueM=t.match(/(?:bis\s+(?:zum|spätestens)?|zahlbar\s+bis|fällig\s+(?:am|bis)?|zahlungsziel:?)\s*(\d{1,2}\.\d{1,2}\.\d{2,4})/i);
+  if(dueM){const m=dueM[1].match(dRe);const d=m&&iso(m);if(d)out.due=d}
+  // Rechnungsdatum: Bezeichnung in derselben oder der nächsten Zeile, sonst das späteste plausible Datum
+  let date=null;
+  for(let i=0;i<lines.length&&!date;i++){
+    if(/(rechnungs|r\.?-|re\.?-)\s*datum|datum\s*der\s*rechnung|^datum\b/i.test(lines[i])){
+      for(const l of [lines[i],lines[i+1]||""]){const ms=[...l.matchAll(dReG)].map(iso).filter(Boolean);if(ms.length){date=ms[ms.length-1];break}}
+    }
+  }
+  if(!date){const now=today(),min=String(+now.slice(0,4)-2)+now.slice(4);
+    const all=[...t.matchAll(dReG)].map(iso).filter(d=>d&&d<=now&&d>=min&&d!==out.due).sort();if(all.length)date=all[all.length-1]}
+  if(date)out.date=date;
+  // Rechnungsnummer: viele Schreibweisen, Wert in derselben oder der nächsten Zeile
+  const label=/(rechnungs[\s-]*(?:nr|nummer|no)|r[\s.-]*(?:nr|nummer)|rg[\s.-]*nr|re[\s.-]*nr|beleg[\s-]*(?:nr|nummer))\.?/i;
+  for(let i=0;i<lines.length&&!out.invoiceNo;i++){
+    const l=lines[i],m=l.match(label);if(!m)continue;
+    const after=l.slice(m.index+m[0].length).replace(/^[\s:./-]*/,"");
+    const same=after.match(/^([A-Z0-9][A-Z0-9\/\-]{3,})/i);
+    if(same&&/\d{3,}/.test(same[1])){out.invoiceNo=same[1].replace(/[\/-]$/,"");break}
+    const next=(lines[i+1]||"").match(/([A-Z0-9][A-Z0-9\-]{3,})/gi)?.find(x=>/\d{4,}/.test(x));
+    if(next&&!/^\d{1,2}\.\d{1,2}\./.test(next))out.invoiceNo=next;
+  }
+  const ib=findIban(t);if(ib)out.iban=ib;
   const low=t.toLowerCase();
   // Patient: zuerst eine Zeile mit "Patient", sonst ein anderer Name als der Empfänger (Antragsteller steht meist in der Anschrift)
   const has=(s,n)=>new RegExp("\\b"+n.toLowerCase()+"\\b").test(s.toLowerCase());
