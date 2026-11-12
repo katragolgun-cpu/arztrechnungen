@@ -97,6 +97,11 @@ input.num{font-family:var(--f-num)}
 .status{font-size:13.5px;color:var(--muted)} .status.err{color:var(--bad)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;z-index:40;max-width:90%}
 .checkline{background:var(--warn-soft);color:var(--warn);border-radius:9px;padding:8px 10px;font-size:13.5px}
+.chipdrive{font-size:13px;white-space:nowrap}
+.chipdrive.ok{color:var(--ok);border-color:var(--ok)}
+.chipdrive.warn{color:var(--warn);border-color:var(--warn)}
+.chipdrive.bad{color:var(--bad);border-color:var(--bad)}
+.sub-actions{display:flex;gap:14px;flex-wrap:wrap;margin-top:-4px}
 .inline{display:flex;gap:8px;align-items:end}
 .inline label{flex:1}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}}
@@ -106,7 +111,10 @@ input.num{font-family:var(--f-num)}
 <div class="wrap">
   <header class="top">
     <div><h1>Arztrechnungen</h1><p id="sub">Beihilfe und PKV im Blick</p></div>
-    <button class="iconbtn" id="btnSettings" type="button">Einstellungen</button>
+    <div class="btnrow" style="justify-content:flex-end">
+      <button class="iconbtn chipdrive" id="driveChip" type="button" hidden></button>
+      <button class="iconbtn" id="btnSettings" type="button">Einstellungen</button>
+    </div>
   </header>
   <div id="banner" class="banner" hidden></div>
   <section class="summary" id="summary" aria-label="Übersicht"></section>
@@ -155,7 +163,7 @@ const DEFAULT_SETTINGS={
   minBeihilfe:200,payDays:30,lastBackup:null
 };
 const GROUPS={A:"Antragsteller",E:"Ehepartner",K:"Kind"};
-const S={inv:[],settings:structuredClone(DEFAULT_SETTINGS),loaded:false,filter:"offen",person:"alle",edit:null};
+const S={inv:[],deleted:{},settings:structuredClone(DEFAULT_SETTINGS),loaded:false,filter:"offen",person:"alle",edit:null};
 
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -256,7 +264,7 @@ function renderSummary(rows){
 }
 function renderBanner(){
   const b=$("#banner");
-  if(!S.inv.length){b.hidden=true;return}
+  if(!S.inv.length||S.settings.driveLinked){b.hidden=true;return}
   const last=S.settings.lastBackup;const age=last?days(last.slice(0,10),today()):null;
   if(age===null||age>30){
     b.innerHTML=`<span>${age===null?"Noch keine Sicherung erstellt.":`Letzte Sicherung vor ${age} Tagen.`} Die Daten liegen nur auf diesem Handy.</span><button type="button" class="btn" data-act="backup">Sichern</button>`;
@@ -287,6 +295,7 @@ async function saveInvoice(inv){
   inv.updatedAt=new Date().toISOString();if(!inv.id){inv.id=uid();inv.createdAt=inv.updatedAt}
   await dbPut("invoices",inv);
   const i=S.inv.findIndex(x=>x.id===inv.id);if(i>=0)S.inv[i]=inv;else S.inv.push(inv);render();
+  scheduleSync();
 }
 async function storeFile(blob,name){const id=uid();await dbPut("files",{id,blob,name,type:blob.type});return id}
 async function fileUrl(id){const f=id&&await dbGet("files",id);return f?{url:URL.createObjectURL(f.blob),file:f}:null}
@@ -319,6 +328,14 @@ async function openView(id){
   if(inv.docFileId){const r=await fileUrl(inv.docFileId);if(r){S.edit.urls.push(r.url);
     thumb=r.file.type.startsWith("image/")?`<img class="thumb" src="${r.url}" alt="Rechnungsfoto">`:""}}
   drawView(thumb);
+  // Foto aus Drive nachladen, wenn es nur dort liegt (z. B. auf einem anderen Gerät aufgenommen)
+  if(!inv.docFileId&&inv.docDriveId&&tokenValid()){
+    const blob=await driveBlob(inv.docDriveId);
+    if(blob&&S.edit?.id===id&&blob.type.startsWith("image/")){
+      const u=URL.createObjectURL(blob);S.edit.urls.push(u);drawView(`<img class="thumb" src="${u}" alt="Rechnungsfoto">`);
+      const fid=await storeFile(blob,fname(inv,blob));const cur=S.inv.find(x=>x.id===id);if(cur){cur.docFileId=fid;await dbPut("invoices",cur)}
+    }
+  }
 }
 function sideLine(key,title,inv){
   const c=side(inv,key);const s=c.s;let info="",btn="";
@@ -329,14 +346,19 @@ function sideLine(key,title,inv){
   let ask="";
   if(S.edit.ask===key)ask=`<div class="inline"><label class="f">Erhaltener Betrag (€)<input id="askAmt" class="num" inputmode="decimal" value="${c.expected.toFixed(2).replace(".",",")}"></label>
     <button type="button" class="btn primary" data-act="got" data-k="${key}">Übernehmen</button></div>`;
-  return `<div class="line"><div><div class="t">${title}</div><div class="s">${info}</div></div>${S.edit.ask===key?"":btn}</div>${ask}`;
+  const proof=c.state==="na"?"":(s.proofUrl||s.proofFileId
+    ?`<div class="sub-actions"><button type="button" class="btn link" data-act="proofopen" data-k="${key}">Leistungsnachweis öffnen</button></div>`
+    :(c.state!=="todo"?`<div class="sub-actions"><button type="button" class="btn link" data-act="proofadd" data-k="${key}">+ Leistungsnachweis</button></div>`:""));
+  return `<div class="line"><div><div class="t">${title}</div><div class="s">${info}</div></div>${S.edit.ask===key?"":btn}</div>${ask}${proof}`;
 }
 function drawView(thumb){
   if(thumb!==undefined)S.edit.thumb=thumb;
   const inv=S.inv.find(x=>x.id===S.edit.id);const c=calc(inv);
   const payInfo=c.unpaid?`${eur(c.open)} offen${c.overdue?` · seit ${c.age} Tagen`:""}`:(c.open<-0.004?`${eur(-c.open)} zu viel überwiesen`:`Bezahlt am ${dfmt(inv.payment?.date)}`);
-  const docBtns=inv.docFileId?`<button type="button" class="btn" data-act="opendoc">Beleg öffnen</button><button type="button" class="btn" data-act="share">In Drive sichern</button>`
-    :(inv.docUrl?`<a class="btn" href="${esc(inv.docUrl)}" target="_blank" rel="noopener">Beleg in Drive öffnen</a>`:`<button type="button" class="btn" data-act="adddoc">Beleg hinzufügen</button>`);
+  const docBtns=inv.docUrl
+    ?`<a class="btn" href="${esc(inv.docUrl)}" target="_blank" rel="noopener">Beleg in Drive öffnen</a>`
+    :(inv.docFileId?`<button type="button" class="btn" data-act="opendoc">Beleg öffnen</button>${S.settings.driveLinked?`<span class="status">Wird beim nächsten Abgleich in Drive abgelegt</span>`:`<button type="button" class="btn" data-act="share">In Drive sichern</button>`}`
+    :`<button type="button" class="btn" data-act="adddoc">Beleg hinzufügen</button>`);
   sheet(inv.provider||"Rechnung",`
     <div id="edStatus" class="status" style="margin-top:10px"></div>
     ${inv.check?`<div class="checkline" style="margin-top:10px">Prüfen: ${esc(inv.check)} <button type="button" class="btn link" data-act="clearcheck">Erledigt</button></div>`:""}
@@ -371,7 +393,12 @@ async function viewClick(e){
     case "clearcheck":inv.check="";await saveInvoice(inv);return drawView();
     case "opendoc":{const r=await fileUrl(inv.docFileId);if(r){S.edit.urls.push(r.url);window.open(r.url,"_blank")}return}
     case "share":return shareFile(inv.docFileId,inv.provider);
-    case "adddoc":return pickFile(async f=>{const blob=await shrink(f,2200,0.85);inv.docFileId=await storeFile(blob,fname(inv,blob));await saveInvoice(inv);openView(inv.id)});
+    case "proofadd":return pickFile(async f=>{const blob=await shrink(f,2200,0.85);
+      const name=`${inv.invoiceDate||today()}_${inv.patient}_${k==="pkv"?"PKV":"Beihilfe"}_Leistungsnachweis`.replace(/[^\wäöüÄÖÜß.-]+/g,"_")+(blob.type==="application/pdf"?".pdf":".jpg");
+      inv[k].proofFileId=await storeFile(blob,name);inv[k].proofDriveId=null;inv[k].proofUrl="";await saveInvoice(inv);toast("Leistungsnachweis gespeichert");openView(inv.id)});
+    case "proofopen":{const s=inv[k];if(s.proofUrl){window.open(s.proofUrl,"_blank");return}
+      const r=await fileUrl(s.proofFileId);if(r){S.edit.urls.push(r.url);window.open(r.url,"_blank")}return}
+    case "adddoc":return pickFile(async f=>{const blob=await shrink(f,2200,0.85);inv.docFileId=await storeFile(blob,fname(inv,blob));inv.docDriveId=null;inv.docUrl="";await saveInvoice(inv);openView(inv.id)});
   }
 }
 function fname(inv,blob){return `${inv.invoiceDate||today()}_${inv.patient}_${inv.provider||"Rechnung"}`.replace(/[^\wäöüÄÖÜß.-]+/g,"_")+(blob.type==="application/pdf"?".pdf":".jpg")}
@@ -464,7 +491,7 @@ async function editClick(e){
     if(inv.amount===""||!inv.provider){setStatus("Bitte mindestens Rechnungssteller und Betrag eintragen.",true);return}
     b.disabled=true;
     try{
-      if(S.edit.file){const blob=await shrink(S.edit.file,2200,0.85);inv.docFileId=await storeFile(blob,fname(inv,blob));S.edit.file=null}
+      if(S.edit.file){const blob=await shrink(S.edit.file,2200,0.85);inv.docFileId=await storeFile(blob,fname(inv,blob));inv.docDriveId=null;inv.docUrl="";S.edit.file=null}
       await saveInvoice(inv);toast("Gespeichert");const id=inv.id;closeSheet();openView(id);
     }catch(err){setStatus("Speichern fehlgeschlagen: "+(err?.message||err),true);b.disabled=false}
     return;
@@ -472,7 +499,8 @@ async function editClick(e){
   if(act==="del"){
     if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Wirklich löschen? Nochmal tippen";return}
     const inv=S.edit.inv;await dbDel("invoices",inv.id);if(inv.docFileId)await dbDel("files",inv.docFileId).catch(()=>{});
-    S.inv=S.inv.filter(x=>x.id!==inv.id);render();closeSheet();toast("Rechnung gelöscht");
+    S.deleted[inv.id]=new Date().toISOString();await dbPut("meta",{key:"deleted",items:S.deleted});
+    S.inv=S.inv.filter(x=>x.id!==inv.id);render();closeSheet();toast("Rechnung gelöscht");scheduleSync();
   }
 }
 
@@ -529,7 +557,7 @@ function parseInvoiceText(text,people,providers){
 }
 
 /* ================= Einstellungen & Sicherung ================= */
-async function saveSettings(){await dbPut("meta",{key:"settings",...S.settings})}
+async function saveSettings(){S.settings.updatedAt=new Date().toISOString();await dbPut("meta",{key:"settings",...S.settings});scheduleSync()}
 function openSettings(){
   const s=S.settings;
   S.edit={mode:"settings",urls:[]};
@@ -541,9 +569,16 @@ function openSettings(){
     ${field(v+" · Beihilfe %","rb"+g,Math.round((s.rates[g]?.bh||0)*100),"number")}</div>`).join("");
   sheet("Einstellungen",`
     <div id="edStatus" class="status" style="margin-top:10px"></div>
-    <div class="sec"><h3>Sicherung</h3>
-      <p class="status" style="margin:0">Alle Daten liegen nur auf diesem Handy. Erstelle regelmäßig eine Sicherung und lege sie in Google Drive ab.${s.lastBackup?` Letzte Sicherung: ${dfmt(s.lastBackup.slice(0,10))}.`:""}</p>
-      <div class="btnrow"><button type="button" class="btn primary" data-act="backup">Sicherung erstellen</button><button type="button" class="btn" data-act="restore">Sicherung einspielen</button></div></div>
+    <div class="sec"><h3>Google Drive</h3>
+      <p class="status" style="margin:0">${s.driveLinked
+        ?`Rechnungen, Fotos und Leistungsnachweise werden im Drive-Ordner „Arztrechnungen“ gespeichert und bei jeder Änderung abgeglichen.${G.last?` Zuletzt: ${G.last.toLocaleString("de-DE")}.`:""}`
+        :"Noch nicht verbunden. Nach dem Verbinden liegen alle Rechnungen, Fotos und Leistungsnachweise im Drive-Ordner „Arztrechnungen“."}</p>
+      <div class="btnrow">${s.driveLinked
+        ?`<button type="button" class="btn primary" data-act="sync">Jetzt abgleichen</button><button type="button" class="btn" data-act="unlink">Drive trennen</button>`
+        :`<button type="button" class="btn primary" data-act="link">Mit Google Drive verbinden</button>`}</div></div>
+    <div class="sec"><h3>Sicherung als Datei</h3>
+      <p class="status" style="margin:0">Zum Einspielen der Startdatei oder für eine zusätzliche Kopie.${s.lastBackup?` Letzte Sicherung: ${dfmt(s.lastBackup.slice(0,10))}.`:""}</p>
+      <div class="btnrow"><button type="button" class="btn" data-act="restore">Sicherung einspielen</button><button type="button" class="btn" data-act="backup">Sicherung erstellen</button></div></div>
     <div class="sec"><h3>Anteile</h3>${rates}<p class="status" style="margin:0">Gilt für neue Rechnungen.</p></div>
     <div class="sec"><h3>Personen</h3>${rows}<div class="btnrow"><button type="button" class="btn" data-act="addp">Person hinzufügen</button></div></div>
     <div class="sec"><h3>Regeln</h3><div class="grid2">
@@ -556,6 +591,14 @@ function openSettings(){
     switch(b.dataset.act){
       case "close":return closeSheet();
       case "backup":return makeBackup();
+      case "link":closeSheet();return connectDrive();
+      case "sync":closeSheet();return tokenValid()?syncNow():connectDrive();
+      case "unlink":
+        if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Wirklich trennen? Nochmal tippen";return}
+        try{if(G.token&&window.google?.accounts?.oauth2)google.accounts.oauth2.revoke(G.token,()=>{})}catch{}
+        G.token=null;try{localStorage.removeItem("gtok")}catch{}
+        for(const k of LOCAL_KEYS.filter(k=>k.startsWith("drive")))S.settings[k]=k==="driveLinked"?false:null;
+        await dbPut("meta",{key:"settings",...S.settings});closeSheet();updateChip();render();toast("Drive getrennt. Die Daten in Drive bleiben erhalten.");return;
       case "restore":{const p=$("#pickBackup");p.value="";p.onchange=()=>{const f=p.files[0];if(f)restoreBackup(f)};p.click();return}
       case "addp":S.settings.people=[...collectPeople(),{name:"",group:"K"}];return openSettings();
       case "save":
@@ -587,10 +630,144 @@ async function restoreBackup(file){
     if(d.app!=="arztrechnungen"||!Array.isArray(d.invoices))throw new Error("Keine Sicherung dieser App");
     for(const f of d.files||[]){const bin=Uint8Array.from(atob(f.data),c=>c.charCodeAt(0));await dbPut("files",{id:f.id,name:f.name,type:f.type,blob:new Blob([bin],{type:f.type})})}
     for(const inv of d.invoices)await dbPut("invoices",inv);
-    if(d.settings){S.settings={...DEFAULT_SETTINGS,...d.settings,lastBackup:S.settings.lastBackup};await saveSettings()}
-    S.inv=await dbAll("invoices");closeSheet();render();toast(`${d.invoices.length} Rechnungen eingespielt`);
+    if(d.settings){const keep=Object.fromEntries(LOCAL_KEYS.map(k=>[k,S.settings[k]]));S.settings={...DEFAULT_SETTINGS,...d.settings,...keep};await saveSettings()}
+    S.inv=await dbAll("invoices");closeSheet();render();toast(`${d.invoices.length} Rechnungen eingespielt`);scheduleSync();
   }catch(err){setStatus("Einspielen fehlgeschlagen: "+(err?.message||err),true)}
 }
+
+/* ================= Google Drive ================= */
+const GOOGLE_CLIENT_ID="592336920931-5s1klnrs64841o02016jk7mknm248rdf.apps.googleusercontent.com";
+const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.file";
+const API="https://www.googleapis.com/drive/v3/files",UPLOAD="https://www.googleapis.com/upload/drive/v3/files";
+const DATA_NAME="arztrechnungen-daten.json",FOLDER_NAME="Arztrechnungen";
+const G={token:null,exp:0,client:null,busy:false,dirty:false,last:null,err:null,timer:null};
+const LOCAL_KEYS=["driveLinked","lastBackup","driveFolderId","driveBelegeId","driveDataId"];
+try{const t=JSON.parse(localStorage.getItem("gtok")||"null");if(t&&t.exp>Date.now()){G.token=t.token;G.exp=t.exp}}catch{}
+const tokenValid=()=>!!G.token&&Date.now()<G.exp-60000;
+function loadGis(){
+  if(window.google?.accounts?.oauth2)return Promise.resolve();
+  if(loadGis.p)return loadGis.p;
+  return loadGis.p=new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://accounts.google.com/gsi/client";s.async=true;s.onload=res;s.onerror=()=>{loadGis.p=null;rej(new Error("gis"))};document.head.appendChild(s)});
+}
+function connectDrive(){
+  // muss direkt aus einem Tipp heraus laufen, sonst blockiert der Browser das Anmeldefenster
+  if(!window.google?.accounts?.oauth2){loadGis().then(()=>toast("Bitte noch einmal tippen")).catch(()=>toast("Keine Verbindung zu Google"));return}
+  if(!G.client)G.client=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:DRIVE_SCOPE,callback:()=>{}});
+  G.client.callback=async r=>{
+    if(r.error){G.err="auth";updateChip();toast("Anmeldung abgebrochen");return}
+    G.token=r.access_token;G.exp=Date.now()+(+r.expires_in||3600)*1000;G.err=null;
+    try{localStorage.setItem("gtok",JSON.stringify({token:G.token,exp:G.exp}))}catch{}
+    if(!S.settings.driveLinked){S.settings.driveLinked=true;await dbPut("meta",{key:"settings",...S.settings})}
+    syncNow();
+  };
+  G.client.error_callback=()=>{G.err="auth";updateChip()};
+  G.client.requestAccessToken({prompt:S.settings.driveLinked?"":"consent"});
+}
+async function gfetch(url,opts={}){
+  const r=await fetch(url,{...opts,headers:{...(opts.headers||{}),Authorization:"Bearer "+G.token}});
+  if(r.status===401){G.token=null;try{localStorage.removeItem("gtok")}catch{};const e=new Error("auth");e.code="auth";throw e}
+  if(!r.ok){const e=new Error("drive "+r.status);e.code="fail";throw e}
+  return r;
+}
+const q=s=>encodeURIComponent(s);
+async function findOrCreateFolder(name,parent){
+  let query=`name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;if(parent)query+=` and '${parent}' in parents`;
+  const r=await (await gfetch(`${API}?q=${q(query)}&fields=files(id)&spaces=drive`)).json();
+  if(r.files?.length)return r.files[0].id;
+  const c=await (await gfetch(`${API}?fields=id`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,mimeType:"application/vnd.google-apps.folder",...(parent?{parents:[parent]}:{})})})).json();
+  return c.id;
+}
+async function ensureFolders(){
+  const s=S.settings;let changed=false;
+  if(!s.driveFolderId){s.driveFolderId=await findOrCreateFolder(FOLDER_NAME);changed=true}
+  if(!s.driveBelegeId){s.driveBelegeId=await findOrCreateFolder("Belege",s.driveFolderId);changed=true}
+  if(!s.driveDataId){
+    const r=await (await gfetch(`${API}?q=${q(`name='${DATA_NAME}' and '${s.driveFolderId}' in parents and trashed=false`)}&fields=files(id)`)).json();
+    if(r.files?.length){s.driveDataId=r.files[0].id;changed=true}
+  }
+  if(changed)await dbPut("meta",{key:"settings",...s});
+}
+async function uploadMultipart(meta,blob,fileId){
+  const b="b"+uid();
+  const body=new Blob([`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${b}\r\nContent-Type: ${blob.type||"application/octet-stream"}\r\n\r\n`,blob,`\r\n--${b}--`]);
+  const url=fileId?`${UPLOAD}/${fileId}?uploadType=multipart&fields=id,webViewLink`:`${UPLOAD}?uploadType=multipart&fields=id,webViewLink`;
+  return (await gfetch(url,{method:fileId?"PATCH":"POST",headers:{"Content-Type":`multipart/related; boundary=${b}`},body})).json();
+}
+// Anhänge: Rechnung + Leistungsnachweis PKV/Beihilfe
+const SLOTS=["doc","pkv","bh"];
+function slot(inv,k){const o=k==="doc"?inv:(inv[k]=inv[k]||{});const p=k==="doc"?"doc":"proof";
+  return {get fileId(){return o[p+"FileId"]},set fileId(v){o[p+"FileId"]=v},get driveId(){return o[p+"DriveId"]},set driveId(v){o[p+"DriveId"]=v},get url(){return o[p+"Url"]},set url(v){o[p+"Url"]=v}}}
+function stripLocal(inv){const c=structuredClone(inv);delete c.docFileId;if(c.pkv)delete c.pkv.proofFileId;if(c.bh)delete c.bh.proofFileId;return c}
+function scheduleSync(){if(!S.settings.driveLinked)return;G.dirty=true;updateChip();clearTimeout(G.timer);G.timer=setTimeout(syncNow,1500)}
+async function syncNow(){
+  if(!S.settings.driveLinked)return;
+  if(!tokenValid()){G.dirty=true;updateChip();return}
+  if(G.busy){G.dirty=true;return}
+  G.busy=true;G.dirty=false;G.err=null;updateChip();
+  try{
+    await ensureFolders();
+    let remote=null;
+    if(S.settings.driveDataId){
+      try{remote=await (await gfetch(`${API}/${S.settings.driveDataId}?alt=media`)).json()}
+      catch(e){if(e.code==="auth")throw e;S.settings.driveDataId=null;await ensureFolders()}
+    }
+    // Löschungen zusammenführen
+    for(const [id,t] of Object.entries(remote?.deleted||{}))if(!S.deleted[id]||S.deleted[id]<t)S.deleted[id]=t;
+    // Rechnungen zusammenführen: neuere Änderung gewinnt, lokale Dateien bleiben erhalten
+    const map=new Map(S.inv.map(i=>[i.id,i]));
+    for(const r of remote?.invoices||[]){
+      const l=map.get(r.id);
+      if(!l||(r.updatedAt||"")>(l.updatedAt||"")){
+        const m=structuredClone(r);
+        if(l)for(const k of SLOTS){const ls=slot(l,k),ms=slot(m,k);if(ls.fileId&&(!ms.driveId||ms.driveId===ls.driveId))ms.fileId=ls.fileId}
+        map.set(r.id,m);
+      }
+    }
+    for(const [id,t] of Object.entries(S.deleted)){const i=map.get(id);if(i&&t>=(i.updatedAt||""))map.delete(id)}
+    // Neue Belege hochladen
+    for(const inv of map.values()){
+      for(const k of SLOTS){const s=slot(inv,k);
+        if(s.fileId&&!s.driveId){const f=await dbGet("files",s.fileId);if(!f)continue;
+          const up=await uploadMultipart({name:f.name||"beleg",parents:[S.settings.driveBelegeId]},f.blob);
+          s.driveId=up.id;s.url=up.webViewLink||`https://drive.google.com/file/d/${up.id}/view`;inv.updatedAt=new Date().toISOString()}}
+    }
+    // Einstellungen: neuere gewinnt
+    if(remote?.settings&&(remote.settingsUpdatedAt||"")>(S.settings.updatedAt||"")){
+      const keep=Object.fromEntries(LOCAL_KEYS.map(k=>[k,S.settings[k]]));
+      S.settings={...DEFAULT_SETTINGS,...remote.settings,updatedAt:remote.settingsUpdatedAt,...keep};
+    }
+    // Lokal speichern
+    const ids=new Set(map.keys());
+    for(const old of S.inv)if(!ids.has(old.id))await dbDel("invoices",old.id);
+    for(const inv of map.values())await dbPut("invoices",inv);
+    S.inv=[...map.values()];
+    await dbPut("meta",{key:"deleted",items:S.deleted});
+    // Nach Drive schreiben
+    const shared=Object.fromEntries(Object.entries(S.settings).filter(([k])=>!LOCAL_KEYS.includes(k)&&k!=="updatedAt"));
+    const data={app:"arztrechnungen",version:2,updatedAt:new Date().toISOString(),settings:shared,settingsUpdatedAt:S.settings.updatedAt||null,
+      invoices:S.inv.map(stripLocal),deleted:S.deleted};
+    const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+    const up=await uploadMultipart(S.settings.driveDataId?{}:{name:DATA_NAME,parents:[S.settings.driveFolderId]},blob,S.settings.driveDataId);
+    if(!S.settings.driveDataId)S.settings.driveDataId=up.id;
+    await dbPut("meta",{key:"settings",...S.settings});
+    G.last=new Date();
+  }catch(e){G.err=e.code==="auth"?"auth":"fail";G.dirty=true}
+  finally{G.busy=false;updateChip();render()}
+  if(G.dirty&&!G.err)scheduleSync();
+}
+function updateChip(){
+  const c=$("#driveChip");if(!c)return;
+  c.hidden=false;c.className="iconbtn chipdrive";
+  if(!S.settings.driveLinked){c.textContent="Mit Drive verbinden";c.classList.add("warn");return}
+  if(G.busy){c.textContent="Drive: gleicht ab …";return}
+  if(!tokenValid()){c.textContent="Drive: tippen zum Abgleichen";c.classList.add("warn");return}
+  if(G.err){c.textContent="Drive: Fehler, erneut";c.classList.add("bad");return}
+  if(G.dirty){c.textContent="Drive: Änderungen offen";c.classList.add("warn");return}
+  if(G.last){c.textContent="Drive aktuell · "+G.last.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});c.classList.add("ok");return}
+  c.textContent="Drive verbunden";c.classList.add("ok");
+}
+$("#driveChip").addEventListener("click",()=>{if(!tokenValid())connectDrive();else syncNow()});
+async function driveBlob(driveId){if(!tokenValid()||!driveId)return null;try{return await (await gfetch(`${API}/${driveId}?alt=media`)).blob()}catch{return null}}
 
 /* ================= Start ================= */
 (async()=>{
@@ -598,8 +775,11 @@ async function restoreBackup(file){
   try{
     const st=await dbGet("meta","settings");if(st){const {key,...rest}=st;S.settings={...DEFAULT_SETTINGS,...rest}}
     S.inv=await dbAll("invoices");
+    const del=await dbGet("meta","deleted");S.deleted=del?.items||{};
   }catch(err){$("#list").innerHTML=`<div class="empty">Speicher nicht verfügbar. Bitte die App nicht im privaten Modus öffnen.</div>`;return}
-  S.loaded=true;render();
+  S.loaded=true;render();updateChip();
+  loadGis().catch(()=>{});
+  if(S.settings.driveLinked&&tokenValid())syncNow();
   try{await navigator.storage?.persist?.()}catch{}
   if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 })();
