@@ -97,10 +97,14 @@ input.num{font-family:var(--f-num)}
 .status{font-size:13.5px;color:var(--muted)} .status.err{color:var(--bad)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;z-index:40;max-width:90%}
 .checkline{background:var(--warn-soft);color:var(--warn);border-radius:9px;padding:8px 10px;font-size:13.5px}
-.chipdrive{font-size:13px;white-space:nowrap}
-.chipdrive.ok{color:var(--ok);border-color:var(--ok)}
-.chipdrive.warn{color:var(--warn);border-color:var(--warn)}
-.chipdrive.bad{color:var(--bad);border-color:var(--bad)}
+#btnSettings{position:relative}
+.dot{position:absolute;top:-4px;right:-4px;width:12px;height:12px;border-radius:50%;background:var(--warn);border:2px solid var(--bg)}
+.sumbar{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px;font:inherit;color:inherit;text-align:left}
+.sumbar .vals{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px;min-width:0}
+.sumbar .vals b{font-family:var(--f-num);font-weight:600}
+.sumbar .pay b{color:var(--bad)} .sumbar .exp b{color:var(--wait)}
+.sumbar .chev{color:var(--muted);font-size:13px;white-space:nowrap}
+.summary-wrap{display:flex;flex-direction:column;gap:10px}
 .sub-actions{display:flex;gap:14px;flex-wrap:wrap;margin-top:-4px}
 .inline{display:flex;gap:8px;align-items:end}
 .inline label{flex:1}
@@ -111,13 +115,11 @@ input.num{font-family:var(--f-num)}
 <div class="wrap">
   <header class="top">
     <div><h1>Arztrechnungen</h1><p id="sub">Beihilfe und PKV im Blick</p></div>
-    <div class="btnrow" style="justify-content:flex-end">
-      <button class="iconbtn chipdrive" id="driveChip" type="button" hidden></button>
-      <button class="iconbtn" id="btnSettings" type="button">Einstellungen</button>
-    </div>
+    <button class="iconbtn" id="btnSettings" type="button">Einstellungen<span class="dot" id="settingsDot" hidden></span></button>
   </header>
   <div id="banner" class="banner" hidden></div>
-  <section class="summary" id="summary" aria-label="Übersicht"></section>
+  <button type="button" class="sumbar" id="sumBar" aria-expanded="false" aria-controls="summary"></button>
+  <section class="summary" id="summary" aria-label="Übersicht" hidden></section>
   <nav class="chips" id="filters" aria-label="Filter"></nav>
   <nav class="chips" id="people" aria-label="Personen"></nav>
   <section class="list" id="list" aria-live="polite"><div class="empty">Rechnungen werden geladen …</div></section>
@@ -261,7 +263,14 @@ function renderSummary(rows){
    <button type="button" class="tile todo" data-f="einreichen"><span class="lbl">Noch einreichen</span><span class="val">${todoN}</span><span class="sub">${esc(bhHint)}</span></button>
    <button type="button" class="tile cut" data-f="pruefen"><span class="lbl">Gekürzt</span><span class="val">${eur(cut)}</span><span class="sub">${cutN} Rechnung${cutN===1?"":"en"} mit Differenz</span></button>`;
   $("#sub").textContent=`${S.inv.length} Rechnungen · ${S.settings.people.map(p=>p.name).join(", ")}`;
+  const open=sumOpen();
+  $("#summary").hidden=!open;
+  const bar=$("#sumBar");bar.setAttribute("aria-expanded",String(open));
+  bar.innerHTML=`<span class="vals"><span class="pay">Zu bezahlen <b>${eur(pay)}</b></span><span class="exp">Erwartet <b>${eur(wP+wB)}</b></span></span><span class="chev">${open?"Weniger ▲":"Mehr ▼"}</span>`;
 }
+try{S.sumOpen=localStorage.getItem("sumOpen")==="1"}catch{S.sumOpen=false}
+function sumOpen(){return !!S.sumOpen}
+$("#sumBar").addEventListener("click",()=>{S.sumOpen=!S.sumOpen;try{localStorage.setItem("sumOpen",S.sumOpen?"1":"0")}catch{}render()});
 function renderBanner(){
   const b=$("#banner");
   if(!S.inv.length||S.settings.driveLinked){b.hidden=true;return}
@@ -571,8 +580,9 @@ function openSettings(){
     <div id="edStatus" class="status" style="margin-top:10px"></div>
     <div class="sec"><h3>Google Drive</h3>
       <p class="status" style="margin:0">${s.driveLinked
-        ?`Rechnungen, Fotos und Leistungsnachweise werden im Drive-Ordner „Arztrechnungen“ gespeichert und bei jeder Änderung abgeglichen.${G.last?` Zuletzt: ${G.last.toLocaleString("de-DE")}.`:""}`
-        :"Noch nicht verbunden. Nach dem Verbinden liegen alle Rechnungen, Fotos und Leistungsnachweise im Drive-Ordner „Arztrechnungen“."}</p>
+        ?"Rechnungen, Fotos und Leistungsnachweise werden im Drive-Ordner „Arztrechnungen“ gespeichert."
+        :"Nach dem Verbinden liegen alle Rechnungen, Fotos und Leistungsnachweise im Drive-Ordner „Arztrechnungen“."}</p>
+      <p class="status" id="driveStatus" style="margin:0;font-weight:600"></p>
       <div class="btnrow">${s.driveLinked
         ?`<button type="button" class="btn primary" data-act="sync">Jetzt abgleichen</button><button type="button" class="btn" data-act="unlink">Drive trennen</button>`
         :`<button type="button" class="btn primary" data-act="link">Mit Google Drive verbinden</button>`}</div></div>
@@ -585,6 +595,7 @@ function openSettings(){
       ${field("Mindestsumme Beihilfe (€)","minB",s.minBeihilfe,"number")}
       ${field("Zahlungsfrist (Tage)","payD",s.payDays,"number")}</div></div>
   `,`<button type="button" class="btn" data-act="close">Abbrechen</button><button type="button" class="btn primary" data-act="save">Speichern</button>`);
+  updateChip();
   $("#scrim").addEventListener("click",async e=>{
     const b=e.target.closest("[data-act]");if(!b)return;
     const n=id=>+String($("#"+id).value).replace(",",".")||0;
@@ -755,18 +766,23 @@ async function syncNow(){
   finally{G.busy=false;updateChip();render()}
   if(G.dirty&&!G.err)scheduleSync();
 }
-function updateChip(){
-  const c=$("#driveChip");if(!c)return;
-  c.hidden=false;c.className="iconbtn chipdrive";
-  if(!S.settings.driveLinked){c.textContent="Mit Drive verbinden";c.classList.add("warn");return}
-  if(G.busy){c.textContent="Drive: gleicht ab …";return}
-  if(!tokenValid()){c.textContent="Drive: tippen zum Abgleichen";c.classList.add("warn");return}
-  if(G.err){c.textContent="Drive: Fehler, erneut";c.classList.add("bad");return}
-  if(G.dirty){c.textContent="Drive: Änderungen offen";c.classList.add("warn");return}
-  if(G.last){c.textContent="Drive aktuell · "+G.last.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});c.classList.add("ok");return}
-  c.textContent="Drive verbunden";c.classList.add("ok");
+// Kein Knopf oben: nur ein Punkt an "Einstellungen", wenn Änderungen noch nicht in Drive liegen
+function driveStatus(){
+  if(!S.settings.driveLinked)return {text:"Nicht verbunden.",pending:false};
+  if(G.busy)return {text:"Gleicht gerade ab …",pending:false};
+  const pending=G.dirty||!!G.err;
+  if(G.err==="auth"||(pending&&!tokenValid()))return {text:"Änderungen sind noch nicht in Drive. Tippe auf „Jetzt abgleichen“.",pending:true};
+  if(G.err)return {text:"Der letzte Abgleich ist fehlgeschlagen. Tippe auf „Jetzt abgleichen“.",pending:true};
+  if(pending)return {text:"Änderungen werden gleich abgeglichen.",pending:true};
+  if(G.last)return {text:"Alles in Drive gespeichert, zuletzt um "+G.last.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr.",pending:false};
+  return {text:"Verbunden.",pending:false};
 }
-$("#driveChip").addEventListener("click",()=>{if(!tokenValid())connectDrive();else syncNow()});
+function updateChip(){
+  try{if(G.dirty)localStorage.setItem("gdirty","1");else localStorage.removeItem("gdirty")}catch{}
+  const st=driveStatus();$("#settingsDot").hidden=!st.pending;
+  const el=$("#driveStatus");if(el)el.textContent=st.text;
+}
+try{if(localStorage.getItem("gdirty")==="1")G.dirty=true}catch{}
 async function driveBlob(driveId){if(!tokenValid()||!driveId)return null;try{return await (await gfetch(`${API}/${driveId}?alt=media`)).blob()}catch{return null}}
 
 /* ================= Start ================= */
