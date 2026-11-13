@@ -1210,8 +1210,8 @@ async function findOrCreateFolder(name,parent){
 /* Ordnung in Drive:
    Arztrechnungen/Zum Einreichen/AXA/<Person> noch bei der AXA einzureichen, je Person ein Ordner
    Arztrechnungen/Zum Einreichen/Beihilfe noch bei der Beihilfe einzureichen (Kopie, wenn beide offen)
-   Arztrechnungen/2026/06 Juni/Rechnungen
-   Arztrechnungen/2026/06 Juni/Leistungsnachweise
+   Arztrechnungen/Rechnungen/2026/06 Juni
+   Arztrechnungen/Leistungsnachweise/2026/06 Juni
    Arztrechnungen/_App-Daten/arztrechnungen-daten.json */
 const MONTHS=["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
 async function findFile(name,parent){
@@ -1236,6 +1236,8 @@ async function queueTrash(inv){
 }
 async function ensureFolders(){
   const s=S.settings;let changed=false;
+  // Alte Ordnerstruktur (Jahr/Monat/Art) nicht mehr verwenden
+  if(s.driveFolderMap)for(const k of Object.keys(s.driveFolderMap))if(/^\/\d{4}(\/|$)/.test(k)){delete s.driveFolderMap[k];changed=true}
   if(!s.driveFolderId){s.driveFolderId=await findOrCreateFolder(FOLDER_NAME);changed=true}
   if(!s.driveAppId){s.driveAppId=await findOrCreateFolder("_App-Daten",s.driveFolderId);changed=true}
   if(!s.driveInboxId){s.driveInboxId=await findOrCreateFolder("Zum Einreichen",s.driveFolderId);changed=true}
@@ -1265,8 +1267,8 @@ async function wantedFolder(inv,k){
   if(k==="doc"){const c=calc(inv);
     if(c.pkv.state==="todo")return ensurePath(["Zum Einreichen","AXA",cleanName(inv.patient||"Ohne Person")]);
     if(c.bh.state==="todo")return ensurePath(["Zum Einreichen","Beihilfe"]);}
-  if(k!=="doc"&&inv[k]?.proofShared)return ensurePath([...ymParts({invoiceDate:inv[k].proofDate}),"Leistungsnachweise"]);
-  return ensurePath([...ymParts(inv),k==="doc"?"Rechnungen":"Leistungsnachweise"]);
+  if(k!=="doc"&&inv[k]?.proofShared)return ensurePath(["Leistungsnachweise",...ymParts({invoiceDate:inv[k].proofDate})]);
+  return ensurePath([k==="doc"?"Rechnungen":"Leistungsnachweise",...ymParts(inv)]);
 }
 /* Foto -> PDF (eine A4-Seite), damit Beihilfe- und AXA-App die Datei auswählen können */
 async function toPdf(blob){
