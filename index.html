@@ -507,7 +507,7 @@ function drawView(thumb){
         ${c.unpaid&&c.step!=="ueberweisen"?`<button type="button" class="btn" data-act="paysec">Überweisen</button>`:""}</div>
     </div>
     ${c.unpaid&&(c.step==="ueberweisen"||S.edit.showPay)?paySection(inv,c):""}
-    ${c.step==="einreichen"&&inv.docName&&inv.docDriveId?`<div class="sec"><h3>Zum Einreichen</h3><p class="status" style="margin:0">In der Beihilfe- und AXA-App findest du die Rechnung in Google Drive unter <b>Arztrechnungen › Zum Einreichen</b>:</p><div class="v num" style="overflow-wrap:anywhere">${esc(inv.docName)}</div></div>`:""}
+    ${c.step==="einreichen"&&inv.docName&&inv.docDriveId?`<div class="sec"><h3>Zum Einreichen</h3><p class="status" style="margin:0">In Google Drive unter ${[c.pkv.state==="todo"?"<b>Arztrechnungen › Zum Einreichen › AXA</b>":"",c.bh.state==="todo"?"<b>Arztrechnungen › Zum Einreichen › Beihilfe</b>":""].filter(Boolean).join(" und ")}:</p><div class="v num" style="overflow-wrap:anywhere">${esc(inv.docName)}</div></div>`:""}
     <div class="sec">${S.edit.thumb||""}<div class="btnrow">${docBtns}</div></div>
     <div class="btnrow" style="margin-top:14px"><button type="button" class="btn" data-act="edit">Details anzeigen und bearbeiten</button></div>
   `,`<button type="button" class="btn" data-act="close">Schließen</button>`);
@@ -688,6 +688,7 @@ async function editClick(e){
     if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Wirklich löschen? Nochmal tippen";return}
     const inv=S.edit.inv;await dbDel("invoices",inv.id);if(inv.docFileId)await dbDel("files",inv.docFileId).catch(()=>{});
     S.deleted[inv.id]=new Date().toISOString();await dbPut("meta",{key:"deleted",items:S.deleted});
+    await queueTrash(inv);
     S.inv=S.inv.filter(x=>x.id!==inv.id);render();closeSheet();toast("Rechnung gelöscht");scheduleSync();
   }
 }
@@ -1207,7 +1208,8 @@ async function findOrCreateFolder(name,parent){
   return c.id;
 }
 /* Ordnung in Drive:
-   Arztrechnungen/Zum Einreichen          neue Rechnungen, bis PKV und Beihilfe eingereicht sind
+   Arztrechnungen/Zum Einreichen/AXA      noch bei der AXA einzureichen
+   Arztrechnungen/Zum Einreichen/Beihilfe noch bei der Beihilfe einzureichen (Kopie, wenn beide offen)
    Arztrechnungen/2026/06 Juni/Rechnungen
    Arztrechnungen/2026/06 Juni/Leistungsnachweise
    Arztrechnungen/_App-Daten/arztrechnungen-daten.json */
@@ -1221,6 +1223,16 @@ async function moveFile(id,target,name){
   const remove=(meta.parents||[]).filter(p=>p!==target).join(",");
   let url=`${API}/${id}?fields=id,webViewLink&addParents=${target}`;if(remove)url+=`&removeParents=${remove}`;
   return (await gfetch(url,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(name?{name}:{})})).json();
+}
+async function trashDrive(id){
+  try{await gfetch(`${API}/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({trashed:true})});glog("In den Papierkorb: "+id.slice(0,6)+"…")}
+  catch(e){if(e.code==="auth")throw e;glog("Papierkorb nicht möglich: "+id.slice(0,6)+"…")}
+}
+// Beim Löschen einer Rechnung: ihre PDFs in Drive vormerken (gemeinsame Leistungsnachweise bleiben)
+async function queueTrash(inv){
+  const ids=[inv.docDriveId,inv.docCopyId];
+  for(const k of ["pkv","bh"])if(inv[k]?.proofDriveId&&!inv[k].proofShared)ids.push(inv[k].proofDriveId);
+  S.trash=[...new Set([...(S.trash||[]),...ids.filter(Boolean)])];await dbPut("meta",{key:"trash",items:S.trash});
 }
 async function ensureFolders(){
   const s=S.settings;let changed=false;
@@ -1250,7 +1262,9 @@ function wantedName(inv,k){
   return k==="doc"?`${base}_${r2(inv.amount).toFixed(2).replace(".",",")}.pdf`:`${base}_${k==="pkv"?"PKV":"Beihilfe"}.pdf`;
 }
 async function wantedFolder(inv,k){
-  if(k==="doc"&&calc(inv).todo)return S.settings.driveInboxId;
+  if(k==="doc"){const c=calc(inv);
+    if(c.pkv.state==="todo")return ensurePath(["Zum Einreichen","AXA"]);
+    if(c.bh.state==="todo")return ensurePath(["Zum Einreichen","Beihilfe"]);}
   if(k!=="doc"&&inv[k]?.proofShared)return ensurePath([...ymParts({invoiceDate:inv[k].proofDate}),"Leistungsnachweise"]);
   return ensurePath([...ymParts(inv),k==="doc"?"Rechnungen":"Leistungsnachweise"]);
 }
@@ -1347,7 +1361,23 @@ async function syncNow(){
           }
         }
       }
+      // Muss die Rechnung zu AXA und Beihilfe, liegt eine Kopie zusätzlich im Ordner „Beihilfe“
+      const c=calc(inv);
+      if(c.pkv.state==="todo"&&c.bh.state==="todo"&&inv.docDriveId){
+        const t=await ensurePath(["Zum Einreichen","Beihilfe"]),nm=wantedName(inv,"doc");
+        if(!inv.docCopyId){
+          try{const cp=await (await gfetch(`${API}/${inv.docDriveId}/copy?fields=id`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:nm,parents:[t]})})).json();
+            inv.docCopyId=cp.id;inv.docCopyName=nm;inv.updatedAt=new Date().toISOString();glog("Kopie für Beihilfe: "+nm)}
+          catch(e){if(e.code==="auth")throw e;glog("Kopie nicht möglich: "+nm)}
+        }else if(inv.docCopyName!==nm){
+          try{await moveFile(inv.docCopyId,t,nm);inv.docCopyName=nm;inv.updatedAt=new Date().toISOString()}catch(e){if(e.code==="auth")throw e}
+        }
+      }else if(inv.docCopyId){
+        await trashDrive(inv.docCopyId);inv.docCopyId=null;inv.docCopyName=null;inv.updatedAt=new Date().toISOString();
+      }
     }
+    // Dateien gelöschter Rechnungen in den Papierkorb
+    if(S.trash?.length){for(const id of [...S.trash]){await trashDrive(id);S.trash=S.trash.filter(x=>x!==id)}await dbPut("meta",{key:"trash",items:S.trash})}
     // Einstellungen: neuere gewinnt
     if(remote?.settings&&(remote.settingsUpdatedAt||"")>(S.settings.updatedAt||"")){
       const keep=Object.fromEntries(LOCAL_KEYS.map(k=>[k,S.settings[k]]));
@@ -1398,6 +1428,7 @@ async function driveBlob(driveId){if(!tokenValid()||!driveId)return null;try{ret
     const st=await dbGet("meta","settings");if(st){const {key,...rest}=st;S.settings={...DEFAULT_SETTINGS,...rest}}
     S.inv=await dbAll("invoices");
     const del=await dbGet("meta","deleted");S.deleted=del?.items||{};
+    const tq=await dbGet("meta","trash");S.trash=tq?.items||[];
   }catch(err){$("#list").innerHTML=`<div class="empty">Speicher nicht verfügbar. Bitte die App nicht im privaten Modus öffnen.</div>`;return}
   S.loaded=true;render();updateChip();
   if(AUTH?.token&&!S.settings.driveLinked){S.settings.driveLinked=true;await dbPut("meta",{key:"settings",...S.settings});updateChip()}
