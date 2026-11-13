@@ -458,7 +458,12 @@ function sideLine(key,title,inv){
   const proof=c.state==="na"?"":(s.proofUrl||s.proofFileId
     ?`<div class="sub-actions"><button type="button" class="btn link" data-act="proofopen" data-k="${key}">Leistungsnachweis öffnen</button></div>`
     :(c.state!=="todo"?`<div class="sub-actions"><button type="button" class="btn link" data-act="proofcap" data-k="${key}">Leistungsnachweis erfassen</button><button type="button" class="btn link" data-act="proofadd" data-k="${key}">nur ablegen</button></div>`:""));
-  return `<div class="line"><div><div class="t">${title}</div><div class="s">${info}</div></div>${S.edit.ask===key?"":btn}</div>${ask}${proof}`;
+  // Erneut einreichen: setzt die Seite auf Schritt 1 zurück (z. B. nach Ablehnung)
+  let again="";
+  if(c.state==="wait"||c.state==="done")again=S.edit.resub===key
+    ?`<div class="inline"><span class="status" style="margin:0">Einreichung und Erstattung zurücksetzen?</span><button type="button" class="btn primary" data-act="resubok" data-k="${key}">Ja, erneut einreichen</button><button type="button" class="btn" data-act="resubno">Abbrechen</button></div>`
+    :`<div class="sub-actions"><button type="button" class="btn link" data-act="resub" data-k="${key}">Erneut einreichen</button></div>`;
+  return `<div class="line"><div><div class="t">${title}</div><div class="s">${info}</div></div>${S.edit.ask===key?"":btn}</div>${ask}${proof}${again}`;
 }
 /* ---- Überweisen: Daten zum Kopieren und GiroCode ---- */
 function payData(inv,c){
@@ -518,6 +523,13 @@ async function viewClick(e){
     case "ask":S.edit.ask=k;drawView();$("#askAmt")?.focus();return;
     case "got":{const v=r2(String($("#askAmt").value).replace(/\./g,"").replace(",","."));inv[k].received=v;inv[k].receivedDate=today();if(!inv[k].submitted)inv[k].submitted=today();
       inv[k].checked=false;S.edit.ask=null;await saveInvoice(inv);toast("Geld eingegangen – jetzt Leistungsnachweis prüfen");return drawView()}
+    case "resub":S.edit.resub=k;return drawView();
+    case "resubno":S.edit.resub=null;return drawView();
+    case "resubok":{const x=inv[k];
+      const was=`Erste Einreichung ${dfmt(x.submitted)}`+(x.receivedDate?`, ${eur(+x.received||0)} am ${dfmt(x.receivedDate)}`:"");
+      x.note=x.note?`${x.note} (${was})`:was;
+      x.submitted=null;x.receivedDate=null;x.received="";delete x.checked;
+      S.edit.resub=null;await saveInvoice(inv);toast((k==="pkv"?"PKV":"Beihilfe")+": wieder bei Schritt 1 Einreichen");return drawView()}
     case "checkok":inv[k].checked=true;await saveInvoice(inv);toast((k==="pkv"?"PKV":"Beihilfe")+": geprüft");return drawView();
     case "proofcap":{const id=inv.id;closeSheet();const r=await scanDocument("Leistungsnachweis scannen");if(r)openProof(r,{k,id});else openView(id);return}
     case "paid":inv.payment={date:today(),amount:r2(inv.amount)};await saveInvoice(inv);toast("Als bezahlt markiert");return drawView();
