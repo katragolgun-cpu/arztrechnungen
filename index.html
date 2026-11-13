@@ -46,6 +46,10 @@ header.top p{margin:2px 0 0;color:var(--muted);font-size:13px}
 .tile .val{font-family:var(--f-num);font-size:20px;font-weight:600}
 .tile .sub{font-size:12.5px;color:var(--muted)}
 .tile.hot .val,.tile.cut .val{color:var(--bad)} .tile.wait .val{color:var(--wait)} .tile.todo .val{color:var(--warn)}
+.search{position:relative}
+.search input{width:100%;font:inherit;font-size:16px;padding:10px 38px 10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink)}
+.search button{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--muted);font-size:20px;line-height:1;padding:4px 8px}
+.searchinfo{font-size:13.5px;color:var(--muted)}
 .chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 12px;font:inherit;font-size:13.5px;white-space:nowrap}
@@ -143,6 +147,7 @@ input.num{font-family:var(--f-num)}
   <div id="banner" class="banner" hidden></div>
   <button type="button" class="sumbar" id="sumBar" aria-expanded="false" aria-controls="summary"></button>
   <section class="summary" id="summary" aria-label="Übersicht" hidden></section>
+  <div class="search" role="search"><input type="text" inputmode="search" id="q" placeholder="Suchen: Nummer, Betrag, Arzt, Person, Datum" aria-label="Rechnungen durchsuchen" autocomplete="off" enterkeyhint="search"><button type="button" id="qClear" aria-label="Suche leeren" hidden>×</button></div>
   <nav class="chips" id="filters" aria-label="Filter"></nav>
   <nav class="chips" id="people" aria-label="Personen"></nav>
   <section class="list" id="list" aria-live="polite"><div class="empty">Rechnungen werden geladen …</div></section>
@@ -190,7 +195,17 @@ const DEFAULT_SETTINGS={
   minBeihilfe:200,payDays:30,warnDays:7,lastBackup:null
 };
 const GROUPS={A:"Antragsteller",E:"Ehepartner",K:"Kind"};
-const S={inv:[],deleted:{},settings:structuredClone(DEFAULT_SETTINGS),loaded:false,filter:"einreichen",person:"alle",edit:null,select:null};
+const S={inv:[],deleted:{},settings:structuredClone(DEFAULT_SETTINGS),loaded:false,filter:"einreichen",person:"alle",edit:null,select:null,q:""};
+/* Suche: Rechnungsnummer, Betrag (106,45 / 106.45 / 106), Rechnungssteller, Person, Grund, Notiz, Datum */
+function matchQ(i,q){
+  const words=q.toLowerCase().split(/\s+/).filter(Boolean);if(!words.length)return true;
+  const amt=+i.amount||0;const amtTxt=[amt.toFixed(2).replace(".",","),amt.toFixed(2),eur(amt).toLowerCase(),String(amt)].join(" ");
+  const hay=[i.provider,i.invoiceNo,(i.invoiceNo||"").replace(/[^0-9a-z]/gi,""),i.patient,i.reason,i.note,dfmt(i.invoiceDate),dfmt(i.receivedDate),i.invoiceDate,amtTxt].join(" ").toLowerCase();
+  return words.every(w=>{
+    if(/^\d+([.,]\d{1,2})?$/.test(w)&&/[.,]/.test(w)){const n=+w.replace(",",".");if(Math.abs(n-amt)<0.005)return true}
+    return hay.includes(w)||hay.includes(w.replace(/[^0-9a-z]/gi,""))&&w.replace(/[^0-9a-z]/gi,"").length>=3;
+  });
+}
 
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -268,7 +283,7 @@ function render(){
   const mine=S.person==="alle"?rows:rows.filter(r=>r.i.patient===S.person);
   renderSummary(mine);renderBanner();
   const f=FILTERS.find(x=>x.id===S.filter)||FILTERS[0];
-  $("#filters").innerHTML=FILTERS.filter(x=>!x.hidden||x.id===S.filter).map(x=>`<button type="button" class="chip" data-f="${x.id}" aria-pressed="${x.id===S.filter}">${esc(x.label)}<span class="c">${mine.filter(r=>x.test(r.c)).length}</span></button>`).join("");
+  $("#filters").innerHTML=FILTERS.filter(x=>!x.hidden||x.id===S.filter).map(x=>`<button type="button" class="chip" data-f="${x.id}" aria-pressed="${!S.q.trim()&&x.id===S.filter}">${esc(x.label)}<span class="c">${mine.filter(r=>x.test(r.c)).length}</span></button>`).join("");
   if(S.select&&f.id!=="einreichen")S.select=null;
   renderSelectBar();
   const names=["alle",...S.settings.people.map(p=>p.name)];
@@ -276,14 +291,16 @@ function render(){
   const L=$("#list");
   if(!S.loaded){L.innerHTML=`<div class="empty">Rechnungen werden geladen …</div>`;return}
   if(!S.inv.length){L.innerHTML=`<div class="empty">Noch keine Rechnungen.<br>Tippe auf <b>+ Rechnung</b> oder spiele unter <b>Einstellungen</b> deine Startdatei ein.</div>`;return}
-  const list=mine.filter(r=>f.test(r.c)).sort((a,b)=>(b.i.invoiceDate||"").localeCompare(a.i.invoiceDate||""));
+  const q=S.q.trim();
+  const list=(q?mine.filter(r=>matchQ(r.i,q)):mine.filter(r=>f.test(r.c))).sort((a,b)=>(b.i.invoiceDate||"").localeCompare(a.i.invoiceDate||""));
   const emptyTxt={einreichen:"Nichts einzureichen.",warten:"Keine offenen Erstattungen.",nachweis:"Keine Nachweise zu prüfen.",ueberweisen:"Nichts zu überweisen.",erledigt:"Noch nichts erledigt."}[f.id]||"Keine Rechnungen in dieser Ansicht.";
   let html="";
-  if(f.id==="einreichen"&&list.length>1)html+=`<div class="btnrow listtools">${S.select
+  if(q)html+=`<div class="searchinfo">${list.length} Treffer für „${esc(q)}“ in allen Rechnungen${S.person!=="alle"?" von "+esc(S.person):""}. Filter sind während der Suche aus.</div>`;
+  if(!q&&f.id==="einreichen"&&list.length>1)html+=`<div class="btnrow listtools">${S.select
     ?`<button type="button" class="btn" data-act="selall">Alle auswählen</button><button type="button" class="btn" data-act="selnone">Auswahl beenden</button>`
     :`<button type="button" class="btn" data-act="selstart">Mehrere auswählen</button>`}</div>`;
-  if(["warten","nachweis","alle"].includes(f.id)&&!S.select)html+=`<div class="btnrow listtools"><button type="button" class="btn" data-act="proofstart">Leistungsnachweis erfassen</button></div>`;
-  if(!list.length){L.innerHTML=html+`<div class="empty">${emptyTxt}</div>`;return}
+  if(!q&&["warten","nachweis","alle"].includes(f.id)&&!S.select)html+=`<div class="btnrow listtools"><button type="button" class="btn" data-act="proofstart">Leistungsnachweis erfassen</button></div>`;
+  if(!list.length){L.innerHTML=html+`<div class="empty">${q?"Keine Treffer.":emptyTxt}</div>`;return}
   let lastYear=null;
   for(const {i,c} of list){
     const y=(i.invoiceDate||"").slice(0,4);
@@ -292,7 +309,7 @@ function render(){
     const nx=nextStepText(i,c);
     html+=`<button type="button" class="card${sel?" selected":""}" data-id="${esc(i.id)}" ${S.select?`aria-pressed="${!!sel}"`:""}>
       <div class="row1">${S.select?`<span class="tick" aria-hidden="true">${sel?"✓":""}</span>`:""}<div class="who"><div class="prov">${esc(i.provider||"Ohne Rechnungssteller")}</div>
-      <div class="meta"><span class="pchip">${esc(i.patient||"?")}</span>${dfmt(i.invoiceDate)}${i.reason?" · "+esc(i.reason):""}</div></div>
+      <div class="meta"><span class="pchip">${esc(i.patient||"?")}</span>${dfmt(i.invoiceDate)}${q&&i.invoiceNo?" · Nr. "+esc(i.invoiceNo):""}${i.reason?" · "+esc(i.reason):""}</div></div>
       <div class="amt">${eur(c.amount)}</div></div>
       ${nx?`<div class="next s-${c.step}">${esc(nx)}</div>`:""}
       ${dueText(c)}
@@ -371,7 +388,7 @@ function renderBanner(){
 /* ================= Ereignisse auf der Hauptseite ================= */
 document.addEventListener("click",e=>{
   if(e.target.closest(".sheet"))return;
-  const f=e.target.closest("[data-f]");if(f){S.filter=f.dataset.f;S.select=null;render();return}
+  const f=e.target.closest("[data-f]");if(f){S.filter=f.dataset.f;S.select=null;if(S.q){S.q="";$("#q").value="";$("#qClear").hidden=true}render();return}
   const p=e.target.closest("[data-p]");if(p){S.person=p.dataset.p;render();return}
   const a=e.target.closest("[data-act]");
   if(a){const act=a.dataset.act;
@@ -1454,6 +1471,10 @@ async function driveBlob(driveId){if(!tokenValid()||!driveId)return null;try{ret
   try{await navigator.storage?.persist?.()}catch{}
   if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 })();
+(()=>{const q=$("#q"),c=$("#qClear");let t;
+q.addEventListener("input",()=>{c.hidden=!q.value;clearTimeout(t);t=setTimeout(()=>{S.q=q.value;if(S.q)S.select=null;render()},150)});
+c.addEventListener("click",()=>{q.value="";c.hidden=true;S.q="";render();q.focus()});
+q.addEventListener("keydown",e=>{if(e.key==="Escape"){c.click()}else if(e.key==="Enter")q.blur()});})();
 </script>
 </body>
 </html>
