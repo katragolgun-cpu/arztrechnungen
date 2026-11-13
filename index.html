@@ -507,7 +507,7 @@ function drawView(thumb){
         ${c.unpaid&&c.step!=="ueberweisen"?`<button type="button" class="btn" data-act="paysec">Überweisen</button>`:""}</div>
     </div>
     ${c.unpaid&&(c.step==="ueberweisen"||S.edit.showPay)?paySection(inv,c):""}
-    ${c.step==="einreichen"&&inv.docName&&inv.docDriveId?`<div class="sec"><h3>Zum Einreichen</h3><p class="status" style="margin:0">In Google Drive unter ${[c.pkv.state==="todo"?"<b>Arztrechnungen › Zum Einreichen › AXA</b>":"",c.bh.state==="todo"?"<b>Arztrechnungen › Zum Einreichen › Beihilfe</b>":""].filter(Boolean).join(" und ")}:</p><div class="v num" style="overflow-wrap:anywhere">${esc(inv.docName)}</div></div>`:""}
+    ${c.step==="einreichen"&&inv.docName&&inv.docDriveId?`<div class="sec"><h3>Zum Einreichen</h3><p class="status" style="margin:0">In Google Drive unter ${[c.pkv.state==="todo"?`<b>Arztrechnungen › Zum Einreichen › AXA › ${esc(inv.patient||"")}</b>`:"",c.bh.state==="todo"?"<b>Arztrechnungen › Zum Einreichen › Beihilfe</b>":""].filter(Boolean).join(" und ")}:</p><div class="v num" style="overflow-wrap:anywhere">${esc(inv.docName)}</div></div>`:""}
     <div class="sec">${S.edit.thumb||""}<div class="btnrow">${docBtns}</div></div>
     <div class="btnrow" style="margin-top:14px"><button type="button" class="btn" data-act="edit">Details anzeigen und bearbeiten</button></div>
   `,`<button type="button" class="btn" data-act="close">Schließen</button>`);
@@ -1208,7 +1208,7 @@ async function findOrCreateFolder(name,parent){
   return c.id;
 }
 /* Ordnung in Drive:
-   Arztrechnungen/Zum Einreichen/AXA      noch bei der AXA einzureichen
+   Arztrechnungen/Zum Einreichen/AXA/<Person> noch bei der AXA einzureichen, je Person ein Ordner
    Arztrechnungen/Zum Einreichen/Beihilfe noch bei der Beihilfe einzureichen (Kopie, wenn beide offen)
    Arztrechnungen/2026/06 Juni/Rechnungen
    Arztrechnungen/2026/06 Juni/Leistungsnachweise
@@ -1263,7 +1263,7 @@ function wantedName(inv,k){
 }
 async function wantedFolder(inv,k){
   if(k==="doc"){const c=calc(inv);
-    if(c.pkv.state==="todo")return ensurePath(["Zum Einreichen","AXA"]);
+    if(c.pkv.state==="todo")return ensurePath(["Zum Einreichen","AXA",cleanName(inv.patient||"Ohne Person")]);
     if(c.bh.state==="todo")return ensurePath(["Zum Einreichen","Beihilfe"]);}
   if(k!=="doc"&&inv[k]?.proofShared)return ensurePath([...ymParts({invoiceDate:inv[k].proofDate}),"Leistungsnachweise"]);
   return ensurePath([...ymParts(inv),k==="doc"?"Rechnungen":"Leistungsnachweise"]);
@@ -1318,6 +1318,7 @@ async function syncNow(){
   G.busy=true;G.dirty=false;G.err=null;updateChip();
   try{
     await ensureFolders();
+    for(const pp of S.settings.people||[])if(pp.name)await ensurePath(["Zum Einreichen","AXA",cleanName(pp.name)]);
     let remote=null;
     if(S.settings.driveDataId){
       try{remote=await (await gfetch(`${API}/${S.settings.driveDataId}?alt=media`)).json()}
