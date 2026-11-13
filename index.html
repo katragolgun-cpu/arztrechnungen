@@ -109,7 +109,7 @@ input.num{font-family:var(--f-num)}
 .summary-wrap{display:flex;flex-direction:column;gap:10px}
 .sub-actions{display:flex;gap:14px;flex-wrap:wrap;margin-top:-4px}
 .next{font-size:13.5px;font-weight:600}
-.next.s-einreichen{color:var(--warn)} .next.s-warten{color:var(--wait)} .next.s-ueberweisen{color:var(--accent)}
+.next.s-einreichen{color:var(--warn)} .next.s-warten{color:var(--wait)} .next.s-ueberweisen{color:var(--accent)} .next.s-nachweis{color:var(--bad)}
 .due{font-size:12.5px;color:var(--muted)} .due.warn{color:var(--warn);font-weight:600} .due.bad{color:var(--bad);font-weight:600}
 .listtools{justify-content:flex-end}
 .card.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
@@ -121,6 +121,11 @@ input.num{font-family:var(--f-num)}
 .prow:last-of-type{border-bottom:0}
 .pchk{display:flex;gap:10px;align-items:flex-start;min-width:0;font-size:14px}
 .pchk input{width:20px;height:20px;flex:none;margin-top:2px}
+.scanwrap{display:flex;justify-content:center;margin:12px 0}
+.scanwrap canvas{touch-action:none;border-radius:8px;max-width:100%;background:#000}
+.thumbs{display:flex;gap:10px;flex-wrap:wrap}
+.thumbs .pg{display:flex;flex-direction:column;align-items:center;gap:2px}
+.thumbs img{width:84px;height:118px;object-fit:cover;border:1px solid var(--line);border-radius:6px;background:#fff}
 .paygrid{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px 10px;align-items:center;font-size:14px}
 .paygrid .k{color:var(--muted);font-size:12.5px}
 .paygrid .v{overflow-wrap:anywhere;font-family:var(--f-num)}
@@ -145,6 +150,7 @@ input.num{font-family:var(--f-num)}
 <button class="fab" id="btnAdd" type="button">+ Rechnung</button>
 <div class="selbar" id="selBar" hidden></div>
 <input type="file" id="pick" accept="image/*,application/pdf" hidden>
+<input type="file" id="cam" accept="image/*" capture="environment" hidden>
 <input type="file" id="pickBackup" accept="application/json,.json" hidden>
 <div id="sheetHost"></div>
 <div id="toast" class="toast" hidden></div>
@@ -203,7 +209,9 @@ function side(inv,key){
   if(rate<=0)state="na"; else if(!s.submitted)state="todo"; else if(!s.receivedDate)state="wait"; else state="done";
   const received=state==="done"?r2(s.received):0;
   const diff=state==="done"?r2(expected-received):0;
-  return {rate,expected,state,received,diff,s};
+  // Geld eingegangen, Leistungsnachweis noch nicht geprüft (ältere Einträge ohne Angabe gelten als geprüft)
+  const review=state==="done"&&s.checked===false;
+  return {rate,expected,state,received,diff,review,s};
 }
 function calc(inv){
   const amount=r2(inv.amount),paid=r2(inv.payment?.amount),open=r2(amount-paid);
@@ -217,8 +225,9 @@ function calc(inv){
   const cut=(pkv.diff>0.004?pkv.diff:0)+(bh.diff>0.004?bh.diff:0);
   const todo=pkv.state==="todo"||bh.state==="todo";
   const wait=pkv.state==="wait"||bh.state==="wait";
-  const step=todo?"einreichen":wait?"warten":unpaid?"ueberweisen":"erledigt";
-  return {amount,paid,open,unpaid,overdue,dueSoon,due,daysLeft,age,pkv,bh,cut,todo,wait,step,done:step==="erledigt",check:!!inv.check||cut>0.004};
+  const review=pkv.review||bh.review;
+  const step=todo?"einreichen":wait?"warten":review?"nachweis":unpaid?"ueberweisen":"erledigt";
+  return {amount,paid,open,unpaid,overdue,dueSoon,due,daysLeft,age,pkv,bh,cut,todo,wait,review,step,done:step==="erledigt",check:!!inv.check||cut>0.004};
 }
 // Fälligkeit: eigenes Datum von der Rechnung, sonst Eingang + Zahlungsfrist
 function dueDate(inv){
@@ -231,7 +240,8 @@ function dueDate(inv){
 const FILTERS=[
   {id:"einreichen",label:"1 Einreichen",test:c=>c.step==="einreichen"},
   {id:"warten",label:"2 Warten",test:c=>c.step==="warten"},
-  {id:"ueberweisen",label:"3 Überweisen",test:c=>c.step==="ueberweisen"},
+  {id:"nachweis",label:"3 Nachweis prüfen",test:c=>c.step==="nachweis"},
+  {id:"ueberweisen",label:"4 Überweisen",test:c=>c.step==="ueberweisen"},
   {id:"erledigt",label:"Erledigt",test:c=>c.step==="erledigt"},
   {id:"pruefen",label:"Prüfen",test:c=>c.check},
   {id:"alle",label:"Alle",test:()=>true},
@@ -241,6 +251,7 @@ const FILTERS=[
 function nextStepText(i,c){
   if(c.step==="einreichen"){const w=[c.pkv.state==="todo"&&"PKV",c.bh.state==="todo"&&"Beihilfe"].filter(Boolean);return `Einreichen bei ${w.join(" und ")}`}
   if(c.step==="warten"){const w=[c.pkv.state==="wait"&&`PKV ${eur(c.pkv.expected)}`,c.bh.state==="wait"&&`Beihilfe ${eur(c.bh.expected)}`].filter(Boolean);return `Warten auf ${w.join(" und ")}`}
+  if(c.step==="nachweis"){const w=[["PKV",c.pkv],["Beihilfe",c.bh]].filter(([,x])=>x.review).map(([n,x])=>x.diff>0.004?`${n} ${eur(x.received)} statt ${eur(x.expected)}`:`${n} ${eur(x.received)}`);return `Nachweis prüfen: ${w.join(", ")}`}
   if(c.step==="ueberweisen")return `Jetzt ${eur(c.open)} überweisen`;
   return "";
 }
@@ -266,12 +277,12 @@ function render(){
   if(!S.loaded){L.innerHTML=`<div class="empty">Rechnungen werden geladen …</div>`;return}
   if(!S.inv.length){L.innerHTML=`<div class="empty">Noch keine Rechnungen.<br>Tippe auf <b>+ Rechnung</b> oder spiele unter <b>Einstellungen</b> deine Startdatei ein.</div>`;return}
   const list=mine.filter(r=>f.test(r.c)).sort((a,b)=>(b.i.invoiceDate||"").localeCompare(a.i.invoiceDate||""));
-  const emptyTxt={einreichen:"Nichts einzureichen.",warten:"Keine offenen Erstattungen.",ueberweisen:"Nichts zu überweisen.",erledigt:"Noch nichts erledigt."}[f.id]||"Keine Rechnungen in dieser Ansicht.";
+  const emptyTxt={einreichen:"Nichts einzureichen.",warten:"Keine offenen Erstattungen.",nachweis:"Keine Nachweise zu prüfen.",ueberweisen:"Nichts zu überweisen.",erledigt:"Noch nichts erledigt."}[f.id]||"Keine Rechnungen in dieser Ansicht.";
   let html="";
   if(f.id==="einreichen"&&list.length>1)html+=`<div class="btnrow listtools">${S.select
     ?`<button type="button" class="btn" data-act="selall">Alle auswählen</button><button type="button" class="btn" data-act="selnone">Auswahl beenden</button>`
     :`<button type="button" class="btn" data-act="selstart">Mehrere auswählen</button>`}</div>`;
-  if(["warten","alle","einreichen"].includes(f.id)&&!S.select)html+=`<div class="btnrow listtools"><button type="button" class="btn" data-act="proofstart">Leistungsnachweis erfassen</button></div>`;
+  if(["warten","nachweis","alle"].includes(f.id)&&!S.select)html+=`<div class="btnrow listtools"><button type="button" class="btn" data-act="proofstart">Leistungsnachweis erfassen</button></div>`;
   if(!list.length){L.innerHTML=html+`<div class="empty">${emptyTxt}</div>`;return}
   let lastYear=null;
   for(const {i,c} of list){
@@ -317,6 +328,7 @@ function stampSide(n,s){
   if(s.state==="na")return `<span class="stamp s-na">${n} –</span>`;
   if(s.state==="todo")return `<span class="stamp s-todo">${n} einreichen</span>`;
   if(s.state==="wait")return `<span class="stamp s-wait">${n} <b>${eur(s.expected)}</b> erwartet</span>`;
+  if(s.review)return `<span class="stamp s-bad">${n} Nachweis prüfen</span>`;
   if(s.diff>0.004)return `<span class="stamp s-bad">${n} gekürzt <b>−${eur(s.diff)}</b></span>`;
   return `<span class="stamp s-ok">${n} erstattet</span>`;
 }
@@ -375,7 +387,7 @@ document.addEventListener("click",e=>{
     if(S.inv.some(x=>x.id===id))openView(id);return}
   if(e.target.closest("[data-act='backup']"))makeBackup();
 });
-$("#btnAdd").addEventListener("click",()=>pickFile(f=>openNew(f)));
+$("#btnAdd").addEventListener("click",async()=>{const r=await scanDocument("Rechnung scannen");if(r)openNew(r)});
 $("#btnSettings").addEventListener("click",openSettings);
 function pickFile(cb){const p=$("#pick");p.value="";p.onchange=()=>{const f=p.files[0];if(f)cb(f)};p.click()}
 
@@ -422,6 +434,7 @@ async function openView(id){
   let thumb="";
   if(inv.docFileId){const r=await fileUrl(inv.docFileId);if(r){S.edit.urls.push(r.url);
     thumb=r.file.type.startsWith("image/")?`<img class="thumb" src="${r.url}" alt="Rechnungsfoto">`:""}}
+  if(!thumb&&inv.thumbFileId){const r=await fileUrl(inv.thumbFileId);if(r){S.edit.urls.push(r.url);thumb=`<img class="thumb" src="${r.url}" alt="Rechnung">`}}
   drawView(thumb);
   // Foto aus Drive nachladen, wenn es nur dort liegt (z. B. auf einem anderen Gerät aufgenommen)
   if(!inv.docFileId&&inv.docDriveId&&tokenValid()){
@@ -436,14 +449,15 @@ function sideLine(key,title,inv){
   const c=side(inv,key);const s=c.s;let info="",btn="";
   if(c.state==="na")info="Kein Anspruch";
   else if(c.state==="todo"){info=`${eur(c.expected)} erwartet`;btn=`<button type="button" class="btn primary" data-act="sub" data-k="${key}">Heute eingereicht</button>`}
-  else if(c.state==="wait"){info=`${eur(c.expected)} erwartet · eingereicht ${dfmt(s.submitted)}`;btn=`<button type="button" class="btn primary" data-act="ask" data-k="${key}">Erstattung erhalten</button>`}
-  else info=`${eur(c.received)} erhalten am ${dfmt(s.receivedDate)}${c.diff>0.004?` · <b style="color:var(--bad)">${eur(c.diff)} weniger</b>`:""}`;
+  else if(c.state==="wait"){info=`${eur(c.expected)} erwartet · eingereicht ${dfmt(s.submitted)}`;btn=`<button type="button" class="btn primary" data-act="ask" data-k="${key}">Geld eingegangen</button>`}
+  else{info=`${eur(c.received)} erhalten am ${dfmt(s.receivedDate)}${c.diff>0.004?` · <b style="color:var(--bad)">${eur(c.diff)} weniger als erwartet</b>`:c.diff<-0.004?` · ${eur(-c.diff)} mehr als erwartet`:""}`;
+    if(c.review){info+=`<br><b style="color:var(--bad)">Leistungsnachweis prüfen</b>`;btn=`<button type="button" class="btn primary" data-act="checkok" data-k="${key}">Geprüft</button>`}}
   let ask="";
   if(S.edit.ask===key)ask=`<div class="inline"><label class="f">Erhaltener Betrag (€)<input id="askAmt" class="num" inputmode="decimal" value="${c.expected.toFixed(2).replace(".",",")}"></label>
     <button type="button" class="btn primary" data-act="got" data-k="${key}">Übernehmen</button></div>`;
   const proof=c.state==="na"?"":(s.proofUrl||s.proofFileId
     ?`<div class="sub-actions"><button type="button" class="btn link" data-act="proofopen" data-k="${key}">Leistungsnachweis öffnen</button></div>`
-    :(c.state!=="todo"?`<div class="sub-actions"><button type="button" class="btn link" data-act="proofadd" data-k="${key}">+ Leistungsnachweis</button></div>`:""));
+    :(c.state!=="todo"?`<div class="sub-actions"><button type="button" class="btn link" data-act="proofcap" data-k="${key}">Leistungsnachweis erfassen</button><button type="button" class="btn link" data-act="proofadd" data-k="${key}">nur ablegen</button></div>`:""));
   return `<div class="line"><div><div class="t">${title}</div><div class="s">${info}</div></div>${S.edit.ask===key?"":btn}</div>${ask}${proof}`;
 }
 /* ---- Überweisen: Daten zum Kopieren und GiroCode ---- */
@@ -502,8 +516,10 @@ async function viewClick(e){
     case "edit":{const urls=S.edit.urls;S.edit.urls=[];urls.forEach(u=>URL.revokeObjectURL(u));return openEditor(inv)}
     case "sub":inv[k].submitted=today();await saveInvoice(inv);toast((k==="pkv"?"PKV":"Beihilfe")+": heute eingereicht");return drawView();
     case "ask":S.edit.ask=k;drawView();$("#askAmt")?.focus();return;
-    case "got":{const v=r2(String($("#askAmt").value).replace(",","."));inv[k].received=v;inv[k].receivedDate=today();if(!inv[k].submitted)inv[k].submitted=today();
-      S.edit.ask=null;await saveInvoice(inv);toast("Erstattung eingetragen");return drawView()}
+    case "got":{const v=r2(String($("#askAmt").value).replace(/\./g,"").replace(",","."));inv[k].received=v;inv[k].receivedDate=today();if(!inv[k].submitted)inv[k].submitted=today();
+      inv[k].checked=false;S.edit.ask=null;await saveInvoice(inv);toast("Geld eingegangen – jetzt Leistungsnachweis prüfen");return drawView()}
+    case "checkok":inv[k].checked=true;await saveInvoice(inv);toast((k==="pkv"?"PKV":"Beihilfe")+": geprüft");return drawView();
+    case "proofcap":{const id=inv.id;closeSheet();const r=await scanDocument("Leistungsnachweis scannen");if(r)openProof(r,{k,id});else openView(id);return}
     case "paid":inv.payment={date:today(),amount:r2(inv.amount)};await saveInvoice(inv);toast("Als bezahlt markiert");return drawView();
     case "iban":try{await navigator.clipboard.writeText(inv.iban);toast("IBAN kopiert")}catch{toast(inv.iban)}return;
     case "paysec":S.edit.showPay=true;return drawView();
@@ -512,12 +528,13 @@ async function viewClick(e){
     case "clearcheck":inv.check="";await saveInvoice(inv);return drawView();
     case "opendoc":{const r=await fileUrl(inv.docFileId);if(r){S.edit.urls.push(r.url);window.open(r.url,"_blank")}return}
     case "share":return shareFile(inv.docFileId,inv.provider);
-    case "proofadd":return pickFile(async f=>{const blob=await shrink(f,2200,0.85);
+    case "proofadd":{closeSheet();const r=await scanDocument("Leistungsnachweis scannen");if(!r)return openView(inv.id);const f=r.pdf||r.file;const blob=f.type.startsWith("image/")?await shrink(f,2200,0.85):f;
       const name=`${inv.invoiceDate||today()}_${inv.patient}_${k==="pkv"?"PKV":"Beihilfe"}_Leistungsnachweis`.replace(/[^\wäöüÄÖÜß.-]+/g,"_")+(blob.type==="application/pdf"?".pdf":".jpg");
-      inv[k].proofFileId=await storeFile(blob,name);inv[k].proofDriveId=null;inv[k].proofUrl="";await saveInvoice(inv);toast("Leistungsnachweis gespeichert");openView(inv.id)});
+      inv[k].proofFileId=await storeFile(blob,name);inv[k].proofDriveId=null;inv[k].proofUrl="";inv[k].proofShared=false;await saveInvoice(inv);toast("Leistungsnachweis gespeichert");return openView(inv.id)}
     case "proofopen":{const s=inv[k];if(s.proofUrl){window.open(s.proofUrl,"_blank");return}
       const r=await fileUrl(s.proofFileId);if(r){S.edit.urls.push(r.url);window.open(r.url,"_blank")}return}
-    case "adddoc":return pickFile(async f=>{const blob=await shrink(f,2200,0.85);inv.docFileId=await storeFile(blob,fname(inv,blob));inv.docDriveId=null;inv.docUrl="";await saveInvoice(inv);openView(inv.id)});
+    case "adddoc":{closeSheet();const r=await scanDocument("Rechnung scannen");if(!r)return openView(inv.id);const f=r.pdf||r.file;const blob=f.type.startsWith("image/")?await shrink(f,2200,0.85):f;
+      inv.docFileId=await storeFile(blob,fname(inv,blob));inv.docDriveId=null;inv.docUrl="";await saveInvoice(inv);return openView(inv.id)}
   }
 }
 function fname(inv,blob){return `${inv.invoiceDate||today()}_${inv.patient}_${inv.provider||"Rechnung"}`.replace(/[^\wäöüÄÖÜß.-]+/g,"_")+(blob.type==="application/pdf"?".pdf":".jpg")}
@@ -541,11 +558,13 @@ function sideForm(key,title){
       ${field("Notiz",`${key}_note`,s.note)}
     </div></div>`;
 }
-async function openNew(file){
-  const inv=blankInvoice();S.edit={mode:"edit",inv,file,urls:[]};
-  if(file.type.startsWith("image/")){const u=URL.createObjectURL(file);S.edit.urls.push(u);S.edit.preview=u}
+async function openNew(input){
+  // input: Scan {pdf, images} oder {file}
+  const file=input.pdf||input.file;const inv=blankInvoice();S.edit={mode:"edit",inv,file,urls:[]};
+  const pic=input.images?.[0]||(file.type.startsWith("image/")?file:null);
+  if(pic){const u=URL.createObjectURL(pic);S.edit.urls.push(u);S.edit.preview=u;S.edit.thumb0=pic}
   drawEditor();
-  if(file.type.startsWith("image/"))ocr(file);
+  ocr(input);
 }
 function openEditor(inv){S.edit={mode:"edit",inv,file:null,urls:[]};drawEditor()}
 function drawEditor(){
@@ -647,7 +666,8 @@ async function editClick(e){
     if(!inv.id&&!S.edit.dupOk&&findDuplicate(inv)){showDup();$("#dupBox").scrollIntoView({block:"center"});setStatus("Bitte prüfen: möglicherweise doppelt.",true);return}
     b.disabled=true;
     try{
-      if(S.edit.file){const blob=await shrink(S.edit.file,2200,0.85);inv.docFileId=await storeFile(blob,fname(inv,blob));inv.docDriveId=null;inv.docUrl="";S.edit.file=null}
+      if(S.edit.file){const blob=await shrink(S.edit.file,2200,0.85);inv.docFileId=await storeFile(blob,fname(inv,blob));inv.docDriveId=null;inv.docUrl="";S.edit.file=null;
+        if(S.edit.thumb0){inv.thumbFileId=await storeFile(await shrink(S.edit.thumb0,900,0.7),"vorschau.jpg")}}
       await saveInvoice(inv);toast("Gespeichert");const id=inv.id;closeSheet();openView(id);
     }catch(err){setStatus("Speichern fehlgeschlagen: "+(err?.message||err),true);b.disabled=false}
     return;
@@ -669,14 +689,12 @@ async function ensureTess(){
   if(!tessWorker)tessWorker=await Tesseract.createWorker("deu",1,{logger:m=>{if(m.status==="recognizing text")setStatus(`Wird gelesen … ${Math.round(m.progress*100)} %`)}});
 }
 function loadLib(src,test){return new Promise((res,rej)=>{if(test())return res();const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=()=>rej(new Error("load"));document.head.appendChild(s)})}
-async function ocr(file){
+async function ocr(input){
   setStatus("Texterkennung startet … (beim ersten Mal etwas länger)");
   try{
-    await ensureTess();
-    const img=await prepareForOcr(file);
-    const {data}=await tessWorker.recognize(img);
+    const text=await readText(input);
     if(!S.edit||S.edit.mode!=="edit")return;
-    readForm();const got=parseInvoiceText(data.text||"",S.settings.people.map(p=>p.name),[...new Set(S.inv.map(i=>i.provider).filter(Boolean))]);
+    readForm();const got=parseInvoiceText(text||"",S.settings.people.map(p=>p.name),[...new Set(S.inv.map(i=>i.provider).filter(Boolean))]);
     const inv=S.edit.inv;const filled=[];
     if(got.amount!=null&&inv.amount===""){inv.amount=got.amount;filled.push("Betrag")}
     if(got.date){inv.invoiceDate=got.date;filled.push("Datum")}
@@ -768,7 +786,7 @@ function parseInvoiceText(text,people,providers){
   const STOP=new Set(["dr","med","prof","dipl","gmbh","ggmbh","mbh","mvz","co","kg","ag","ug","und","u","der","die","das","fuer","für","praxis","gemeinschaftspraxis","zentrum","ohg","gbr","e","v"]);
   const words=s=>s.toLowerCase().replace(/[^a-zäöüß0-9]+/g," ").split(" ").filter(w=>w.length>=4&&!STOP.has(w));
   const textWords=new Set(words(t));
-  const hit=w=>textWords.has(w)||[...textWords].some(x=>x.length>=5&&(x.startsWith(w)||w.startsWith(x)));
+  const hit=w=>textWords.has(w)||[...textWords].some(x=>x.length>w.length&&x.startsWith(w));
   let bestProv=null,bestScore=0;
   for(const pr of providers){const ws=[...new Set(words(pr))];if(!ws.length)continue;
     const n=ws.filter(hit).length;if(n<Math.min(2,ws.length))continue;
@@ -779,6 +797,137 @@ function parseInvoiceText(text,people,providers){
     if(head)out.provider=head.replace(/[•·|].*$/,"").trim().slice(0,60);
   }
   return out;
+}
+
+/* ================= Scanner: Foto -> Ränder finden -> entzerren -> Schatten weg -> PDF ================= */
+// Liefert {pdf, images:[Blob], file?} oder null (abgebrochen). Datei-Auswahl (z. B. PDF) wird unverändert durchgereicht.
+function scanDocument(title){
+  return new Promise(resolve=>{
+    const SC={title,pages:[],cur:null,resolve,done:false};
+    S.scan=SC;drawScanStart();
+  });
+}
+function scanFinish(result){const SC=S.scan;if(!SC||SC.done)return;SC.done=true;S.scan=null;$("#sheetHost").innerHTML="";SC.resolve(result)}
+function drawScanStart(){
+  const SC=S.scan;const n=SC.pages.length;
+  $("#sheetHost").innerHTML=`<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="Scannen">
+    <div class="sheet-head"><h2>${esc(SC.title)}</h2><div class="btnrow"><button type="button" class="btn" data-act="scancancel">Abbrechen</button>${n?`<button type="button" class="btn primary" data-act="scandone">Fertig (${n} Seite${n===1?"":"n"})</button>`:""}</div></div>
+    ${n?`<div class="sec"><h3>Gescannte Seiten</h3><div class="thumbs">${SC.pages.map((p,i)=>`<div class="pg"><img src="${p.url}" alt="Seite ${i+1}"><button type="button" class="btn link" data-act="scandel" data-i="${i}">Entfernen</button></div>`).join("")}</div></div>`:""}
+    <div class="sec">
+      <div class="btnrow"><button type="button" class="btn primary" data-act="scancam">${n?"Weitere Seite fotografieren":"Foto aufnehmen"}</button>
+      ${n?"":`<button type="button" class="btn" data-act="scanfile">Datei oder PDF wählen</button>`}</div>
+      <p class="status" style="margin:0">Leg das Blatt auf eine dunkle Unterlage. Die App findet die Ränder, richtet das Blatt gerade aus und entfernt Schatten.</p>
+    </div></div></div>`;
+  $("#scrim").addEventListener("click",async e=>{
+    const b=e.target.closest("[data-act]");if(!b)return;const act=b.dataset.act;
+    if(act==="scancancel"){S.scan.pages.forEach(p=>URL.revokeObjectURL(p.url));return scanFinish(null)}
+    if(act==="scandone")return finishScanPdf();
+    if(act==="scandel"){const p=S.scan.pages.splice(+b.dataset.i,1)[0];URL.revokeObjectURL(p.url);return drawScanStart()}
+    if(act==="scanfile"){const p=$("#pick");p.value="";p.onchange=()=>{const f=p.files[0];if(f)scanFinish({file:f})};p.click();return}
+    if(act==="scancam"){const c=$("#cam");c.value="";c.onchange=()=>{const f=c.files[0];if(f)scanLoad(f)};c.click()}
+  });
+}
+async function scanLoad(file){
+  let bmp;try{bmp=await createImageBitmap(file)}catch{toast("Foto konnte nicht geöffnet werden");return}
+  const sc=Math.min(1,4000/Math.max(bmp.width,bmp.height));const w=Math.round(bmp.width*sc),h=Math.round(bmp.height*sc);
+  const src=document.createElement("canvas");src.width=w;src.height=h;src.getContext("2d").drawImage(bmp,0,0,w,h);
+  S.scan.cur={src,w,h,quad:detectQuad(src)};drawScanEdit();
+}
+// Blatt finden: hellste zusammenhängende Fläche (Otsu-Schwelle), Ecken über Extrempunkte
+function detectQuad(src){
+  const W=360,sc=W/Math.max(src.width,src.height),w=Math.max(1,Math.round(src.width*sc)),h=Math.max(1,Math.round(src.height*sc));
+  const c=document.createElement("canvas");c.width=w;c.height=h;const x=c.getContext("2d",{willReadFrequently:true});x.filter="blur(2px)";x.drawImage(src,0,0,w,h);
+  const d=x.getImageData(0,0,w,h).data,g=new Uint8Array(w*h),hist=new Array(256).fill(0);
+  for(let i=0;i<w*h;i++){const v=(d[i*4]*0.299+d[i*4+1]*0.587+d[i*4+2]*0.114)|0;g[i]=v;hist[v]++}
+  let sum=0;for(let i=0;i<256;i++)sum+=i*hist[i];let sB=0,wB=0,best=0,th=128;
+  for(let t=0;t<256;t++){wB+=hist[t];if(!wB)continue;const wF=w*h-wB;if(!wF)break;sB+=t*hist[t];const mB=sB/wB,mF=(sum-sB)/wF,v=wB*wF*(mB-mF)**2;if(v>best){best=v;th=t}}
+  const lab=new Int32Array(w*h);let bestLab=0,bestSize=0,cur=0;const st=[];
+  for(let i=0;i<w*h;i++){if(g[i]<=th||lab[i])continue;cur++;let size=0;st.push(i);lab[i]=cur;
+    while(st.length){const p=st.pop();size++;const px=p%w,py=(p/w)|0;
+      for(const q of [px>0?p-1:-1,px<w-1?p+1:-1,py>0?p-w:-1,py<h-1?p+w:-1])if(q>=0&&!lab[q]&&g[q]>th){lab[q]=cur;st.push(q)}}
+    if(size>bestSize){bestSize=size;bestLab=cur}}
+  const full=[[0.03,0.03],[0.97,0.03],[0.97,0.97],[0.03,0.97]].map(([a,b])=>[a*src.width,b*src.height]);
+  if(bestSize<w*h*0.15)return full;
+  let tl=[0,0,1e9],tr=[0,0,-1e9],br=[0,0,-1e9],bl=[0,0,1e9];
+  for(let i=0;i<w*h;i++){if(lab[i]!==bestLab)continue;const px=i%w,py=(i/w)|0;
+    if(px+py<tl[2])tl=[px,py,px+py];if(px+py>br[2])br=[px,py,px+py];if(px-py>tr[2])tr=[px,py,px-py];if(px-py<bl[2])bl=[px,py,px-py]}
+  return [tl,tr,br,bl].map(([px,py])=>[px/sc,py/sc]);
+}
+function drawScanEdit(){
+  const SC=S.scan,cur=SC.cur;
+  $("#sheetHost").innerHTML=`<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="Ränder anpassen">
+    <div class="sheet-head"><h2>Ränder prüfen</h2><div class="btnrow"><button type="button" class="btn" data-act="scanback">Zurück</button><button type="button" class="btn primary" data-act="scanok">Übernehmen</button></div></div>
+    <p class="status" style="margin:10px 0 0">Zieh die Ecken auf die Ecken des Blatts.</p>
+    <div class="scanwrap"><canvas id="scanCv"></canvas></div>
+    <div class="btnrow"><button type="button" class="btn" data-act="scanfull">Ganzes Foto verwenden</button><button type="button" class="btn" data-act="scanauto">Ränder neu suchen</button></div>
+  </div></div>`;
+  const cv=$("#scanCv"),maxW=Math.min(window.innerWidth-40,700),maxH=window.innerHeight*0.6;
+  const k=Math.min(maxW/cur.w,maxH/cur.h);cv.width=Math.round(cur.w*k);cv.height=Math.round(cur.h*k);cur.k=k;
+  const ctx=cv.getContext("2d");
+  const paint=()=>{ctx.drawImage(cur.src,0,0,cv.width,cv.height);const q=cur.quad.map(([x,y])=>[x*k,y*k]);
+    ctx.fillStyle="rgba(13,95,107,.18)";ctx.strokeStyle="#4fb3bf";ctx.lineWidth=3;ctx.beginPath();q.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fill();ctx.stroke();
+    for(const [x,y] of q){ctx.beginPath();ctx.arc(x,y,13,0,7);ctx.fillStyle="rgba(255,255,255,.9)";ctx.fill();ctx.lineWidth=3;ctx.stroke()}};
+  paint();
+  let drag=-1;
+  const pos=e=>{const r=cv.getBoundingClientRect();return [(e.clientX-r.left)*cv.width/r.width,(e.clientY-r.top)*cv.height/r.height]};
+  cv.addEventListener("pointerdown",e=>{const [x,y]=pos(e);let bd=40;cur.quad.forEach(([qx,qy],i)=>{const dd=Math.hypot(qx*k-x,qy*k-y);if(dd<bd){bd=dd;drag=i}});if(drag>=0){cv.setPointerCapture(e.pointerId);e.preventDefault()}});
+  cv.addEventListener("pointermove",e=>{if(drag<0)return;const [x,y]=pos(e);cur.quad[drag]=[Math.max(0,Math.min(cur.w,x/k)),Math.max(0,Math.min(cur.h,y/k))];paint()});
+  const up=()=>{drag=-1};cv.addEventListener("pointerup",up);cv.addEventListener("pointercancel",up);
+  $("#scrim").addEventListener("click",async e=>{
+    const b=e.target.closest("[data-act]");if(!b)return;const act=b.dataset.act;
+    if(act==="scanback"){SC.cur=null;return drawScanStart()}
+    if(act==="scanfull"){cur.quad=[[0,0],[cur.w,0],[cur.w,cur.h],[0,cur.h]];return paint()}
+    if(act==="scanauto"){cur.quad=detectQuad(cur.src);return paint()}
+    if(act==="scanok"){b.disabled=true;b.textContent="Wird aufbereitet …";await new Promise(r=>setTimeout(r,30));
+      const out=enhanceScan(warpQuad(cur.src,cur.quad));
+      // volle Auflösung für die Texterkennung, verkleinert für die PDF
+      const ocrBlob=await new Promise(r=>out.toBlob(r,"image/jpeg",0.9));
+      const ps=Math.min(1,2200/Math.max(out.width,out.height)),pw=Math.round(out.width*ps),ph=Math.round(out.height*ps);
+      const small=document.createElement("canvas");small.width=pw;small.height=ph;small.getContext("2d").drawImage(out,0,0,pw,ph);
+      const blob=await new Promise(r=>small.toBlob(r,"image/jpeg",0.82));
+      SC.pages.push({blob,ocrBlob,w:pw,h:ph,url:URL.createObjectURL(blob)});SC.cur=null;drawScanStart()}
+  });
+}
+// Perspektive entzerren (Quadrat -> Viereck, Heckbert), bilinear abtasten
+function warpQuad(src,quad){
+  const [[x0,y0],[x1,y1],[x2,y2],[x3,y3]]=quad;
+  let W=Math.max(Math.hypot(x1-x0,y1-y0),Math.hypot(x2-x3,y2-y3)),H=Math.max(Math.hypot(x3-x0,y3-y0),Math.hypot(x2-x1,y2-y1));
+  const sc=Math.min(1,3200/Math.max(W,H));W=Math.max(10,Math.round(W*sc));H=Math.max(10,Math.round(H*sc));
+  const sx=x0-x1+x2-x3,sy=y0-y1+y2-y3;let a,b,c,d,e,f,g=0,h=0;
+  if(Math.abs(sx)<1e-6&&Math.abs(sy)<1e-6){a=x1-x0;b=x3-x0;c=x0;d=y1-y0;e=y3-y0;f=y0}
+  else{const dx1=x1-x2,dx2=x3-x2,dy1=y1-y2,dy2=y3-y2,den=dx1*dy2-dx2*dy1;g=(sx*dy2-dx2*sy)/den;h=(dx1*sy-sx*dy1)/den;
+    a=x1-x0+g*x1;b=x3-x0+h*x3;c=x0;d=y1-y0+g*y1;e=y3-y0+h*y3;f=y0}
+  const sw=src.width,shh=src.height,sd=src.getContext("2d",{willReadFrequently:true}).getImageData(0,0,sw,shh).data;
+  const out=document.createElement("canvas");out.width=W;out.height=H;const oc=out.getContext("2d");const od=oc.createImageData(W,H),o=od.data;
+  for(let j=0;j<H;j++){const v=j/(H-1);for(let i=0;i<W;i++){const u=i/(W-1),den=g*u+h*v+1;
+    let X=(a*u+b*v+c)/den,Y=(d*u+e*v+f)/den;if(X<0)X=0;if(Y<0)Y=0;if(X>sw-1.001)X=sw-1.001;if(Y>shh-1.001)Y=shh-1.001;
+    const xi=X|0,yi=Y|0,fx=X-xi,fy=Y-yi,p=(yi*sw+xi)*4,q=p+sw*4,t=(j*W+i)*4;
+    for(let ch=0;ch<3;ch++){o[t+ch]=(sd[p+ch]*(1-fx)+sd[p+4+ch]*fx)*(1-fy)+(sd[q+ch]*(1-fx)+sd[q+4+ch]*fx)*fy}o[t+3]=255}}
+  oc.putImageData(od,0,0);return out;
+}
+// Scan-Look: Graustufen, Licht ausgleichen, Papier weiß, Schrift kräftig
+function enhanceScan(cv){
+  const w=cv.width,h=cv.height,ctx=cv.getContext("2d",{willReadFrequently:true});
+  const bg=document.createElement("canvas");bg.width=w;bg.height=h;const bx=bg.getContext("2d",{willReadFrequently:true});
+  bx.filter=`blur(${Math.round(Math.max(w,h)/60)}px)`;bx.drawImage(cv,0,0);
+  const a=ctx.getImageData(0,0,w,h),d=a.data,e=bx.getImageData(0,0,w,h).data;
+  for(let i=0;i<d.length;i+=4){
+    const gv=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2],bv=Math.max(1,0.299*e[i]+0.587*e[i+1]+0.114*e[i+2]);
+    let v=gv/bv*255;v=v>=245?255:v*0.98;d[i]=d[i+1]=d[i+2]=v>255?255:v;
+  }
+  ctx.putImageData(a,0,0);return cv;
+}
+async function finishScanPdf(){
+  const SC=S.scan;const pages=[];
+  for(const p of SC.pages)pages.push({jpg:new Uint8Array(await p.blob.arrayBuffer()),w:p.w,h:p.h});
+  const pdf=jpegsToPdf(pages);const images=SC.pages.map(p=>p.ocrBlob||p.blob);
+  SC.pages.forEach(p=>URL.revokeObjectURL(p.url));
+  scanFinish({pdf,images});
+}
+// Texterkennung für Scan-Ergebnis (Bilder sind schon aufbereitet) oder Datei
+async function readText(input){
+  if(input.images){await ensureTess();let t="";for(const im of input.images)t+=((await tessWorker.recognize(im)).data.text||"")+"\n";return t}
+  return docText(input.file||input);
 }
 
 /* ================= Leistungsnachweis erfassen (ein Nachweis -> mehrere Rechnungen) ================= */
@@ -823,7 +972,7 @@ function matchInvoices(text,k){
   const tx=text.replace(/\s+/g,""),low=text.toLowerCase();
   const tw=new Set(provWords(text));
   const res=[];
-  for(const inv of S.inv){const s=side(inv,k);if(s.state==="na"||s.state==="done")continue;
+  for(const inv of S.inv){const s=side(inv,k);if(s.state==="na"||(s.state==="done"&&!s.review))continue;
     const a=r2(inv.amount);const f1=a.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2}),f2=f1.replace(/\./g,"");
     let score=0;if(a>0&&(tx.includes(f1)||tx.includes(f2)))score+=2;
     if(inv.invoiceDate){const [y,m,d]=inv.invoiceDate.split("-");if(tx.includes(`${d}.${m}.${y}`)||tx.includes(`${d}.${m}.${y.slice(2)}`))score+=2}
@@ -833,25 +982,28 @@ function matchInvoices(text,k){
   }
   return res.sort((a,b)=>b.score-a.score);
 }
-function startProof(){pickFile(f=>openProof(f))}
-async function openProof(file){
-  S.edit={mode:"proof",file,urls:[],k:"bh",rows:[],date:today(),total:null,busy:true,msg:"Leistungsnachweis wird gelesen …"};
+async function startProof(){const r=await scanDocument("Leistungsnachweis scannen");if(r)openProof(r)}
+async function openProof(input,pre){
+  const file=input.pdf||input.file||input;
+  S.edit={mode:"proof",file,urls:[],k:pre?.k||"bh",pre:pre||null,rows:[],date:today(),total:null,busy:true,msg:"Leistungsnachweis wird gelesen …"};
   drawProof();
   try{
-    const text=await docText(file);if(S.edit?.mode!=="proof")return;
-    const p=parseProofText(text);S.edit.k=p.side||"bh";S.edit.date=p.date||today();S.edit.total=p.total??null;S.edit.text=text;
+    const text=await readText(input);if(S.edit?.mode!=="proof")return;
+    const p=parseProofText(text);S.edit.k=S.edit.pre?.k||p.side||"bh";S.edit.date=p.date||today();S.edit.total=p.total??null;S.edit.text=text;
     fillProofRows();S.edit.msg=S.edit.rows.length?`${S.edit.rows.length} passende Rechnung${S.edit.rows.length===1?"":"en"} gefunden. Bitte Beträge prüfen.`:"Keine passende Rechnung sicher gefunden. Bitte unten zuordnen.";
   }catch(e){S.edit.msg="Der Nachweis konnte nicht gelesen werden. Bitte Rechnungen unten selbst zuordnen."}
   S.edit.busy=false;drawProof();
 }
-function fillProofRows(){const k=S.edit.k;S.edit.rows=matchInvoices(S.edit.text||"",k).map(m=>{const inv=S.inv.find(x=>x.id===m.id);return {id:m.id,on:true,amount:side(inv,k).expected}})}
+function fillProofRows(){const k=S.edit.k;
+  S.edit.rows=matchInvoices(S.edit.text||"",k).map(m=>{const inv=S.inv.find(x=>x.id===m.id);const s=side(inv,k);return {id:m.id,on:true,amount:s.state==="done"?s.received:s.expected}});
+  const pid=S.edit.pre?.id;if(pid&&!S.edit.rows.some(r=>r.id===pid)){const inv=S.inv.find(x=>x.id===pid);if(inv){const s=side(inv,k);S.edit.rows.unshift({id:pid,on:true,amount:s.state==="done"?s.received:s.expected})}}}
 function drawProof(){
   const e=S.edit,k=e.k;
   const rows=e.rows.map((r,i)=>{const inv=S.inv.find(x=>x.id===r.id);if(!inv)return "";const s=side(inv,k);
     return `<div class="prow"><label class="pchk"><input type="checkbox" data-row="${i}" ${r.on?"checked":""}><span><b>${esc(inv.provider)}</b><br><span class="status">${esc(inv.patient)} · ${dfmt(inv.invoiceDate)} · ${eur(inv.amount)} · erwartet ${eur(s.expected)}</span></span></label>
       <label class="f">Erstattet (€)<input class="num" inputmode="decimal" data-amt="${i}" value="${String(r.amount.toFixed(2)).replace(".",",")}"></label></div>`}).join("");
   const used=new Set(e.rows.map(r=>r.id));
-  const others=S.inv.filter(x=>!used.has(x.id)&&["todo","wait"].includes(side(x,k).state)).sort((a,b)=>(b.invoiceDate||"").localeCompare(a.invoiceDate||""));
+  const others=S.inv.filter(x=>!used.has(x.id)&&(["todo","wait"].includes(side(x,k).state)||side(x,k).review)).sort((a,b)=>(b.invoiceDate||"").localeCompare(a.invoiceDate||""));
   const sum=r2(e.rows.filter(r=>r.on).reduce((a,r)=>a+(+r.amount||0),0));
   const cmp=e.total==null?"":(Math.abs(sum-e.total)<0.01?`<span style="color:var(--ok);font-weight:600">passt zum Nachweis</span>`:`<span style="color:var(--warn);font-weight:600">Nachweis: ${eur(e.total)}, Differenz ${eur(r2(e.total-sum))}</span>`);
   sheet("Leistungsnachweis",`
@@ -887,7 +1039,7 @@ async function applyProof(btn){
   const fid=await storeFile(blob,`${e.date}_${k==="pkv"?"PKV":"Beihilfe"}_Leistungsnachweis${blob.type==="application/pdf"?".pdf":".jpg"}`);
   for(const r of sel){
     const inv=structuredClone(S.inv.find(x=>x.id===r.id));if(!inv)continue;const s=inv[k]=inv[k]||{};
-    if(!s.submitted)s.submitted=e.date;s.receivedDate=e.date;s.received=r2(r.amount);
+    if(!s.submitted)s.submitted=e.date;if(!s.receivedDate||s.checked!==false)s.receivedDate=e.date;s.received=r2(r.amount);s.checked=true;
     s.proofFileId=fid;s.proofDriveId=null;s.proofUrl="";s.proofFolder=null;s.proofName=null;s.proofShared=true;s.proofDate=e.date;
     await saveInvoice(inv);
   }
@@ -1084,20 +1236,25 @@ async function toPdf(blob){
   const jpg=new Uint8Array(await (await new Promise(r=>cv.toBlob(r,"image/jpeg",0.85))).arrayBuffer());
   return jpegToPdf(jpg,w,h);
 }
-function jpegToPdf(jpg,w,h){
+function jpegToPdf(jpg,w,h){return jpegsToPdf([{jpg,w,h}])}
+function jpegsToPdf(pages){
   const enc=new TextEncoder(),parts=[],off=[];let pos=0;
   const push=x=>{const b=typeof x==="string"?enc.encode(x):x;parts.push(b);pos+=b.length};
-  const pw=595.28,ph=841.89,s=Math.min(pw/w,ph/h),dw=+(w*s).toFixed(2),dh=+(h*s).toFixed(2),x=+((pw-dw)/2).toFixed(2),y=+((ph-dh)/2).toFixed(2);
-  const content=`q ${dw} 0 0 ${dh} ${x} ${y} cm /Im0 Do Q`;
+  const pw=595.28,ph=841.89,n=pages.length;
   push(new Uint8Array([37,80,68,70,45,49,46,52,10,37,226,227,207,211,10]));
-  const obj=(n,body)=>{off[n]=pos;push(`${n} 0 obj\n${body}\nendobj\n`)};
+  const obj=(i,body)=>{off[i]=pos;push(`${i} 0 obj\n${body}\nendobj\n`)};
   obj(1,"<< /Type /Catalog /Pages 2 0 R >>");
-  obj(2,"<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
-  obj(3,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
-  off[4]=pos;push(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`);push(jpg);push("\nendstream\nendobj\n");
-  obj(5,`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
-  const xref=pos;let t="xref\n0 6\n0000000000 65535 f \n";for(let i=1;i<=5;i++)t+=String(off[i]).padStart(10,"0")+" 00000 n \n";
-  push(t+`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  obj(2,`<< /Type /Pages /Kids [${pages.map((_,i)=>`${3+i*3} 0 R`).join(" ")}] /Count ${n} >>`);
+  pages.forEach((p,i)=>{
+    const po=3+i*3,io=po+1,co=po+2;
+    const s=Math.min(pw/p.w,ph/p.h),dw=+(p.w*s).toFixed(2),dh=+(p.h*s).toFixed(2),x=+((pw-dw)/2).toFixed(2),y=+((ph-dh)/2).toFixed(2);
+    const content=`q ${dw} 0 0 ${dh} ${x} ${y} cm /Im0 Do Q`;
+    obj(po,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 ${io} 0 R >> >> /Contents ${co} 0 R >>`);
+    off[io]=pos;push(`${io} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${p.w} /Height ${p.h} /ColorSpace /${p.gray?"DeviceGray":"DeviceRGB"} /BitsPerComponent 8 /Filter /DCTDecode /Length ${p.jpg.length} >>\nstream\n`);push(p.jpg);push("\nendstream\nendobj\n");
+    obj(co,`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  });
+  const total=3+n*3,xref=pos;let t=`xref\n0 ${total}\n0000000000 65535 f \n`;for(let i=1;i<total;i++)t+=String(off[i]).padStart(10,"0")+" 00000 n \n";
+  push(t+`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
   return new Blob(parts,{type:"application/pdf"});
 }
 async function uploadMultipart(meta,blob,fileId){
@@ -1111,7 +1268,7 @@ const SLOTS=["doc","pkv","bh"];
 function slot(inv,k){const o=k==="doc"?inv:(inv[k]=inv[k]||{});const p=k==="doc"?"doc":"proof";
   const prop=n=>({get(){return o[p+n]},set(v){o[p+n]=v},enumerable:true});
   return Object.defineProperties({},{fileId:prop("FileId"),driveId:prop("DriveId"),url:prop("Url"),folder:prop("Folder"),name:prop("Name")})}
-function stripLocal(inv){const c=structuredClone(inv);delete c.docFileId;if(c.pkv)delete c.pkv.proofFileId;if(c.bh)delete c.bh.proofFileId;return c}
+function stripLocal(inv){const c=structuredClone(inv);delete c.docFileId;delete c.thumbFileId;if(c.pkv)delete c.pkv.proofFileId;if(c.bh)delete c.bh.proofFileId;return c}
 function scheduleSync(){if(!S.settings.driveLinked)return;G.dirty=true;updateChip();clearTimeout(G.timer);G.timer=setTimeout(syncNow,1500)}
 async function syncNow(){
   if(!S.settings.driveLinked)return;
