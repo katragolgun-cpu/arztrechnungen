@@ -30,7 +30,7 @@
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent;
-  padding:calc(12px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 110px max(16px,env(safe-area-inset-left,0px))}
+  padding:calc(12px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(150px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
 [hidden]{display:none!important}
 .wrap{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
 .num{font-family:var(--f-num);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
@@ -73,7 +73,23 @@ header.top p{margin:2px 0 0;color:var(--muted);font-size:13px}
 .s-na{color:var(--muted);background:var(--sunken);border-style:dashed}
 .empty{background:var(--surface);border:1px dashed var(--line);border-radius:var(--r);padding:24px 16px;text-align:center;color:var(--muted)}
 .year{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;margin-top:6px}
-.fab{position:fixed;right:max(18px,calc(env(safe-area-inset-right,0px) + 18px));bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--accent);color:var(--accent-ink);border:0;border-radius:16px;padding:14px 20px;font:inherit;font-weight:700;font-size:15.5px;box-shadow:0 6px 20px rgba(0,0,0,.18);z-index:5}
+.fab{position:fixed;right:max(18px,calc(env(safe-area-inset-right,0px) + 18px));bottom:calc(84px + env(safe-area-inset-bottom,0px));width:58px;height:58px;display:flex;align-items:center;justify-content:center;background:var(--accent);color:var(--accent-ink);border:0;border-radius:50%;padding:0;box-shadow:0 6px 20px rgba(0,0,0,.22);z-index:7}
+.fab svg{width:28px;height:28px}
+.bnav{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);
+  padding:4px max(4px,env(safe-area-inset-right,0px)) calc(4px + env(safe-area-inset-bottom,0px)) max(4px,env(safe-area-inset-left,0px))}
+.bnav button{position:relative;border:0;background:none;color:var(--ink);font:inherit;font-size:11.5px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px 4px;min-height:58px;border-radius:12px}
+.bnav button .ic{display:flex;align-items:center;justify-content:center;width:54px;height:30px;border-radius:999px}
+.bnav button svg{width:22px;height:22px}
+.bnav button[aria-current="true"]{color:var(--accent)}
+.bnav button[aria-current="true"] .ic{background:var(--sunken)}
+.bnav button.zero{color:var(--muted);opacity:.55}
+.bnav button.zero[aria-current="true"]{opacity:1;color:var(--accent)}
+.bnav .n{position:absolute;top:2px;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-family:var(--f-num);font-size:11px;font-weight:700;line-height:18px;text-align:center}
+.bnav button.zero .n{background:var(--sunken);color:var(--muted)}
+.hbtns{display:flex;gap:8px;align-items:center}
+.iconbtn.sq{padding:8px 10px;display:flex;align-items:center}
+.iconbtn.sq svg{width:20px;height:20px}
+.iconbtn.sq[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .scrim{position:fixed;inset:0;background:rgba(10,18,26,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:var(--bg);width:100%;max-width:760px;max-height:94%;overflow-y:auto;border-radius:18px 18px 0 0;
   padding:0 max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
@@ -174,17 +190,18 @@ header.top h1{font-size:26px;letter-spacing:-.02em}
 <div class="wrap">
   <header class="top">
     <div><h1>Arztrechnungen</h1><p id="sub">Beihilfe und PKV im Blick</p></div>
-    <button class="iconbtn" id="btnSettings" type="button">Einstellungen<span class="dot" id="settingsDot" hidden></span></button>
+    <div class="hbtns"><button class="iconbtn sq" id="btnSearch" type="button" aria-label="Alle Rechnungen durchsuchen" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></button><button class="iconbtn sq" id="btnSettings" type="button" aria-label="Einstellungen" style="position:relative"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span class="dot" id="settingsDot" hidden></span></button></div>
   </header>
   <div id="banner" class="banner" hidden></div>
   <button type="button" class="sumbar" id="sumBar" aria-expanded="false" aria-controls="summary"></button>
   <section class="summary" id="summary" aria-label="Übersicht" hidden></section>
-  <div class="search" role="search"><input type="text" inputmode="search" id="q" placeholder="Suchen: Nummer, Betrag, Arzt, Person, Datum" aria-label="Rechnungen durchsuchen" autocomplete="off" enterkeyhint="search"><button type="button" id="qClear" aria-label="Suche leeren" hidden>×</button></div>
+  <div class="search" id="searchRow" role="search" hidden><input type="text" inputmode="search" id="q" placeholder="Suchen: Nummer, Betrag, Arzt, Person, Datum" aria-label="Rechnungen durchsuchen" autocomplete="off" enterkeyhint="search"><button type="button" id="qClear" aria-label="Suche leeren" hidden>×</button></div>
   <nav class="chips" id="filters" aria-label="Filter"></nav>
   <nav class="people" id="people" aria-label="Personen"></nav>
   <section class="list" id="list" aria-live="polite"><div class="empty">Rechnungen werden geladen …</div></section>
 </div>
-<button class="fab" id="btnAdd" type="button">+ Rechnung</button>
+<button class="fab" id="btnAdd" type="button" aria-label="Rechnung hinzufügen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+<nav class="bnav" id="bnav" aria-label="Schritte"></nav>
 <div class="selbar" id="selBar" hidden></div>
 <input type="file" id="pick" accept="image/*,application/pdf" hidden>
 <input type="file" id="cam" accept="image/*" capture="environment" hidden>
@@ -284,14 +301,21 @@ function dueDate(inv){
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 }
 // Schritte wie im echten Ablauf: einreichen -> auf Erstattung warten -> überweisen -> erledigt
+const NAV_ICONS={
+  einreichen:'<path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/>',
+  warten:'<path d="M7 3h10M7 21h10"/><path d="M8 3c0 5 8 6 8 9s-8 4-8 9M16 3c0 5-8 6-8 9s8 4 8 9"/>',
+  nachweis:'<path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/><path d="M14 3v4h4"/><path d="M9 14l2 2 4-4"/>',
+  ueberweisen:'<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M7 15h4"/>',
+  erledigt:'<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/>'
+};
 const FILTERS=[
-  {id:"einreichen",label:"1 Einreichen",test:c=>c.step==="einreichen"},
-  {id:"warten",label:"2 Warten",test:c=>c.step==="warten"},
-  {id:"nachweis",label:"3 Nachweis prüfen",test:c=>c.step==="nachweis"},
-  {id:"ueberweisen",label:"4 Überweisen",test:c=>c.step==="ueberweisen"},
-  {id:"erledigt",label:"Erledigt",test:c=>c.step==="erledigt"},
+  {id:"einreichen",label:"Einreichen",nav:1,test:c=>c.step==="einreichen"},
+  {id:"warten",label:"Warten",nav:1,test:c=>c.step==="warten"},
+  {id:"nachweis",label:"Nachweis",nav:1,test:c=>c.step==="nachweis"},
+  {id:"ueberweisen",label:"Überweisen",nav:1,test:c=>c.step==="ueberweisen"},
+  {id:"erledigt",label:"Erledigt",nav:1,test:c=>c.step==="erledigt"},
   {id:"pruefen",label:"Prüfen",test:c=>c.check},
-  {id:"alle",label:"Alle",test:()=>true},
+  {id:"alle",label:"Alle",test:()=>true,hidden:true},
   {id:"zahlen",label:"Unbezahlt",test:c=>c.unpaid,hidden:true},
   {id:"faellig",label:"Fällig",test:c=>c.dueSoon||c.overdue,hidden:true}
 ];
@@ -340,7 +364,12 @@ function render(){
   const mine=S.person==="alle"?rows:rows.filter(r=>r.i.patient===S.person);
   renderSummary(mine);renderBanner();
   const f=FILTERS.find(x=>x.id===S.filter)||FILTERS[0];
-  $("#filters").innerHTML=FILTERS.filter(x=>!x.hidden||x.id===S.filter).map(x=>`<button type="button" class="chip" data-f="${x.id}" aria-pressed="${!S.q.trim()&&x.id===S.filter}">${esc(x.label)}<span class="c">${mine.filter(r=>x.test(r.c)).length}</span></button>`).join("");
+  const cnt=x=>mine.filter(r=>x.test(r.c)).length;
+  const srch=S.searchOpen;
+  $("#bnav").innerHTML=FILTERS.filter(x=>x.nav).map(x=>{const n=cnt(x),on=!srch&&x.id===S.filter;return `<button type="button" data-f="${x.id}" class="${n?"":"zero"}" aria-current="${on}" aria-label="${esc(x.label)}: ${n}"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${NAV_ICONS[x.id]}</svg></span>${n?`<span class="n">${n}</span>`:""}<span>${esc(x.label)}</span></button>`}).join("");
+  const extra=srch?[]:FILTERS.filter(x=>!x.nav&&x.id!=="alle"&&(x.id===S.filter||(x.id==="pruefen"&&cnt(x)>0)));
+  $("#filters").hidden=!extra.length;
+  $("#filters").innerHTML=extra.map(x=>`<button type="button" class="chip" data-f="${x.id}" aria-pressed="${x.id===S.filter}">${esc(x.label)}<span class="c">${cnt(x)}</span></button>`).join("");
   if(S.select&&f.id!=="einreichen")S.select=null;
   renderSelectBar();
   const names=["alle",...S.settings.people.map(p=>p.name)];
@@ -349,14 +378,15 @@ function render(){
   if(!S.loaded){L.innerHTML=`<div class="empty">Rechnungen werden geladen …</div>`;return}
   if(!S.inv.length){L.innerHTML=`<div class="empty">Noch keine Rechnungen.<br>Tippe auf <b>+ Rechnung</b> oder spiele unter <b>Einstellungen</b> deine Startdatei ein.</div>`;return}
   const q=S.q.trim();
-  const list=(q?mine.filter(r=>matchQ(r.i,q)):mine.filter(r=>f.test(r.c))).sort((a,b)=>(b.i.invoiceDate||"").localeCompare(a.i.invoiceDate||""));
+  const list=(q?mine.filter(r=>matchQ(r.i,q)):srch?mine:mine.filter(r=>f.test(r.c))).sort((a,b)=>(b.i.invoiceDate||"").localeCompare(a.i.invoiceDate||""));
   const emptyTxt={einreichen:"Nichts einzureichen.",warten:"Keine offenen Erstattungen.",nachweis:"Keine Nachweise zu prüfen.",ueberweisen:"Nichts zu überweisen.",erledigt:"Noch nichts erledigt."}[f.id]||"Keine Rechnungen in dieser Ansicht.";
   let html="";
+  if(srch&&!q)html+=`<div class="searchinfo">Alle ${list.length} Rechnungen${S.person!=="alle"?" von "+esc(S.person):""}. Tippe oben, um zu suchen.</div>`;
   if(q)html+=`<div class="searchinfo">${list.length} Treffer für „${esc(q)}“ in allen Rechnungen${S.person!=="alle"?" von "+esc(S.person):""}. Filter sind während der Suche aus.</div>`;
-  if(!q&&f.id==="einreichen"&&list.length>1)html+=`<div class="btnrow listtools">${S.select
+  if(!srch&&f.id==="einreichen"&&list.length>1)html+=`<div class="btnrow listtools">${S.select
     ?`<button type="button" class="btn" data-act="selall">Alle auswählen</button><button type="button" class="btn" data-act="selnone">Auswahl beenden</button>`
     :`<button type="button" class="btn" data-act="selstart">Mehrere auswählen</button>`}</div>`;
-  if(!q&&["warten","nachweis","alle"].includes(f.id)&&!S.select)html+=`<div class="btnrow listtools"><button type="button" class="btn" data-act="proofstart">Leistungsnachweis erfassen</button></div>`;
+  if(!srch&&["warten","nachweis"].includes(f.id)&&!S.select)html+=`<div class="btnrow listtools"><button type="button" class="btn" data-act="proofstart">Leistungsnachweis erfassen</button></div>`;
   if(!list.length){L.innerHTML=html+`<div class="empty">${q?"Keine Treffer.":emptyTxt}</div>`;return}
   let lastYear=null;
   for(const {i,c} of list){
@@ -378,8 +408,8 @@ function render(){
 /* ---- Mehrere auf einmal als eingereicht markieren ---- */
 function renderSelectBar(){
   const bar=$("#selBar");
-  if(!S.select){bar.hidden=true;$("#btnAdd").hidden=false;return}
-  const n=S.select.size;bar.hidden=false;$("#btnAdd").hidden=true;
+  if(!S.select){bar.hidden=true;$("#btnAdd").hidden=false;$("#bnav").hidden=false;return}
+  const n=S.select.size;bar.hidden=false;$("#btnAdd").hidden=true;$("#bnav").hidden=true;
   bar.innerHTML=`<div class="selinfo">${n} ausgewählt · heute eingereicht bei:</div>
     <div class="btnrow"><button type="button" class="btn" data-act="bulk" data-k="pkv" ${n?"":"disabled"}>PKV</button>
     <button type="button" class="btn" data-act="bulk" data-k="bh" ${n?"":"disabled"}>Beihilfe</button>
@@ -445,7 +475,7 @@ function renderBanner(){
 /* ================= Ereignisse auf der Hauptseite ================= */
 document.addEventListener("click",e=>{
   if(e.target.closest(".sheet"))return;
-  const f=e.target.closest("[data-f]");if(f){S.filter=f.dataset.f;S.select=null;if(S.q){S.q="";$("#q").value="";$("#qClear").hidden=true}render();return}
+  const f=e.target.closest("[data-f]");if(f){S.filter=f.dataset.f;S.select=null;closeSearch();render();window.scrollTo({top:0});return}
   const p=e.target.closest("[data-p]");if(p){S.person=p.dataset.p;render();return}
   const a=e.target.closest("[data-act]");
   if(a){const act=a.dataset.act;
@@ -1529,10 +1559,12 @@ async function driveBlob(driveId){if(!tokenValid()||!driveId)return null;try{ret
   try{await navigator.storage?.persist?.()}catch{}
   if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 })();
+function closeSearch(){S.searchOpen=false;S.q="";$("#q").value="";$("#qClear").hidden=true;$("#searchRow").hidden=true;$("#btnSearch").setAttribute("aria-pressed","false")}
+$("#btnSearch").addEventListener("click",()=>{if(S.searchOpen){closeSearch()}else{S.searchOpen=true;S.select=null;$("#searchRow").hidden=false;$("#btnSearch").setAttribute("aria-pressed","true");$("#q").focus()}render()});
 (()=>{const q=$("#q"),c=$("#qClear");let t;
 q.addEventListener("input",()=>{c.hidden=!q.value;clearTimeout(t);t=setTimeout(()=>{S.q=q.value;if(S.q)S.select=null;render()},150)});
 c.addEventListener("click",()=>{q.value="";c.hidden=true;S.q="";render();q.focus()});
-q.addEventListener("keydown",e=>{if(e.key==="Escape"){c.click()}else if(e.key==="Enter")q.blur()});})();
+q.addEventListener("keydown",e=>{if(e.key==="Escape"){closeSearch();render()}else if(e.key==="Enter")q.blur()});})();
 </script>
 </body>
 </html>
