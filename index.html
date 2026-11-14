@@ -128,6 +128,10 @@ input.num{font-family:var(--f-num)}
 .sumbar .chev{color:var(--muted);font-size:13px;white-space:nowrap}
 .summary-wrap{display:flex;flex-direction:column;gap:10px}
 .sub-actions{display:flex;gap:14px;flex-wrap:wrap;margin-top:-4px}
+.more summary{cursor:pointer;padding:2px 0}
+.morelist{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.morelist .btn{width:100%;text-align:left;justify-content:flex-start}
+.nextstep .line{padding:6px 0}
 .next{font-size:13.5px;font-weight:600}
 .next.s-einreichen{color:var(--warn)} .next.s-warten{color:var(--wait)} .next.s-ueberweisen{color:var(--accent)} .next.s-nachweis{color:var(--bad)}
 .due{font-size:12.5px;color:var(--muted)} .due.warn{color:var(--warn);font-weight:600} .due.bad{color:var(--bad);font-weight:600}
@@ -445,7 +449,7 @@ async function bulkSubmit(which){
 }
 function stampPay(c){
   if(!c.unpaid)return c.open<-0.004?`<span class="stamp s-bad">Überzahlt <b>${eur(-c.open)}</b></span>`:`<span class="stamp s-ok">Bezahlt</span>`;
-  return `<span class="stamp ${c.overdue?"s-bad":"s-todo"}">Zahlen <b>${eur(c.open)}</b>${c.overdue?` · ${c.age} Tg.`:""}</span>`;
+  return `<span class="stamp ${c.overdue?"s-bad":"s-todo"}">Zahlen <b>${eur(c.open)}</b>${c.overdue&&c.daysLeft!=null?` · ${-c.daysLeft} Tg. überfällig`:""}</span>`;
 }
 // Karten in der Liste: nur Probleme als Kästchen (Rest sagt der Text darüber)
 function problemStamps(c){
@@ -616,16 +620,16 @@ function submitHtml(inv,c){
     return `<div class="line" style="${active?"":"opacity:.5"}"><div><div class="t">${i+1}. ${n}</div><div class="s">${hint}</div></div></div>
       ${active?`<div class="btnrow"><button type="button" class="btn" data-act="subshare" data-k="${k}" ${f?"":"disabled"}>PDF an ${app} senden</button><button type="button" class="btn primary" data-act="sub" data-k="${k}">Bei ${n} eingereicht</button></div>`:""}`}).join("");
   const note=f===null?"Beleg wird geladen …":f===false?"Beleg nicht auf diesem Handy. Bitte in der App wie bisher aus Google Drive wählen.":"";
-  return `<div class="sec"><h3>Jetzt einreichen</h3>${rows}${note?`<p class="status" style="margin:6px 0 0">${note}</p>`:""}</div>`;
+  return `${rows}${note?`<p class="status" style="margin:6px 0 0">${note}</p>`:""}`;
 }
 // Mahngebühr und Überzahlung klären
 function feeHtml(inv,c){
-  if(S.edit.feeAsk)return `<div class="inline"><label class="f">Mahngebühr (€)<input id="feeAmt" class="num" inputmode="decimal" value="${c.fee>0?c.fee.toFixed(2).replace(".",","):""}"></label><button type="button" class="btn primary" data-act="feesave">Übernehmen</button><button type="button" class="btn" data-act="feeno">Abbrechen</button></div>`;
+  if(S.edit.feeAsk)return `<div class="inline"><label class="f">Mahngebühr (€)<input id="feeAmt" class="num" inputmode="decimal" value="${c.fee>0?c.fee.toFixed(2).replace(".",","):""}"></label></div><div class="btnrow"><button type="button" class="btn primary" data-act="feesave">Übernehmen</button><button type="button" class="btn" data-act="feeno">Abbrechen</button></div>`;
   if(inv.refundDue)return `<p class="status" style="margin:4px 0 0;color:var(--bad)"><b>${eur(-c.open)} zu viel bezahlt</b> – beim Arzt zurückfordern</p>
-    <div class="sub-actions"><button type="button" class="btn link" data-act="refundok">Geld zurückerhalten</button></div>`;
+    <div class="btnrow"><button type="button" class="btn primary" data-act="refundok">Geld zurückerhalten</button></div>`;
   if(c.over)return `<p class="status" style="margin:4px 0 0;color:var(--bad)">${eur(-c.open)} mehr überwiesen als die Rechnung. War das eine Mahngebühr?</p>
-    <div class="sub-actions"><button type="button" class="btn link" data-act="feeover">War eine Mahngebühr</button><button type="button" class="btn link" data-act="refunddue">Wirklich zu viel bezahlt</button></div>`;
-  if(c.unpaid)return `<div class="sub-actions"><button type="button" class="btn link" data-act="feeask">${c.fee>0?"Mahngebühr ändern":"Mahnung erhalten"}</button></div>`;
+    <div class="btnrow"><button type="button" class="btn primary" data-act="feeover">War eine Mahngebühr</button><button type="button" class="btn" data-act="refunddue">Wirklich zu viel bezahlt</button></div>`;
+  if(c.unpaid)return ``;
   return "";
 }
 // Kürzung: Widerspruch mit Frist und Ergebnis, oder akzeptieren
@@ -633,34 +637,12 @@ function objHtml(key,c){
   const s=c.s,o=s.obj;if(c.state!=="done"||(c.diff<=0.004&&!o))return "";
   const st=`class="status" style="margin:4px 0 0"`;
   if(o&&!o.result)return `<p ${st}><b>Widerspruch eingelegt am ${dfmt(o.date)}</b> · Ergebnis offen</p>
-    <div class="sub-actions"><button type="button" class="btn link" data-act="objyes" data-k="${key}">Nachzahlung erhalten</button><button type="button" class="btn link" data-act="objno" data-k="${key}">Widerspruch abgelehnt</button></div>`;
+    <div class="btnrow"><button type="button" class="btn primary" data-act="objyes" data-k="${key}">Nachzahlung erhalten</button><button type="button" class="btn" data-act="objno" data-k="${key}">Widerspruch abgelehnt</button></div>`;
   if(o)return `<p ${st}>Widerspruch vom ${dfmt(o.date)}: ${o.result==="nachzahlung"?"Nachzahlung erhalten":"abgelehnt"}</p>`;
   if(s.cutOk)return `<p ${st}>Kürzung akzeptiert</p>`;
   const base=s.proofDate||s.receivedDate,frist=key==="bh"&&base?addMonths(base,1):null,late=frist&&frist<today();
   return `<p ${st}>${frist?(late?`Widerspruchsfrist am ${dfmt(frist)} abgelaufen`:`<b style="color:var(--warn)">Widerspruch möglich bis ${dfmt(frist)}</b>`):"Kürzung offen"}</p>
-    <div class="sub-actions"><button type="button" class="btn link" data-act="objset" data-k="${key}">Widerspruch eingelegt</button><button type="button" class="btn link" data-act="cutok" data-k="${key}">Kürzung akzeptieren</button></div>`;
-}
-function sideLine(key,title,inv){
-  const c=side(inv,key);const s=c.s;let info="",btn="";
-  if(c.state==="na")info="Kein Anspruch";
-  else if(c.state==="todo"){info=`${eur(c.expected)} erwartet · noch nicht eingereicht`} // Abhaken im Abschnitt „Jetzt einreichen“
-  else if(c.state==="wait"){info=`${eur(c.expected)} erwartet · eingereicht ${dfmt(s.submitted)}`+(c.waitDays>ASK_DAYS?`<br><b style="color:var(--warn)">Seit ${c.waitDays} Tagen keine Erstattung – bei ${key==="pkv"?"AXA":"der Beihilfe"} nachfragen</b>`:"");btn=`<button type="button" class="btn primary" data-act="ask" data-k="${key}">Geld eingegangen</button>`}
-  else{info=`${eur(c.received)} erhalten am ${dfmt(s.receivedDate)}${c.diff>0.004?` · <b style="color:var(--bad)">${eur(c.diff)} weniger als erwartet</b>`:c.diff<-0.004?` · ${eur(-c.diff)} mehr als erwartet`:""}`;
-    if(s.appId)info+=` · Antrag ${esc(s.appId)}`;
-    if(s.eligible!=null)info+=`<br>${cutHtml(r2(inv.amount-s.eligible),s.cutNote,false,key)}`;
-    if(c.review){info+=`<br><b style="color:var(--bad)">Leistungsnachweis prüfen</b>`;btn=`<button type="button" class="btn primary" data-act="checkok" data-k="${key}">Geprüft</button>`}}
-  let ask="";
-  if(S.edit.ask===key)ask=`<div class="inline"><label class="f">Erhaltener Betrag (€)<input id="askAmt" class="num" inputmode="decimal" value="${c.expected.toFixed(2).replace(".",",")}"></label>
-    <button type="button" class="btn primary" data-act="got" data-k="${key}">Übernehmen</button></div>`;
-  const proof=c.state==="na"?"":(s.proofUrl||s.proofFileId
-    ?`<div class="sub-actions"><button type="button" class="btn link" data-act="proofopen" data-k="${key}">Leistungsnachweis öffnen</button></div>`
-    :(c.state!=="todo"?`<div class="sub-actions"><button type="button" class="btn link" data-act="proofcap" data-k="${key}">Leistungsnachweis erfassen</button><button type="button" class="btn link" data-act="proofadd" data-k="${key}">nur ablegen</button></div>`:""));
-  // Erneut einreichen: setzt die Seite auf Schritt 1 zurück (z. B. nach Ablehnung)
-  let again="";
-  if(c.state==="wait"||c.state==="done")again=S.edit.resub===key
-    ?`<div class="inline"><span class="status" style="margin:0">Einreichung und Erstattung zurücksetzen?</span><button type="button" class="btn primary" data-act="resubok" data-k="${key}">Ja, erneut einreichen</button><button type="button" class="btn" data-act="resubno">Abbrechen</button></div>`
-    :`<div class="sub-actions"><button type="button" class="btn link" data-act="resub" data-k="${key}">Erneut einreichen</button></div>`;
-  return `<div class="line"><div><div class="t">${title}</div><div class="s">${info}</div></div>${S.edit.ask===key?"":btn}</div>${ask}${objHtml(key,c)}${proof}${again}`;
+    <div class="btnrow"><button type="button" class="btn primary" data-act="objset" data-k="${key}">Widerspruch eingelegt</button><button type="button" class="btn" data-act="cutok" data-k="${key}">Kürzung akzeptieren</button></div>`;
 }
 /* ---- Überweisen: Daten zum Kopieren und GiroCode ---- */
 function payData(inv,c){
@@ -668,53 +650,88 @@ function payData(inv,c){
   return {name:(inv.provider||"").slice(0,70),iban:(inv.iban||"").replace(/\s+/g,"").toUpperCase(),amount:r2(c.open),purpose:purpose.slice(0,140)};
 }
 function paySection(inv,c){
-  const p=payData(inv,c);
+  const p=payData(inv,c),canQr=!!(p.iban&&p.name&&p.amount>0),sent=!!S.edit.giroSent;
   const row=(k,label,val)=>`<span class="k">${label}</span><span class="v">${esc(val)||"–"}</span>${val?`<button type="button" class="btn" data-act="copy" data-k="${k}">Kopieren</button>`:"<span></span>"}`;
-  return `<div class="sec"><h3>Überweisen</h3>
-    <div class="paygrid">
-      ${row("name","Empfänger",p.name)}
-      ${row("iban","IBAN",p.iban)}
-      ${row("amount","Betrag",p.amount.toFixed(2).replace(".",","))}
-      ${row("purpose","Zweck",p.purpose)}
-    </div>
-    ${p.iban?"":`<p class="status" style="margin:0">Die IBAN fehlt. Trag sie unter „Details anzeigen und bearbeiten“ ein, dann wird sie für diesen Rechnungssteller künftig vorgeschlagen.</p>`}
-    ${p.iban&&p.name&&p.amount>0?(S.edit.giro?`<div style="text-align:center;margin-top:8px"><img src="${S.edit.giro.url}" alt="Überweisungs-QR-Code" style="width:min(260px,70vw);border:1px solid var(--line);border-radius:10px;background:#fff"></div>
-      <p class="status" style="margin:0">Speichere den Code als Bild. In der Sparkassen-App den QR-Code-Scanner öffnen und das Bild aus der Galerie wählen.</p>
-      <div class="btnrow"><button type="button" class="btn" data-act="girosave">QR-Code speichern oder teilen</button></div>`
-      :`<div class="btnrow"><button type="button" class="btn" data-act="giro">QR-Code für die Banking-App</button></div>`):""}
-    <div class="btnrow"><button type="button" class="btn primary" data-act="paid">Heute bezahlt</button></div>
-  </div>`;
+  const fr=["bh","pkv"].map(k=>{const x=side(inv,k),b=x.s.proofDate||x.s.receivedDate;return k==="bh"&&x.cutOpen&&!x.s.obj&&b?addMonths(b,1):null}).filter(Boolean)[0];
+  return `<p class="status" style="margin:0 0 10px">${eur(p.amount)} an ${esc(p.name||"den Arzt")} überweisen.${canQr?" Der QR-Code geht an deine Banking-App, dort nur noch bestätigen.":""}</p>
+    ${fr?`<p class="status" style="margin:0 0 10px;color:var(--warn)"><b>Danach:</b> Kürzung der Beihilfe, Widerspruch möglich bis ${dfmt(fr)}.</p>`:""}
+    ${p.iban?"":`<p class="status" style="margin:0 0 10px;color:var(--bad)">Die IBAN fehlt. Trag sie unter „Weitere Aktionen › Details anzeigen und bearbeiten“ ein.</p>`}
+    <div class="btnrow">${canQr?`<button type="button" class="btn ${sent?"":"primary"}" data-act="giroshare">QR-Code an Banking-App senden</button>`:""}
+      <button type="button" class="btn ${sent||!canQr?"primary":""}" data-act="paid">Heute bezahlt</button></div>
+    <details style="margin-top:10px"><summary>Daten zum Abtippen</summary><div class="paygrid" style="margin-top:8px">
+      ${row("name","Empfänger",p.name)}${row("iban","IBAN",p.iban)}${row("amount","Betrag",p.amount.toFixed(2).replace(".",","))}${row("purpose","Zweck",p.purpose)}
+    </div></details>`;
 }
 function drawView(thumb){
   if(thumb!==undefined)S.edit.thumb=thumb;
   const inv=S.inv.find(x=>x.id===S.edit.id);const c=calc(inv);
-  const payInfo=c.unpaid?`${eur(c.open)} offen${c.overdue?` · seit ${c.age} Tagen`:""}`:(c.open<-0.004?`${eur(-c.open)} zu viel überwiesen`:isApo(inv)&&!inv.payment?.date?"In der Apotheke bezahlt":`Bezahlt am ${dfmt(inv.payment?.date)}`);
-  const docBtns=inv.docUrl
-    ?`<a class="btn" href="${esc(inv.docUrl)}" target="_blank" rel="noopener">Beleg in Drive öffnen</a>`
-    :(inv.docFileId?`<button type="button" class="btn" data-act="opendoc">Beleg öffnen</button>${S.settings.driveLinked?`<span class="status">Wird beim nächsten Abgleich in Drive abgelegt</span>`:`<button type="button" class="btn" data-act="share">In Drive sichern</button>`}`
-    :`<button type="button" class="btn" data-act="adddoc">Beleg hinzufügen</button>`);
   sheet(inv.provider||"Rechnung",`
     <div id="edStatus" class="status" style="margin-top:10px"></div>
-    ${inv.check?`<div class="checkline" style="margin-top:10px">Prüfen: ${esc(inv.check)} <button type="button" class="btn link" data-act="clearcheck">Erledigt</button></div>`:""}
     <div class="sec hero">
       <div class="big">${eur(c.amount)}</div>
       <div class="meta"><span class="pchip">${avatarFor(inv.patient)}${esc(inv.patient)}</span>${dfmt(inv.invoiceDate)}${inv.invoiceNo?" · Nr. "+esc(inv.invoiceNo):""}</div>
       <div class="stamps">${stampPay(c)}${stampSide("PKV",c.pkv)}${stampSide("Beihilfe",c.bh)}</div>
     </div>
-    ${c.step==="einreichen"?submitHtml(inv,c):""}
-    <div class="sec">
-      ${sideLine("pkv","PKV",inv)}
-      ${sideLine("bh","Beihilfe",inv)}
-      <div class="line"><div><div class="t">Zahlung</div><div class="s">${payInfo}${c.fee>0?` · inkl. ${eur(c.fee)} Mahngebühr`:""}</div>${dueText(c)}</div>
-        ${c.unpaid&&c.step!=="ueberweisen"?`<button type="button" class="btn" data-act="paysec">Überweisen</button>`:""}</div>
-      ${feeHtml(inv,c)}
-    </div>
-    ${c.unpaid&&(c.step==="ueberweisen"||S.edit.showPay)?paySection(inv,c):""}
-    <div class="sec">${S.edit.thumb||""}<div class="btnrow">${docBtns}</div></div>
+    <div class="sec nextstep"><h3>Nächster Schritt</h3>${nextHtml(inv,c)}</div>
+    <div class="sec"><h3>Stand</h3>${statusLine("pkv","AXA",inv)}${statusLine("bh","Beihilfe",inv)}${payLine(inv,c)}</div>
+    ${S.edit.thumb?`<div class="sec">${S.edit.thumb}</div>`:""}
     ${historyHtml(inv)}
-    <div class="btnrow" style="margin-top:14px"><button type="button" class="btn" data-act="edit">Details anzeigen und bearbeiten</button></div>
+    ${moreHtml(inv,c)}
   `,`<button type="button" class="btn" data-act="close">Schließen</button>`);
   $("#scrim").addEventListener("click",viewClick);
+}
+// Genau ein nächster Schritt je Rechnung (streng nacheinander)
+function nextHtml(inv,c){
+  const p=t=>`<p class="status" style="margin:0 0 10px">${t}</p>`,one=(act,label,k)=>`<div class="btnrow"><button type="button" class="btn primary" data-act="${act}"${k?` data-k="${k}"`:""}>${label}</button></div>`;
+  // Eingaben, die aus „Weitere Aktionen“ gestartet wurden
+  if(S.edit.ask){const k=S.edit.ask,x=side(inv,k);return p(`Betrag ohne Nachweis eintragen (${k==="pkv"?"AXA":"Beihilfe"})`)+`<div class="inline"><label class="f">Erhaltener Betrag (€)<input id="askAmt" class="num" inputmode="decimal" value="${x.expected.toFixed(2).replace(".",",")}"></label></div>
+    <div class="btnrow"><button type="button" class="btn primary" data-act="got" data-k="${k}">Übernehmen</button><button type="button" class="btn" data-act="askno">Abbrechen</button></div>`}
+  if(S.edit.resub){const k=S.edit.resub;return p(`${k==="pkv"?"AXA":"Beihilfe"}: Einreichung und Erstattung zurücksetzen und neu einreichen?`)+`<div class="btnrow"><button type="button" class="btn primary" data-act="resubok" data-k="${k}">Ja, erneut einreichen</button><button type="button" class="btn" data-act="resubno">Abbrechen</button></div>`}
+  if(S.edit.feeAsk)return feeHtml(inv,c);
+  if(inv.check)return p(`Prüfen: ${esc(inv.check)}`)+one("clearcheck","Erledigt");
+  if(c.step==="einreichen")return submitHtml(inv,c);
+  if(c.step==="warten"){const w=[["pkv","AXA"],["bh","Beihilfe"]].filter(([k])=>c[k].state==="wait");
+    const txt=w.map(([k,n])=>`${n}: ${eur(c[k].expected)} erwartet`+(c[k].waitDays>ASK_DAYS?` · <b style="color:var(--warn)">seit ${c[k].waitDays} Tagen, nachfragen</b>`:"")).join("<br>");
+    return p(`Warten auf die Erstattung.<br>${txt}<br>Kommt ein Bescheid oder eine Abrechnung, hier erfassen.`)+one("proofcap","Leistungsnachweis erfassen",w.length===1?w[0][0]:"")}
+  if(c.step==="nachweis"){const [k,n]=[["pkv","AXA"],["bh","Beihilfe"]].find(([k])=>c[k].review);const x=c[k];
+    return p(`${n}-Nachweis prüfen: ${eur(x.received)} erhalten, ${eur(x.expected)} erwartet.`)+one("checkok",`${n} geprüft`,k)}
+  if(c.step==="ueberweisen"||S.edit.showPay)return paySection(inv,c);
+  if(inv.refundDue||c.over)return feeHtml(inv,c);
+  for(const k of ["bh","pkv"]){const h=objHtml(k,side(inv,k));if(h)return `<p class="status" style="margin:0 0 6px"><b>${k==="pkv"?"AXA":"Beihilfe"}:</b></p>`+h}
+  return p("Alles erledigt. Hier ist nichts mehr zu tun.");
+}
+// Stand je Seite, nur Text
+function statusLine(key,title,inv){
+  const c=side(inv,key),s=c.s;let info;
+  if(c.state==="na")info="Kein Anspruch";
+  else if(c.state==="todo")info=`${eur(c.expected)} erwartet · noch nicht eingereicht`;
+  else if(c.state==="wait")info=`${eur(c.expected)} erwartet · eingereicht ${dfmt(s.submitted)}`;
+  else{info=`${eur(c.received)} erhalten am ${dfmt(s.receivedDate)}${c.diff>0.004?` · <b style="color:var(--bad)">${eur(c.diff)} weniger als erwartet</b>`:c.diff<-0.004?` · ${eur(-c.diff)} mehr als erwartet`:""}`;
+    if(s.appId)info+=` · Antrag ${esc(s.appId)}`;
+    if(s.eligible!=null)info+=`<br>${cutHtml(r2(inv.amount-s.eligible),s.cutNote,false,key)}`;
+    if(s.obj)info+=`<br>Widerspruch vom ${dfmt(s.obj.date)}: ${!s.obj.result?"Ergebnis offen":s.obj.result==="nachzahlung"?"Nachzahlung erhalten":"abgelehnt"}`;
+    else if(s.cutOk&&c.diff>0.004)info+="<br>Kürzung akzeptiert";}
+  return `<div class="line"><div><div class="t">${title}</div><div class="s">${info}</div></div></div>`;
+}
+function payLine(inv,c){
+  const info=c.unpaid?`${eur(c.open)} offen`:(c.open<-0.004?`${eur(-c.open)} zu viel überwiesen`:isApo(inv)&&!inv.payment?.date?"In der Apotheke bezahlt":`Bezahlt am ${dfmt(inv.payment?.date)}`);
+  return `<div class="line"><div><div class="t">Zahlung</div><div class="s">${info}${c.fee>0?` · inkl. ${eur(c.fee)} Mahngebühr`:""}</div>${dueText(c)}</div></div>`;
+}
+// Alles Seltene gesammelt
+function moreHtml(inv,c){
+  const b=(act,label,k)=>`<button type="button" class="btn" data-act="${act}"${k?` data-k="${k}"`:""}>${label}</button>`,L=[];
+  for(const [k,n] of [["pkv","AXA"],["bh","Beihilfe"]]){const x=side(inv,k),s=x.s;if(x.state==="na")continue;
+    if(s.proofUrl||s.proofFileId)L.push(b("proofopen",`${n}: Leistungsnachweis öffnen`,k));
+    else if(x.state!=="todo")L.push(b("proofadd",`${n}: Nachweis nur ablegen`,k));
+    if(x.state==="wait")L.push(b("ask",`${n}: Betrag ohne Nachweis eintragen`,k));
+    if(x.state==="wait"||x.state==="done")L.push(b("resub",`${n}: erneut einreichen`,k));}
+  if(c.unpaid&&c.step!=="ueberweisen"&&!S.edit.showPay)L.push(b("paysec","Schon jetzt überweisen"));
+  if(c.unpaid)L.push(b("feeask",c.fee>0?"Mahngebühr ändern":"Mahnung erhalten"));
+  if(inv.docUrl)L.push(`<a class="btn" style="text-decoration:none" href="${esc(inv.docUrl)}" target="_blank" rel="noopener">Beleg in Drive öffnen</a>`);
+  else if(inv.docFileId){L.push(b("opendoc","Beleg öffnen"));if(!S.settings.driveLinked)L.push(b("share","Beleg in Drive sichern"))}
+  else L.push(b("adddoc","Beleg hinzufügen"));
+  L.push(b("edit","Details anzeigen und bearbeiten"));
+  return `<details class="sec more"${S.edit.moreOpen?" open":""}><summary><b>Weitere Aktionen</b></summary><div class="morelist">${L.join("")}</div></details>`;
 }
 async function viewClick(e){
   const b=e.target.closest("[data-act]");if(!b)return;
@@ -726,10 +743,11 @@ async function viewClick(e){
       toast(c1.step==="einreichen"?(k==="pkv"?"AXA":"Beihilfe")+": eingereicht. Jetzt "+(k==="pkv"?"Beihilfe":"AXA")+".":"Beide eingereicht. Die Rechnung wartet jetzt auf die Erstattung.");return drawView()}
     case "subshare":{const f=S.edit.subFile;if(!f)return;
       if(navigator.canShare?.({files:[f]})){try{await navigator.share({files:[f],title:f.name})}catch{}}else toast("Teilen wird hier nicht unterstützt");return}
-    case "ask":S.edit.ask=k;drawView();$("#askAmt")?.focus();return;
+    case "ask":S.edit.ask=k;S.edit.moreOpen=false;drawView();$(".nextstep")?.scrollIntoView({block:"center"});$("#askAmt")?.focus();return;
+    case "askno":S.edit.ask=null;return drawView();
     case "got":{const v=r2(String($("#askAmt").value).replace(/\./g,"").replace(",","."));inv[k].received=v;inv[k].receivedDate=today();if(!inv[k].submitted)inv[k].submitted=today();
       inv[k].checked=false;S.edit.ask=null;await saveInvoice(inv);toast("Geld eingegangen – jetzt Leistungsnachweis prüfen");return drawView()}
-    case "resub":S.edit.resub=k;return drawView();
+    case "resub":S.edit.resub=k;S.edit.moreOpen=false;drawView();$(".nextstep")?.scrollIntoView({block:"center"});return;
     case "resubno":S.edit.resub=null;return drawView();
     case "resubok":{const x=inv[k];
       const was=`Erste Einreichung ${dfmt(x.submitted)}`+(x.receivedDate?`, ${eur(+x.received||0)} am ${dfmt(x.receivedDate)}`:"");
@@ -740,7 +758,7 @@ async function viewClick(e){
     case "objset":inv[k].obj={date:today(),result:null};await saveInvoice(inv);toast("Widerspruch eingetragen");return drawView();
     case "objyes":inv[k].obj.result="nachzahlung";inv[k].obj.resultDate=today();inv[k].cutOk=true;await saveInvoice(inv);toast("Nachzahlung eingetragen. Den Korrektur-Bescheid über „Leistungsnachweis erfassen“ übernehmen.");return drawView();
     case "objno":inv[k].obj.result="abgelehnt";inv[k].obj.resultDate=today();inv[k].cutOk=true;await saveInvoice(inv);toast("Widerspruch abgelehnt – Kürzung bleibt");return drawView();
-    case "feeask":S.edit.feeAsk=true;drawView();$("#feeAmt")?.focus();return;
+    case "feeask":S.edit.feeAsk=true;drawView();$(".nextstep")?.scrollIntoView({block:"center"});$("#feeAmt")?.focus();return;
     case "feeno":S.edit.feeAsk=false;return drawView();
     case "feesave":{inv.fee=r2(String($("#feeAmt").value||"0").replace(/\./g,"").replace(",","."))||0;S.edit.feeAsk=false;S.edit.giro=null;await saveInvoice(inv);toast(inv.fee?`Mahngebühr ${eur(inv.fee)} eingetragen`:"Mahngebühr entfernt");return drawView()}
     case "feeover":{const c0=calc(inv);inv.fee=r2((+inv.fee||0)-c0.open);await saveInvoice(inv);toast(`Mahngebühr ${eur(inv.fee)} eingetragen`);return drawView()}
@@ -748,13 +766,18 @@ async function viewClick(e){
     case "refundok":{const c0=calc(inv);const back=-c0.open;inv.payment={...inv.payment,amount:r2((+inv.amount||0)+(+inv.fee||0))};inv.refundDue=false;
       inv.note=((inv.note?inv.note+" · ":"")+`${eur(back)} vom Arzt zurück am ${dfmt(today())}`);await saveInvoice(inv);toast("Rückzahlung eingetragen");return drawView()}
     case "cutok":inv[k].cutOk=true;await saveInvoice(inv);toast("Kürzung akzeptiert");return drawView();
+    case "giroshare":{const p=payData(inv,calc(inv));try{const bl=await QR.png(giroText(p),`${eur(p.amount)} an ${p.name}`);
+      const f=new File([bl],`Ueberweisung_${(p.name||"Arzt").replace(/[^A-Za-z0-9ÄÖÜäöüß]+/g,"_").slice(0,30)}_${p.amount.toFixed(2).replace(".",",")}.png`,{type:"image/png"});
+      if(navigator.canShare?.({files:[f]})){try{await navigator.share({files:[f],title:f.name});S.edit.giroSent=true}catch{}}
+      else{const u=URL.createObjectURL(bl);const a=document.createElement("a");a.href=u;a.download=f.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),5000);S.edit.giroSent=true}
+      }catch{toast("QR-Code konnte nicht erstellt werden")}return drawView()}
     case "giro":{const p=payData(inv,calc(inv));try{const bl=await QR.png(giroText(p),`${eur(p.amount)} an ${p.name}`);const u=URL.createObjectURL(bl);S.edit.urls.push(u);S.edit.giro={url:u,blob:bl,name:`Ueberweisung_${(p.name||"Arzt").replace(/[^A-Za-z0-9ÄÖÜäöüß]+/g,"_").slice(0,30)}_${p.amount.toFixed(2).replace(".",",")}.png`}}catch(err){toast("QR-Code konnte nicht erstellt werden")}return drawView()}
     case "girosave":{const g=S.edit.giro;if(!g)return;const f=new File([g.blob],g.name,{type:"image/png"});
       if(navigator.canShare?.({files:[f]})){try{await navigator.share({files:[f],title:g.name})}catch{}}else{const a=document.createElement("a");a.href=g.url;a.download=g.name;document.body.appendChild(a);a.click();a.remove()}return}
-    case "proofcap":{const id=inv.id;closeSheet();const r=await scanDocument("Leistungsnachweis scannen");if(r)openProof(r,{k,id});else openView(id);return}
+    case "proofcap":{const id=inv.id;closeSheet();const r=await scanDocument("Leistungsnachweis scannen");if(r)openProof(r,k?{k,id}:{id});else openView(id);return}
     case "paid":inv.payment={date:today(),amount:r2((+inv.amount||0)+(+inv.fee||0))};await saveInvoice(inv);toast("Als bezahlt markiert");return drawView();
     case "iban":try{await navigator.clipboard.writeText(inv.iban);toast("IBAN kopiert")}catch{toast(inv.iban)}return;
-    case "paysec":S.edit.showPay=true;return drawView();
+    case "paysec":S.edit.showPay=true;drawView();$(".nextstep")?.scrollIntoView({block:"start"});return;
     case "copy":{const p=payData(inv,calc(inv));let v=p[k];if(k==="amount")v=p.amount.toFixed(2).replace(".",",");
       try{await navigator.clipboard.writeText(String(v));toast("Kopiert: "+v)}catch{toast(String(v))}return}
     case "clearcheck":inv.check="";await saveInvoice(inv);return drawView();
