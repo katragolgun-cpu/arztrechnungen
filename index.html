@@ -263,6 +263,9 @@ const eur=n=>(+n||0).toLocaleString("de-DE",{style:"currency",currency:"EUR"});
 const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
 const dfmt=s=>{if(!s)return "";const [y,m,d]=s.split("-");return d+"."+m+"."+y};
 const days=(a,b)=>Math.round((new Date(b)-new Date(a))/864e5);
+const addMonths=(iso,m)=>{const d=new Date(iso+"T12:00:00");d.setMonth(d.getMonth()+m);return d.toISOString().slice(0,10)};
+const isApo=inv=>inv.kind==="apotheke"||(!inv.kind&&/apotheke/i.test(inv.provider||""));
+const ASK_DAYS=28; // ohne Erstattung länger als 4 Wochen: nachfragen
 function toast(msg){const t=$("#toast");t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2600)}
 
 /* ================= Berechnung ================= */
@@ -275,10 +278,12 @@ function side(inv,key){
   const diff=state==="done"?r2(expected-received):0;
   // Geld eingegangen, Leistungsnachweis noch nicht geprüft (ältere Einträge ohne Angabe gelten als geprüft)
   const review=state==="done"&&s.checked===false;
-  return {rate,expected,state,received,diff,review,s};
+  const waitDays=state==="wait"&&s.submitted?days(s.submitted,today()):0;
+  const cutOpen=state==="done"&&diff>0.004&&!s.cutOk; // Kürzung noch nicht akzeptiert oder per Widerspruch geklärt
+  return {rate,expected,state,received,diff,review,waitDays,cutOpen,s};
 }
 function calc(inv){
-  const amount=r2(inv.amount),paid=r2(inv.payment?.amount),open=r2(amount-paid);
+  const amount=r2(inv.amount),paid=isApo(inv)&&!(+inv.payment?.amount)?amount:r2(inv.payment?.amount),open=r2(amount-paid);
   const pkv=side(inv,"pkv"),bh=side(inv,"bh");
   const unpaid=open>0.004;
   const age=inv.receivedDate?days(inv.receivedDate,today()):0;
@@ -286,17 +291,19 @@ function calc(inv){
   const daysLeft=due?days(today(),due):null;
   const overdue=unpaid&&daysLeft!==null&&daysLeft<0;
   const dueSoon=unpaid&&daysLeft!==null&&daysLeft>=0&&daysLeft<=(+S.settings.warnDays||7);
-  const cut=(pkv.diff>0.004?pkv.diff:0)+(bh.diff>0.004?bh.diff:0);
+  const cut=(pkv.cutOpen?pkv.diff:0)+(bh.cutOpen?bh.diff:0);
+  const askLong=pkv.waitDays>ASK_DAYS||bh.waitDays>ASK_DAYS;
+  const objOpen=[pkv,bh].some(x=>x.s.obj&&!x.s.obj.result);
   const todo=pkv.state==="todo"||bh.state==="todo";
   const wait=pkv.state==="wait"||bh.state==="wait";
   const review=pkv.review||bh.review;
   const step=todo?"einreichen":wait?"warten":review?"nachweis":unpaid?"ueberweisen":"erledigt";
-  return {amount,paid,open,unpaid,overdue,dueSoon,due,daysLeft,age,pkv,bh,cut,todo,wait,review,step,done:step==="erledigt",check:!!inv.check||cut>0.004};
+  return {amount,paid,open,unpaid,overdue,dueSoon,due,daysLeft,age,pkv,bh,cut,todo,wait,review,step,askLong,objOpen,done:step==="erledigt",check:!!inv.check||cut>0.004};
 }
 // Fälligkeit: eigenes Datum von der Rechnung, sonst Eingang + Zahlungsfrist
 function dueDate(inv){
   if(inv.dueDate)return inv.dueDate;
-  const base=inv.receivedDate||inv.invoiceDate;if(!base)return null;
+  const base=inv.invoiceDate||inv.receivedDate;if(!base)return null; // Frist läuft ab Rechnungsdatum
   const d=new Date(base+"T12:00:00");d.setDate(d.getDate()+(+S.settings.payDays||30));
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 }
@@ -321,9 +328,13 @@ const FILTERS=[
 ];
 function nextStepText(i,c){
   if(c.step==="einreichen"){const w=[c.pkv.state==="todo"&&"PKV",c.bh.state==="todo"&&"Beihilfe"].filter(Boolean);return `Einreichen bei ${w.join(" und ")}`}
-  if(c.step==="warten"){const w=[c.pkv.state==="wait"&&`PKV ${eur(c.pkv.expected)}`,c.bh.state==="wait"&&`Beihilfe ${eur(c.bh.expected)}`].filter(Boolean);return `Warten auf ${w.join(" und ")}`}
+  if(c.step==="warten"){const w=[c.pkv.state==="wait"&&`PKV ${eur(c.pkv.expected)}`,c.bh.state==="wait"&&`Beihilfe ${eur(c.bh.expected)}`].filter(Boolean);
+    const long=[["AXA",c.pkv],["Beihilfe",c.bh]].filter(([,x])=>x.waitDays>ASK_DAYS);
+    return `Warten auf ${w.join(" und ")}`+(long.length?` · seit ${Math.max(...long.map(([,x])=>x.waitDays))} Tagen, bei ${long.map(([n])=>n).join(" und ")} nachfragen`:"")}
   if(c.step==="nachweis"){const w=[["PKV",c.pkv],["Beihilfe",c.bh]].filter(([,x])=>x.review).map(([n,x])=>x.diff>0.004?`${n} ${eur(x.received)} statt ${eur(x.expected)}`:`${n} ${eur(x.received)}`);return `Nachweis prüfen: ${w.join(", ")}`}
   if(c.step==="ueberweisen")return `Jetzt ${eur(c.open)} überweisen`;
+  if(c.objOpen)return "Widerspruch eingelegt, Ergebnis offen";
+  if(c.cut>0.004)return `Kürzung ${eur(c.cut)}: Widerspruch einlegen oder akzeptieren`;
   return "";
 }
 function dueText(c){
@@ -364,7 +375,10 @@ function render(){
   const mine=S.person==="alle"?rows:rows.filter(r=>r.i.patient===S.person);
   renderSummary(mine);renderBanner();
   const f=FILTERS.find(x=>x.id===S.filter)||FILTERS[0];
-  const cnt=x=>mine.filter(r=>x.test(r.c)).length;
+  const yr=String(new Date().getFullYear());
+  const oldDone=r=>r.c.step==="erledigt"&&!r.c.check&&(r.i.invoiceDate||"9999").slice(0,4)<yr; // erledigt aus Vorjahren: nur über die Suche
+  const vis=mine.filter(r=>!oldDone(r)),hiddenOld=mine.length-vis.length;
+  const cnt=x=>vis.filter(r=>x.test(r.c)).length;
   const srch=S.searchOpen;
   $("#bnav").innerHTML=FILTERS.filter(x=>x.nav).map(x=>{const n=cnt(x),on=!srch&&x.id===S.filter;return `<button type="button" data-f="${x.id}" class="${n?"":"zero"}" aria-current="${on}" aria-label="${esc(x.label)}: ${n}"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${NAV_ICONS[x.id]}</svg></span>${n?`<span class="n">${n}</span>`:""}<span>${esc(x.label)}</span></button>`}).join("");
   const extra=srch?[]:FILTERS.filter(x=>!x.nav&&x.id!=="alle"&&(x.id===S.filter||(x.id==="pruefen"&&cnt(x)>0)));
@@ -378,7 +392,7 @@ function render(){
   if(!S.loaded){L.innerHTML=`<div class="empty">Rechnungen werden geladen …</div>`;return}
   if(!S.inv.length){L.innerHTML=`<div class="empty">Noch keine Rechnungen.<br>Tippe auf <b>+ Rechnung</b> oder spiele unter <b>Einstellungen</b> deine Startdatei ein.</div>`;return}
   const q=S.q.trim();
-  const list=(q?mine.filter(r=>matchQ(r.i,q)):srch?mine:mine.filter(r=>f.test(r.c))).sort((a,b)=>(b.i.invoiceDate||"").localeCompare(a.i.invoiceDate||""));
+  const list=(q?mine.filter(r=>matchQ(r.i,q)):srch?mine:vis.filter(r=>f.test(r.c))).sort((a,b)=>(b.i.invoiceDate||"").localeCompare(a.i.invoiceDate||""));
   const emptyTxt={einreichen:"Nichts einzureichen.",warten:"Keine offenen Erstattungen.",nachweis:"Keine Nachweise zu prüfen.",ueberweisen:"Nichts zu überweisen.",erledigt:"Noch nichts erledigt."}[f.id]||"Keine Rechnungen in dieser Ansicht.";
   let html="";
   if(srch&&!q)html+=`<div class="searchinfo">Alle ${list.length} Rechnungen${S.person!=="alle"?" von "+esc(S.person):""}. Tippe oben, um zu suchen.</div>`;
@@ -387,7 +401,8 @@ function render(){
     ?`<button type="button" class="btn" data-act="selall">Alle auswählen</button><button type="button" class="btn" data-act="selnone">Auswahl beenden</button>`
     :`<button type="button" class="btn" data-act="selstart">Mehrere auswählen</button>`}</div>`;
   if(!srch&&["warten","nachweis"].includes(f.id)&&!S.select)html+=`<div class="btnrow listtools"><button type="button" class="btn" data-act="proofstart">Leistungsnachweis erfassen</button></div>`;
-  if(!list.length){L.innerHTML=html+`<div class="empty">${q?"Keine Treffer.":emptyTxt}</div>`;return}
+  const oldNote=!srch&&f.id==="erledigt"&&hiddenOld?`<div class="searchinfo">${hiddenOld} erledigte Rechnung${hiddenOld===1?"":"en"} aus Vorjahren ausgeblendet. Über die Lupe findest du sie.</div>`:"";
+  if(!list.length){L.innerHTML=html+`<div class="empty">${q?"Keine Treffer.":emptyTxt}</div>`+oldNote;return}
   let lastYear=null;
   for(const {i,c} of list){
     const y=(i.invoiceDate||"").slice(0,4);
@@ -403,7 +418,7 @@ function render(){
       <div class="stamps">${stampPay(c)}${stampSide("PKV",c.pkv)}${stampSide("Beihilfe",c.bh)}${i.check?`<span class="stamp s-todo">Prüfen</span>`:""}</div>
     </button>`;
   }
-  L.innerHTML=html;
+  L.innerHTML=html+oldNote;
 }
 /* ---- Mehrere auf einmal als eingereicht markieren ---- */
 function renderSelectBar(){
@@ -556,11 +571,23 @@ function cutHtml(amt,note,small,k="bh"){
   return note?`<details style="${st}"><summary><b>Gekürzt:</b> ${eur(amt)} ${what} · Grund</summary>${esc(note)}</details>`
     :`<span style="${st}"><b>Gekürzt:</b> ${eur(amt)} ${what} · Grund steht ${where}</span>`;
 }
+// Kürzung: Widerspruch mit Frist und Ergebnis, oder akzeptieren
+function objHtml(key,c){
+  const s=c.s,o=s.obj;if(c.state!=="done"||(c.diff<=0.004&&!o))return "";
+  const st=`class="status" style="margin:4px 0 0"`;
+  if(o&&!o.result)return `<p ${st}><b>Widerspruch eingelegt am ${dfmt(o.date)}</b> · Ergebnis offen</p>
+    <div class="sub-actions"><button type="button" class="btn link" data-act="objyes" data-k="${key}">Nachzahlung erhalten</button><button type="button" class="btn link" data-act="objno" data-k="${key}">Widerspruch abgelehnt</button></div>`;
+  if(o)return `<p ${st}>Widerspruch vom ${dfmt(o.date)}: ${o.result==="nachzahlung"?"Nachzahlung erhalten":"abgelehnt"}</p>`;
+  if(s.cutOk)return `<p ${st}>Kürzung akzeptiert</p>`;
+  const base=s.proofDate||s.receivedDate,frist=key==="bh"&&base?addMonths(base,1):null,late=frist&&frist<today();
+  return `<p ${st}>${frist?(late?`Widerspruchsfrist am ${dfmt(frist)} abgelaufen`:`<b style="color:var(--warn)">Widerspruch möglich bis ${dfmt(frist)}</b>`):"Kürzung offen"}</p>
+    <div class="sub-actions"><button type="button" class="btn link" data-act="objset" data-k="${key}">Widerspruch eingelegt</button><button type="button" class="btn link" data-act="cutok" data-k="${key}">Kürzung akzeptieren</button></div>`;
+}
 function sideLine(key,title,inv){
   const c=side(inv,key);const s=c.s;let info="",btn="";
   if(c.state==="na")info="Kein Anspruch";
   else if(c.state==="todo"){info=`${eur(c.expected)} erwartet`;btn=`<button type="button" class="btn primary" data-act="sub" data-k="${key}">Heute eingereicht</button>`}
-  else if(c.state==="wait"){info=`${eur(c.expected)} erwartet · eingereicht ${dfmt(s.submitted)}`;btn=`<button type="button" class="btn primary" data-act="ask" data-k="${key}">Geld eingegangen</button>`}
+  else if(c.state==="wait"){info=`${eur(c.expected)} erwartet · eingereicht ${dfmt(s.submitted)}`+(c.waitDays>ASK_DAYS?`<br><b style="color:var(--warn)">Seit ${c.waitDays} Tagen keine Erstattung – bei ${key==="pkv"?"AXA":"der Beihilfe"} nachfragen</b>`:"");btn=`<button type="button" class="btn primary" data-act="ask" data-k="${key}">Geld eingegangen</button>`}
   else{info=`${eur(c.received)} erhalten am ${dfmt(s.receivedDate)}${c.diff>0.004?` · <b style="color:var(--bad)">${eur(c.diff)} weniger als erwartet</b>`:c.diff<-0.004?` · ${eur(-c.diff)} mehr als erwartet`:""}`;
     if(s.appId)info+=` · Antrag ${esc(s.appId)}`;
     if(s.eligible!=null)info+=`<br>${cutHtml(r2(inv.amount-s.eligible),s.cutNote,false,key)}`;
@@ -576,7 +603,7 @@ function sideLine(key,title,inv){
   if(c.state==="wait"||c.state==="done")again=S.edit.resub===key
     ?`<div class="inline"><span class="status" style="margin:0">Einreichung und Erstattung zurücksetzen?</span><button type="button" class="btn primary" data-act="resubok" data-k="${key}">Ja, erneut einreichen</button><button type="button" class="btn" data-act="resubno">Abbrechen</button></div>`
     :`<div class="sub-actions"><button type="button" class="btn link" data-act="resub" data-k="${key}">Erneut einreichen</button></div>`;
-  return `<div class="line"><div><div class="t">${title}</div><div class="s">${info}</div></div>${S.edit.ask===key?"":btn}</div>${ask}${proof}${again}`;
+  return `<div class="line"><div><div class="t">${title}</div><div class="s">${info}</div></div>${S.edit.ask===key?"":btn}</div>${ask}${objHtml(key,c)}${proof}${again}`;
 }
 /* ---- Überweisen: Daten zum Kopieren und GiroCode ---- */
 function payData(inv,c){
@@ -594,13 +621,17 @@ function paySection(inv,c){
       ${row("purpose","Zweck",p.purpose)}
     </div>
     ${p.iban?"":`<p class="status" style="margin:0">Die IBAN fehlt. Trag sie unter „Details anzeigen und bearbeiten“ ein, dann wird sie für diesen Rechnungssteller künftig vorgeschlagen.</p>`}
+    ${p.iban&&p.name&&p.amount>0?(S.edit.giro?`<div style="text-align:center;margin-top:8px"><img src="${S.edit.giro.url}" alt="Überweisungs-QR-Code" style="width:min(260px,70vw);border:1px solid var(--line);border-radius:10px;background:#fff"></div>
+      <p class="status" style="margin:0">Speichere den Code als Bild. In der Sparkassen-App den QR-Code-Scanner öffnen und das Bild aus der Galerie wählen.</p>
+      <div class="btnrow"><button type="button" class="btn" data-act="girosave">QR-Code speichern oder teilen</button></div>`
+      :`<div class="btnrow"><button type="button" class="btn" data-act="giro">QR-Code für die Banking-App</button></div>`):""}
     <div class="btnrow"><button type="button" class="btn primary" data-act="paid">Heute bezahlt</button></div>
   </div>`;
 }
 function drawView(thumb){
   if(thumb!==undefined)S.edit.thumb=thumb;
   const inv=S.inv.find(x=>x.id===S.edit.id);const c=calc(inv);
-  const payInfo=c.unpaid?`${eur(c.open)} offen${c.overdue?` · seit ${c.age} Tagen`:""}`:(c.open<-0.004?`${eur(-c.open)} zu viel überwiesen`:`Bezahlt am ${dfmt(inv.payment?.date)}`);
+  const payInfo=c.unpaid?`${eur(c.open)} offen${c.overdue?` · seit ${c.age} Tagen`:""}`:(c.open<-0.004?`${eur(-c.open)} zu viel überwiesen`:isApo(inv)&&!inv.payment?.date?"In der Apotheke bezahlt":`Bezahlt am ${dfmt(inv.payment?.date)}`);
   const docBtns=inv.docUrl
     ?`<a class="btn" href="${esc(inv.docUrl)}" target="_blank" rel="noopener">Beleg in Drive öffnen</a>`
     :(inv.docFileId?`<button type="button" class="btn" data-act="opendoc">Beleg öffnen</button>${S.settings.driveLinked?`<span class="status">Wird beim nächsten Abgleich in Drive abgelegt</span>`:`<button type="button" class="btn" data-act="share">In Drive sichern</button>`}`
@@ -644,6 +675,13 @@ async function viewClick(e){
       x.submitted=null;x.receivedDate=null;x.received="";delete x.checked;
       S.edit.resub=null;await saveInvoice(inv);toast((k==="pkv"?"PKV":"Beihilfe")+": wieder bei Schritt 1 Einreichen");return drawView()}
     case "checkok":inv[k].checked=true;await saveInvoice(inv);toast((k==="pkv"?"PKV":"Beihilfe")+": geprüft");return drawView();
+    case "objset":inv[k].obj={date:today(),result:null};await saveInvoice(inv);toast("Widerspruch eingetragen");return drawView();
+    case "objyes":inv[k].obj.result="nachzahlung";inv[k].obj.resultDate=today();inv[k].cutOk=true;await saveInvoice(inv);toast("Nachzahlung eingetragen. Den Korrektur-Bescheid über „Leistungsnachweis erfassen“ übernehmen.");return drawView();
+    case "objno":inv[k].obj.result="abgelehnt";inv[k].obj.resultDate=today();inv[k].cutOk=true;await saveInvoice(inv);toast("Widerspruch abgelehnt – Kürzung bleibt");return drawView();
+    case "cutok":inv[k].cutOk=true;await saveInvoice(inv);toast("Kürzung akzeptiert");return drawView();
+    case "giro":{const p=payData(inv,calc(inv));try{const bl=await QR.png(giroText(p),`${eur(p.amount)} an ${p.name}`);const u=URL.createObjectURL(bl);S.edit.urls.push(u);S.edit.giro={url:u,blob:bl,name:`Ueberweisung_${(p.name||"Arzt").replace(/[^A-Za-z0-9ÄÖÜäöüß]+/g,"_").slice(0,30)}_${p.amount.toFixed(2).replace(".",",")}.png`}}catch(err){toast("QR-Code konnte nicht erstellt werden")}return drawView()}
+    case "girosave":{const g=S.edit.giro;if(!g)return;const f=new File([g.blob],g.name,{type:"image/png"});
+      if(navigator.canShare?.({files:[f]})){try{await navigator.share({files:[f],title:g.name})}catch{}}else{const a=document.createElement("a");a.href=g.url;a.download=g.name;document.body.appendChild(a);a.click();a.remove()}return}
     case "proofcap":{const id=inv.id;closeSheet();const r=await scanDocument("Leistungsnachweis scannen");if(r)openProof(r,{k,id});else openView(id);return}
     case "paid":inv.payment={date:today(),amount:r2(inv.amount)};await saveInvoice(inv);toast("Als bezahlt markiert");return drawView();
     case "iban":try{await navigator.clipboard.writeText(inv.iban);toast("IBAN kopiert")}catch{toast(inv.iban)}return;
@@ -706,6 +744,7 @@ function drawEditor(){
         ${field("Rechnungssteller","provider",inv.provider,"text","full",'autocomplete="off" list="provList"')}
         ${field("Rechnungsdatum","invoiceDate",inv.invoiceDate,"date")}
         ${field("Rechnungsnummer","invoiceNo",inv.invoiceNo)}
+        <label class="f">Art<select id="kind">${[["arzt","Arzt"],["apotheke","Apotheke (sofort bezahlt)"],["krankenhaus","Krankenhaus"],["sonstiges","Sonstiges"]].map(([k,l])=>`<option value="${k}" ${k===(inv.kind||(isApo(inv)?"apotheke":"arzt"))?"selected":""}>${l}</option>`).join("")}</select></label>
       </div>
       <datalist id="provList">${[...new Set(S.inv.map(i=>i.provider).filter(Boolean))].map(p=>`<option value="${esc(p)}">`).join("")}</datalist>
     </div>
@@ -734,6 +773,7 @@ function drawEditor(){
     $("#pkv_rate").value=Math.round(r.pkv*100);$("#bh_rate").value=Math.round(r.bh*100);refreshCalc()});
   $("#btnMore").addEventListener("click",e=>{const m=$("#more");m.hidden=!m.hidden;e.target.textContent=m.hidden?"Weitere Angaben anzeigen":"Weitere Angaben ausblenden";e.target.setAttribute("aria-expanded",String(!m.hidden))});
   $("#provider").addEventListener("change",suggestFromProvider);
+  $("#provider").addEventListener("change",()=>{if(/apotheke/i.test($("#provider").value))$("#kind").value="apotheke"});
   for(const id of ["invoiceNo","amount","invoiceDate"])$("#"+id).addEventListener("change",()=>{readForm();showDup()});
   sc.addEventListener("click",editClick);
   showDup();
@@ -772,6 +812,7 @@ function readForm(){
   inv.patient=v("patient");inv.group=rateFor(inv.patient).group;
   inv.amount=nn("amount");
   for(const k of ["invoiceDate","receivedDate","provider","invoiceNo","reason","iban","note","dueDate"])inv[k]=v(k).trim();
+  inv.kind=v("kind")||inv.kind||"";
   inv.iban=inv.iban.replace(/\s+/g,"").toUpperCase();
   for(const key of ["pkv","bh"]){const s=inv[key]=inv[key]||{};
     s.rate=r2((+nn(key+"_rate")||0)/100);s.deduction=nn(key+"_deduction")||0;
@@ -1608,6 +1649,67 @@ async function driveBlob(driveId){if(!tokenValid()||!driveId)return null;try{ret
   try{await navigator.storage?.persist?.()}catch{}
   if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 })();
+/* ================= QR-Code (Byte-Modus, Fehlerkorrektur M, Version 1–13) für GiroCode ================= */
+const QR=(()=>{
+  const ECC=[-1,10,16,26,18,24,16,18,22,22,26,30,22,22],NB=[-1,1,1,1,2,2,4,4,4,5,5,5,8,9];
+  const mul=(x,y)=>{let z=0;for(let i=7;i>=0;i--){z=(z<<1)^((z>>>7)*0x11D);z^=((y>>>i)&1)*x}return z&0xFF};
+  const rawModules=v=>{let r=(16*v+128)*v+64;if(v>=2){const n=Math.floor(v/7)+2;r-=(25*n-10)*n-55;if(v>=7)r-=36}return r};
+  const dataCw=v=>Math.floor(rawModules(v)/8)-ECC[v]*NB[v];
+  const rsDiv=d=>{const r=new Array(d).fill(0);r[d-1]=1;let root=1;for(let i=0;i<d;i++){for(let j=0;j<d;j++){r[j]=mul(r[j],root);if(j+1<d)r[j]^=r[j+1]}root=mul(root,2)}return r};
+  const rsRem=(data,div)=>{const r=div.map(()=>0);for(const b of data){const f=b^r.shift();r.push(0);div.forEach((c,i)=>r[i]^=mul(c,f))}return r};
+  const bit=(x,i)=>((x>>>i)&1)!==0;
+  function encode(text){
+    const bytes=[...new TextEncoder().encode(text)];
+    let v=1;for(;v<=13;v++)if(4+(v<10?8:16)+bytes.length*8<=dataCw(v)*8)break;
+    if(v>13)throw new Error("Text zu lang für QR-Code");
+    const bits=[];const app=(val,len)=>{for(let i=len-1;i>=0;i--)bits.push((val>>>i)&1)};
+    app(4,4);app(bytes.length,v<10?8:16);bytes.forEach(b=>app(b,8));
+    const cap=dataCw(v)*8;app(0,Math.min(4,cap-bits.length));app(0,(8-bits.length%8)%8);
+    for(let p=0xEC;bits.length<cap;p^=0xEC^0x11)app(p,8);
+    const data=[];for(let i=0;i<bits.length;i+=8)data.push(parseInt(bits.slice(i,i+8).join(""),2));
+    // Fehlerkorrektur und Verschränkung
+    const nb=NB[v],el=ECC[v],raw=Math.floor(rawModules(v)/8),nShort=nb-raw%nb,shortLen=Math.floor(raw/nb),div=rsDiv(el);
+    const blocks=[];for(let i=0,k=0;i<nb;i++){const dat=data.slice(k,k+shortLen-el+(i<nShort?0:1));k+=dat.length;const ecc=rsRem(dat,div);if(i<nShort)dat.push(0);blocks.push(dat.concat(ecc))}
+    const all=[];for(let i=0;i<blocks[0].length;i++)blocks.forEach((b,j)=>{if(i!==shortLen-el||j>=nShort)all.push(b[i])});
+    // Matrix
+    const n=v*4+17,M=[...Array(n)].map(()=>Array(n).fill(false)),F=[...Array(n)].map(()=>Array(n).fill(false));
+    const set=(x,y,d)=>{M[y][x]=d;F[y][x]=true};
+    for(let i=0;i<n;i++){set(6,i,i%2===0);set(i,6,i%2===0)}
+    for(const [cx,cy] of [[3,3],[n-4,3],[3,n-4]])for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){const d=Math.max(Math.abs(dx),Math.abs(dy)),x=cx+dx,y=cy+dy;if(x>=0&&x<n&&y>=0&&y<n)set(x,y,d!==2&&d!==4)}
+    if(v>1){const na=Math.floor(v/7)+2,step=Math.floor((v*8+na*3+5)/(na*4-4))*2,pos=[6];for(let p=n-7;pos.length<na;p-=step)pos.splice(1,0,p);
+      const l=pos.length-1;pos.forEach((a,i)=>pos.forEach((b,j)=>{if((i===0&&j===0)||(i===0&&j===l)||(i===l&&j===0))return;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++)set(a+dx,b+dy,Math.max(Math.abs(dx),Math.abs(dy))!==1)}))}
+    const fmt=mask=>{const d=(0<<3)|mask;let r=d;for(let i=0;i<10;i++)r=(r<<1)^((r>>>9)*0x537);const b=((d<<10)|r)^0x5412;
+      for(let i=0;i<=5;i++)set(8,i,bit(b,i));set(8,7,bit(b,6));set(8,8,bit(b,7));set(7,8,bit(b,8));for(let i=9;i<15;i++)set(14-i,8,bit(b,i));
+      for(let i=0;i<8;i++)set(n-1-i,8,bit(b,i));for(let i=8;i<15;i++)set(8,n-15+i,bit(b,i));set(8,n-8,true)};
+    fmt(0);
+    if(v>=7){let r=v;for(let i=0;i<12;i++)r=(r<<1)^((r>>>11)*0x1F25);const b=(v<<12)|r;for(let i=0;i<18;i++){const a=n-11+i%3,c=Math.floor(i/3);set(a,c,bit(b,i));set(c,a,bit(b,i))}}
+    let i=0;for(let right=n-1;right>=1;right-=2){if(right===6)right=5;for(let vert=0;vert<n;vert++)for(let j=0;j<2;j++){const x=right-j,up=((right+1)&2)===0,y=up?n-1-vert:vert;
+      if(!F[y][x]&&i<all.length*8){M[y][x]=bit(all[i>>>3],7-(i&7));i++}}}
+    const MASKS=[(x,y)=>(x+y)%2===0,(x,y)=>y%2===0,(x,y)=>x%3===0,(x,y)=>(x+y)%3===0,(x,y)=>(Math.floor(x/3)+Math.floor(y/2))%2===0,
+      (x,y)=>x*y%2+x*y%3===0,(x,y)=>(x*y%2+x*y%3)%2===0,(x,y)=>((x+y)%2+x*y%3)%2===0];
+    const applyMask=m=>{for(let y=0;y<n;y++)for(let x=0;x<n;x++)if(!F[y][x]&&MASKS[m](x,y))M[y][x]=!M[y][x]};
+    const penalty=()=>{let p=0;
+      for(let y=0;y<n;y++){let run=1;for(let x=1;x<=n;x++){if(x<n&&M[y][x]===M[y][x-1])run++;else{if(run>=5)p+=run-2;run=1}}}
+      for(let x=0;x<n;x++){let run=1;for(let y=1;y<=n;y++){if(y<n&&M[y][x]===M[y-1][x])run++;else{if(run>=5)p+=run-2;run=1}}}
+      for(let y=0;y<n-1;y++)for(let x=0;x<n-1;x++){const c=M[y][x];if(c===M[y][x+1]&&c===M[y+1][x]&&c===M[y+1][x+1])p+=3}
+      let dark=0;M.forEach(r=>r.forEach(c=>{if(c)dark++}));p+=Math.floor(Math.abs(dark*20-n*n*10)/(n*n))*10;return p};
+    let best=0,bestP=Infinity;for(let m=0;m<8;m++){applyMask(m);fmt(m);const p=penalty();if(p<bestP){bestP=p;best=m}applyMask(m)}
+    applyMask(best);fmt(best);return M;
+  }
+  // Als PNG-Datei (mit Ruhezone und Beschriftung)
+  async function png(text,caption){
+    const M=encode(text),n=M.length,s=Math.max(6,Math.floor(560/(n+8))),q=4*s,w=n*s+2*q,capH=caption?60:0;
+    const cv=document.createElement("canvas");cv.width=w;cv.height=w+capH;const g=cv.getContext("2d");
+    g.fillStyle="#fff";g.fillRect(0,0,cv.width,cv.height);g.fillStyle="#000";
+    M.forEach((r,y)=>r.forEach((d,x)=>{if(d)g.fillRect(q+x*s,q+y*s,s,s)}));
+    if(caption){g.font="bold 22px system-ui,sans-serif";g.textAlign="center";g.fillText(caption.slice(0,48),w/2,w+36)}
+    return await new Promise(r=>cv.toBlob(r,"image/png"));
+  }
+  return {encode,png};
+})();
+// GiroCode (EPC-QR, Version 002): Empfänger, IBAN, Betrag, Verwendungszweck
+function giroText(p){return ["BCD","002","1","SCT","",p.name.slice(0,70),p.iban,"EUR"+p.amount.toFixed(2),"","",p.purpose.slice(0,140)].join("\n")}
+
 /* ================= Dateien von außen: Teilen-Menü und „Öffnen mit“ ================= */
 async function takeShared(){
   history.replaceState(null,"",location.pathname);
