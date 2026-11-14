@@ -283,7 +283,7 @@ function side(inv,key){
   return {rate,expected,state,received,diff,review,waitDays,cutOpen,s};
 }
 function calc(inv){
-  const amount=r2(inv.amount),paid=isApo(inv)&&!(+inv.payment?.amount)?amount:r2(inv.payment?.amount),open=r2(amount-paid);
+  const amount=r2(inv.amount),fee=r2(inv.fee),paid=isApo(inv)&&!(+inv.payment?.amount)?amount:r2(inv.payment?.amount),open=r2(amount+fee-paid); // Mahngebühr: zahlen ja, Erstattung nein
   const pkv=side(inv,"pkv"),bh=side(inv,"bh");
   const unpaid=open>0.004;
   const age=inv.receivedDate?days(inv.receivedDate,today()):0;
@@ -298,7 +298,8 @@ function calc(inv){
   const wait=pkv.state==="wait"||bh.state==="wait";
   const review=pkv.review||bh.review;
   const step=todo?"einreichen":wait?"warten":review?"nachweis":unpaid?"ueberweisen":"erledigt";
-  return {amount,paid,open,unpaid,overdue,dueSoon,due,daysLeft,age,pkv,bh,cut,todo,wait,review,step,askLong,objOpen,done:step==="erledigt",check:!!inv.check||cut>0.004};
+  const over=open<-0.004&&!inv.refundDue; // überzahlt, noch nicht geklärt
+  return {amount,fee,over,paid,open,unpaid,overdue,dueSoon,due,daysLeft,age,pkv,bh,cut,todo,wait,review,step,askLong,objOpen,done:step==="erledigt",check:!!inv.check||cut>0.004||over||!!inv.refundDue};
 }
 // Fälligkeit: eigenes Datum von der Rechnung, sonst Eingang + Zahlungsfrist
 function dueDate(inv){
@@ -334,6 +335,8 @@ function nextStepText(i,c){
   if(c.step==="nachweis"){const w=[["PKV",c.pkv],["Beihilfe",c.bh]].filter(([,x])=>x.review).map(([n,x])=>x.diff>0.004?`${n} ${eur(x.received)} statt ${eur(x.expected)}`:`${n} ${eur(x.received)}`);return `Nachweis prüfen: ${w.join(", ")}`}
   if(c.step==="ueberweisen")return `Jetzt ${eur(c.open)} überweisen`;
   if(c.objOpen)return "Widerspruch eingelegt, Ergebnis offen";
+  if(i.refundDue)return `${eur(-c.open)} zu viel bezahlt: beim Arzt zurückfordern`;
+  if(c.over)return `${eur(-c.open)} zu viel überwiesen: Mahngebühr oder Fehler?`;
   if(c.cut>0.004)return `Kürzung ${eur(c.cut)}: Widerspruch einlegen oder akzeptieren`;
   return "";
 }
@@ -571,6 +574,16 @@ function cutHtml(amt,note,small,k="bh"){
   return note?`<details style="${st}"><summary><b>Gekürzt:</b> ${eur(amt)} ${what} · Grund</summary>${esc(note)}</details>`
     :`<span style="${st}"><b>Gekürzt:</b> ${eur(amt)} ${what} · Grund steht ${where}</span>`;
 }
+// Mahngebühr und Überzahlung klären
+function feeHtml(inv,c){
+  if(S.edit.feeAsk)return `<div class="inline"><label class="f">Mahngebühr (€)<input id="feeAmt" class="num" inputmode="decimal" value="${c.fee>0?c.fee.toFixed(2).replace(".",","):""}"></label><button type="button" class="btn primary" data-act="feesave">Übernehmen</button><button type="button" class="btn" data-act="feeno">Abbrechen</button></div>`;
+  if(inv.refundDue)return `<p class="status" style="margin:4px 0 0;color:var(--bad)"><b>${eur(-c.open)} zu viel bezahlt</b> – beim Arzt zurückfordern</p>
+    <div class="sub-actions"><button type="button" class="btn link" data-act="refundok">Geld zurückerhalten</button></div>`;
+  if(c.over)return `<p class="status" style="margin:4px 0 0;color:var(--bad)">${eur(-c.open)} mehr überwiesen als die Rechnung. War das eine Mahngebühr?</p>
+    <div class="sub-actions"><button type="button" class="btn link" data-act="feeover">War eine Mahngebühr</button><button type="button" class="btn link" data-act="refunddue">Wirklich zu viel bezahlt</button></div>`;
+  if(c.unpaid)return `<div class="sub-actions"><button type="button" class="btn link" data-act="feeask">${c.fee>0?"Mahngebühr ändern":"Mahnung erhalten"}</button></div>`;
+  return "";
+}
 // Kürzung: Widerspruch mit Frist und Ergebnis, oder akzeptieren
 function objHtml(key,c){
   const s=c.s,o=s.obj;if(c.state!=="done"||(c.diff<=0.004&&!o))return "";
@@ -607,7 +620,7 @@ function sideLine(key,title,inv){
 }
 /* ---- Überweisen: Daten zum Kopieren und GiroCode ---- */
 function payData(inv,c){
-  const purpose=(inv.invoiceNo?`Rechnung ${inv.invoiceNo}`:`Rechnung vom ${dfmt(inv.invoiceDate)}`)+` ${inv.patient||""}`.trimEnd();
+  const purpose=(inv.invoiceNo?`Rechnung ${inv.invoiceNo}`:`Rechnung vom ${dfmt(inv.invoiceDate)}`)+` ${inv.patient||""}`.trimEnd()+(+inv.fee>0?" inkl. Mahngebuehr":"");
   return {name:(inv.provider||"").slice(0,70),iban:(inv.iban||"").replace(/\s+/g,"").toUpperCase(),amount:r2(c.open),purpose:purpose.slice(0,140)};
 }
 function paySection(inv,c){
@@ -647,8 +660,9 @@ function drawView(thumb){
     <div class="sec">
       ${sideLine("pkv","PKV",inv)}
       ${sideLine("bh","Beihilfe",inv)}
-      <div class="line"><div><div class="t">Zahlung</div><div class="s">${payInfo}</div>${dueText(c)}</div>
+      <div class="line"><div><div class="t">Zahlung</div><div class="s">${payInfo}${c.fee>0?` · inkl. ${eur(c.fee)} Mahngebühr`:""}</div>${dueText(c)}</div>
         ${c.unpaid&&c.step!=="ueberweisen"?`<button type="button" class="btn" data-act="paysec">Überweisen</button>`:""}</div>
+      ${feeHtml(inv,c)}
     </div>
     ${c.unpaid&&(c.step==="ueberweisen"||S.edit.showPay)?paySection(inv,c):""}
     ${c.step==="einreichen"&&inv.docName&&inv.docDriveId?`<div class="sec"><h3>Zum Einreichen</h3><p class="status" style="margin:0">In Google Drive unter ${[c.pkv.state==="todo"?`<b>Arztrechnungen › Zum Einreichen › AXA › ${esc(inv.patient||"")}</b>`:"",c.bh.state==="todo"?"<b>Arztrechnungen › Zum Einreichen › Beihilfe</b>":""].filter(Boolean).join(" und ")}:</p><div class="v num" style="overflow-wrap:anywhere">${esc(inv.docName)}</div></div>`:""}
@@ -678,12 +692,19 @@ async function viewClick(e){
     case "objset":inv[k].obj={date:today(),result:null};await saveInvoice(inv);toast("Widerspruch eingetragen");return drawView();
     case "objyes":inv[k].obj.result="nachzahlung";inv[k].obj.resultDate=today();inv[k].cutOk=true;await saveInvoice(inv);toast("Nachzahlung eingetragen. Den Korrektur-Bescheid über „Leistungsnachweis erfassen“ übernehmen.");return drawView();
     case "objno":inv[k].obj.result="abgelehnt";inv[k].obj.resultDate=today();inv[k].cutOk=true;await saveInvoice(inv);toast("Widerspruch abgelehnt – Kürzung bleibt");return drawView();
+    case "feeask":S.edit.feeAsk=true;drawView();$("#feeAmt")?.focus();return;
+    case "feeno":S.edit.feeAsk=false;return drawView();
+    case "feesave":{inv.fee=r2(String($("#feeAmt").value||"0").replace(/\./g,"").replace(",","."))||0;S.edit.feeAsk=false;S.edit.giro=null;await saveInvoice(inv);toast(inv.fee?`Mahngebühr ${eur(inv.fee)} eingetragen`:"Mahngebühr entfernt");return drawView()}
+    case "feeover":{const c0=calc(inv);inv.fee=r2((+inv.fee||0)-c0.open);await saveInvoice(inv);toast(`Mahngebühr ${eur(inv.fee)} eingetragen`);return drawView()}
+    case "refunddue":inv.refundDue=true;await saveInvoice(inv);toast("Markiert: Geld beim Arzt zurückfordern");return drawView();
+    case "refundok":{const c0=calc(inv);const back=-c0.open;inv.payment={...inv.payment,amount:r2((+inv.amount||0)+(+inv.fee||0))};inv.refundDue=false;
+      inv.note=((inv.note?inv.note+" · ":"")+`${eur(back)} vom Arzt zurück am ${dfmt(today())}`);await saveInvoice(inv);toast("Rückzahlung eingetragen");return drawView()}
     case "cutok":inv[k].cutOk=true;await saveInvoice(inv);toast("Kürzung akzeptiert");return drawView();
     case "giro":{const p=payData(inv,calc(inv));try{const bl=await QR.png(giroText(p),`${eur(p.amount)} an ${p.name}`);const u=URL.createObjectURL(bl);S.edit.urls.push(u);S.edit.giro={url:u,blob:bl,name:`Ueberweisung_${(p.name||"Arzt").replace(/[^A-Za-z0-9ÄÖÜäöüß]+/g,"_").slice(0,30)}_${p.amount.toFixed(2).replace(".",",")}.png`}}catch(err){toast("QR-Code konnte nicht erstellt werden")}return drawView()}
     case "girosave":{const g=S.edit.giro;if(!g)return;const f=new File([g.blob],g.name,{type:"image/png"});
       if(navigator.canShare?.({files:[f]})){try{await navigator.share({files:[f],title:g.name})}catch{}}else{const a=document.createElement("a");a.href=g.url;a.download=g.name;document.body.appendChild(a);a.click();a.remove()}return}
     case "proofcap":{const id=inv.id;closeSheet();const r=await scanDocument("Leistungsnachweis scannen");if(r)openProof(r,{k,id});else openView(id);return}
-    case "paid":inv.payment={date:today(),amount:r2(inv.amount)};await saveInvoice(inv);toast("Als bezahlt markiert");return drawView();
+    case "paid":inv.payment={date:today(),amount:r2((+inv.amount||0)+(+inv.fee||0))};await saveInvoice(inv);toast("Als bezahlt markiert");return drawView();
     case "iban":try{await navigator.clipboard.writeText(inv.iban);toast("IBAN kopiert")}catch{toast(inv.iban)}return;
     case "paysec":S.edit.showPay=true;return drawView();
     case "copy":{const p=payData(inv,calc(inv));let v=p[k];if(k==="amount")v=p.amount.toFixed(2).replace(".",",");
@@ -764,6 +785,7 @@ function drawEditor(){
         ${field("Fällig am (leer = automatisch)","dueDate",inv.dueDate,"date","full")}
         ${field("Bezahlt am","pay_date",inv.payment?.date,"date")}
         ${field("Bezahlt (€)","pay_amount",inv.payment?.amount??"","number")}
+        ${field("Mahngebühr (€)","fee",inv.fee||"","number")}
       </div></div>
       ${isNew?"":`<div class="sec"><h3>Löschen</h3><div class="btnrow"><button type="button" class="btn danger" data-act="del">Rechnung löschen</button></div></div>`}
     </div>
@@ -832,6 +854,7 @@ function readForm(){
     s.rate=r2((+nn(key+"_rate")||0)/100);s.deduction=nn(key+"_deduction")||0;
     s.submitted=v(key+"_submitted")||null;s.receivedDate=v(key+"_receivedDate")||null;s.received=nn(key+"_received");s.note=v(key+"_note").trim()}
   inv.payment={date:v("pay_date")||null,amount:nn("pay_amount")};
+  if($("#fee"))inv.fee=nn("fee")||0;
 }
 function refreshCalc(){readForm();for(const key of ["pkv","bh"]){const el=$("#"+key+"_exp");if(el)el.textContent=eur(side(S.edit.inv,key).expected)}}
 async function editClick(e){
