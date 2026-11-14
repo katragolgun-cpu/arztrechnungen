@@ -383,7 +383,8 @@ function render(){
   const vis=mine.filter(r=>!oldDone(r)),hiddenOld=mine.length-vis.length;
   const cnt=x=>vis.filter(r=>x.test(r.c)).length;
   const srch=S.searchOpen;
-  $("#bnav").innerHTML=FILTERS.filter(x=>x.nav).map(x=>{const n=cnt(x),on=!srch&&x.id===S.filter;return `<button type="button" data-f="${x.id}" class="${n?"":"zero"}" aria-current="${on}" aria-label="${esc(x.label)}: ${n}"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${NAV_ICONS[x.id]}</svg></span>${n?`<span class="n">${n}</span>`:""}<span>${esc(x.label)}</span></button>`}).join("");
+  $("#bnav").innerHTML=FILTERS.filter(x=>x.nav).map(x=>{const fin=x.id==="erledigt",n=fin?0:cnt(x),on=!srch&&x.id===S.filter; // Erledigt: keine Zahl, nie grau
+    return `<button type="button" data-f="${x.id}" class="${n||fin?"":"zero"}" aria-current="${on}" aria-label="${esc(x.label)}${fin?"":": "+n}"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${NAV_ICONS[x.id]}</svg></span>${n?`<span class="n">${n}</span>`:""}<span>${esc(x.label)}</span></button>`}).join("");
   const extra=srch?[]:FILTERS.filter(x=>!x.nav&&x.id!=="alle"&&(x.id===S.filter||(x.id==="pruefen"&&cnt(x)>0)));
   $("#filters").hidden=!extra.length;
   $("#filters").innerHTML=extra.map(x=>`<button type="button" class="chip" data-f="${x.id}" aria-pressed="${x.id===S.filter}">${esc(x.label)}<span class="c">${cnt(x)}</span></button>`).join("");
