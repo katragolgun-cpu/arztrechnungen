@@ -418,7 +418,7 @@ function render(){
       <div class="amt">${eur(c.amount)}</div></div>
       ${nx?`<div class="next s-${c.step}">${esc(nx)}</div>`:""}
       ${dueText(c)}
-      <div class="stamps">${stampPay(c)}${stampSide("PKV",c.pkv)}${stampSide("Beihilfe",c.bh)}${i.check?`<span class="stamp s-todo">Prüfen</span>`:""}</div>
+      ${(()=>{const st=problemStamps(c);return st?`<div class="stamps">${st}</div>`:""})()}
     </button>`;
   }
   L.innerHTML=html+oldNote;
@@ -445,6 +445,13 @@ async function bulkSubmit(which){
 function stampPay(c){
   if(!c.unpaid)return c.open<-0.004?`<span class="stamp s-bad">Überzahlt <b>${eur(-c.open)}</b></span>`:`<span class="stamp s-ok">Bezahlt</span>`;
   return `<span class="stamp ${c.overdue?"s-bad":"s-todo"}">Zahlen <b>${eur(c.open)}</b>${c.overdue?` · ${c.age} Tg.`:""}</span>`;
+}
+// Karten in der Liste: nur Probleme als Kästchen (Rest sagt der Text darüber)
+function problemStamps(c){
+  const out=[];
+  // Überfällig, Überzahlt und Nachfragen stehen schon im Text der Karte; Kürzungen nicht immer
+  for(const [n,x] of [["AXA",c.pkv],["Beihilfe",c.bh]])if(x.cutOpen&&c.step!=="erledigt")out.push(`<span class="stamp s-bad">${n} gekürzt <b>−${eur(x.diff)}</b></span>`);
+  return out.join("");
 }
 function stampSide(n,s){
   if(s.state==="na")return `<span class="stamp s-na">${n} –</span>`;
