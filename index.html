@@ -736,6 +736,7 @@ function drawEditor(){
   sheet(isNew?"Neue Rechnung":"Bearbeiten",`
     <div id="edStatus" class="status" style="margin-top:10px"></div>
     <div id="dupBox"></div>
+    <div id="confBox"></div>
     <div class="sec">
       ${preview?`<img class="thumb" src="${preview}" alt="Rechnungsfoto">`:""}
       <div class="grid2">
@@ -777,8 +778,21 @@ function drawEditor(){
   for(const id of ["invoiceNo","amount","invoiceDate"])$("#"+id).addEventListener("change",()=>{readForm();showDup()});
   sc.addEventListener("click",editClick);
   showDup();
+  // Ampel: Ändern eines Feldes gilt als geprüft
+  for(const k of Object.keys(CONF_LABEL))$("#"+k)?.addEventListener("change",()=>{const x=S.edit.conf?.[k];if(x){x.done=true;readForm();if(k==="iban")checkKnownIban();else drawConf()}});
+  $("#provider").addEventListener("change",()=>setTimeout(checkKnownIban,0));
+  drawConf();
 }
 /* ---- Vorschläge aus vorhandenen Rechnungen ---- */
+// IBAN mit früheren Rechnungen desselben Rechnungsstellers abgleichen
+function checkKnownIban(){
+  if(!S.edit?.conf)return;readForm();const inv=S.edit.inv;const name=(inv.provider||"").trim().toLowerCase();if(!name||!inv.iban)return drawConf();
+  const known=[...new Set(S.inv.filter(x=>x.id!==inv.id&&(x.provider||"").trim().toLowerCase()===name&&x.iban).map(x=>x.iban))];
+  const c=S.edit.conf.iban||(S.edit.conf.iban={lvl:"check"});
+  if(known.includes(inv.iban)){if(c.lvl!=="ok"){c.lvl="ok";c.msg="Gleiche IBAN wie bei früheren Rechnungen."}}
+  else if(known.length){c.lvl="warn";c.done=false;c.msg=`Weicht von früheren Rechnungen ab (bisher …${known[0].slice(-6)}). Bitte genau prüfen, ob der Arzt die Bankverbindung geändert hat.`}
+  drawConf();
+}
 function suggestFromProvider(){
   readForm();const inv=S.edit.inv;const name=inv.provider.trim().toLowerCase();if(!name)return;
   const prev=S.inv.filter(x=>x.id!==inv.id&&(x.provider||"").trim().toLowerCase()===name).sort((a,b)=>(b.invoiceDate||"").localeCompare(a.invoiceDate||""));
@@ -824,11 +838,13 @@ async function editClick(e){
   const b=e.target.closest("[data-act]");if(!b)return;
   const act=b.dataset.act;
   if(act==="cancel"){const id=S.edit.inv.id;closeSheet();if(id)openView(id);return}
+  if(act==="confok"){const x=S.edit.conf?.[b.dataset.f];if(x)x.done=true;return drawConf()}
   if(act==="dupopen"){const id=S.edit.dup?.id;closeSheet();if(id)openView(id);return}
   if(act==="dupsave"){S.edit.dupOk=true;$("#dupBox").innerHTML="";return editClick({target:$("#btnSave")})}
   if(act==="save"){
     readForm();const inv=S.edit.inv;
     if(inv.amount===""||!inv.provider){setStatus("Bitte mindestens Rechnungssteller und Betrag eintragen.",true);return}
+    const pend=confPending();if(pend.length){drawConf();$("#confBox").scrollIntoView({block:"start",behavior:"smooth"});setStatus(`Bitte zuerst prüfen und bestätigen: ${pend.map(k=>CONF_LABEL[k]).join(", ")}.`,true);return}
     if(!inv.id&&!S.edit.dupOk&&findDuplicate(inv)){showDup();$("#dupBox").scrollIntoView({block:"center"});setStatus("Bitte prüfen: möglicherweise doppelt.",true);return}
     b.disabled=true;
     try{
@@ -858,8 +874,10 @@ async function ensureTess(){
 function loadLib(src,test){return new Promise((res,rej)=>{if(test())return res();const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=()=>rej(new Error("load"));document.head.appendChild(s)})}
 async function ocr(input){
   setStatus("Texterkennung startet … (beim ersten Mal etwas länger)");
+  const qr=await readInvoiceQr(input).catch(()=>null);
+  const isPdfText=!input.images&&(input.pdf||input.file)&&!(input.pdf||input.file).type?.startsWith("image/");
   try{
-    const text=await readText(input);
+    S.ocrCap=[];let text;try{text=await readText(input)}finally{if(S.edit)S.edit.cap=S.ocrCap;S.ocrCap=null}
     if(!S.edit||S.edit.mode!=="edit")return;
     readForm();const got=parseInvoiceText(text||"",S.settings.people.map(p=>p.name),[...new Set(S.inv.map(i=>i.provider).filter(Boolean))]);
     const inv=S.edit.inv;const filled=[];
@@ -870,10 +888,83 @@ async function ocr(input){
     if(got.iban&&!inv.iban){inv.iban=got.iban;filled.push("IBAN")}
     if(got.provider&&!inv.provider){inv.provider=got.provider;filled.push("Rechnungssteller")}
     if(got.patient){S.edit.patientLocked=true;inv.patient=got.patient;const r=rateFor(got.patient);inv.group=r.group;inv.pkv.rate=r.pkv;inv.bh.rate=r.bh;filled.push("Person")}
+    // GiroCode auf der Rechnung hat Vorrang: exakte Werte
+    const conf={};
+    if(qr){if(qr.amount!=null){inv.amount=qr.amount;conf.amount={lvl:"ok"}}if(qr.iban){inv.iban=qr.iban;conf.iban={lvl:"ok"}}
+      if(qr.name&&!got.provider&&!inv.provider)inv.provider=qr.name;filled.unshift("QR-Code")}
+    const pdfMsg=isPdfText?"Aus dem PDF-Text gelesen. Bitte kurz mit dem PDF vergleichen.":"";
+    for(const k of ["amount","invoiceDate","invoiceNo"])if(!conf[k]&&inv[k]!==""&&inv[k]!=null&&(k!=="invoiceDate"||got.date))
+      conf[k]={lvl:"check",msg:pdfMsg,crop:isPdfText?null:await cropFor(inv[k],k==="invoiceDate"?"date":k==="amount"?"amount":"no")};
+    if(inv.iban&&!conf.iban)conf.iban={lvl:"check",msg:"IBAN-Prüfziffer stimmt. Bitte trotzdem vergleichen, der Arzt ist neu.",crop:isPdfText?null:await cropFor(inv.iban,"iban")};
+    S.edit.conf=conf;
     drawEditor();
-    if(got.provider)suggestFromProvider();
+    if(inv.provider)suggestFromProvider();
+    checkKnownIban();
     setStatus(filled.length?`Erkannt: ${filled.join(", ")}. Bitte prüfen.`:"Nichts sicher erkannt. Bitte Felder ausfüllen.");
   }catch(err){setStatus("Texterkennung nicht verfügbar (offline?). Bitte Felder ausfüllen.")}
+}
+/* ---- GiroCode auf der Rechnung lesen (Chrome: BarcodeDetector) ---- */
+async function readInvoiceQr(input){
+  if(!("BarcodeDetector" in window))return null;
+  let det;try{det=new BarcodeDetector({formats:["qr_code"]})}catch{return null}
+  const srcs=[];
+  try{
+    if(input.images)for(const im of input.images)srcs.push(await createImageBitmap(im));
+    const f=input.pdf||input.file;
+    if(f&&f.type?.startsWith("image/"))srcs.push(await createImageBitmap(f));
+    else if(f&&(f.type==="application/pdf"||/\.pdf$/i.test(f.name||""))&&!input.images){
+      await loadLib(PDFJS,()=>!!window.pdfjsLib);pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+      const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await f.arrayBuffer())}).promise;
+      for(let p=1;p<=Math.min(pdf.numPages,2);p++){const page=await pdf.getPage(p);const vp=page.getViewport({scale:2.5});const cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;
+        await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise;srcs.push(cv)}}
+  }catch{}
+  for(const src of srcs){try{for(const c of await det.detect(src)){const g=parseGiro(c.rawValue||"");if(g)return g}}catch{}}
+  return null;
+}
+function parseGiro(raw){
+  const l=raw.replace(/\r/g,"").split("\n");if(l[0]?.trim()!=="BCD"||l[3]?.trim()!=="SCT")return null;
+  const iban=(l[6]||"").replace(/\s+/g,"").toUpperCase();const am=(l[7]||"").match(/^EUR(\d+(?:\.\d{1,2})?)$/);
+  return {name:(l[5]||"").trim(),iban:ibanOk(iban)?iban:null,amount:am?r2(+am[1]):null,purpose:((l[10]||"")||(l[9]||"")).trim()};
+}
+/* ---- Ampel: Ausschnitt aus dem Foto für einen erkannten Wert ---- */
+async function cropFor(value,kind){
+  const caps=S.edit?.cap||[];if(!caps.length||value==null||value==="")return null;
+  const digits=x=>String(x).replace(/[^0-9]/g,"");
+  let want;
+  if(kind==="amount")want=digits(Number(value).toFixed(2));
+  else if(kind==="date"){const [y,m,d]=String(value).split("-");want=[d+m+y,d+m+y.slice(2)]}
+  else if(kind==="iban")want=String(value).slice(0,4).toLowerCase();
+  else want=String(value).toLowerCase().replace(/[^0-9a-z]/g,"");
+  for(const cap of caps){
+    const hit=cap.words.find(w=>{const t=w.text.toLowerCase();
+      if(kind==="amount")return digits(t)===want&&/[.,]\d{2}/.test(t);
+      if(kind==="date")return want.includes(digits(t))&&digits(t).length>=6;
+      if(kind==="iban")return t.replace(/[^0-9a-z]/g,"").startsWith(want);
+      return want.length>=3&&t.replace(/[^0-9a-z]/g,"").includes(want)});
+    if(!hit?.b)continue;
+    const h=hit.b.y1-hit.b.y0,cy=(hit.b.y0+hit.b.y1)/2;
+    const line=cap.words.filter(w=>w.b&&Math.abs((w.b.y0+w.b.y1)/2-cy)<h*0.7);
+    const x0=Math.min(...line.map(w=>w.b.x0)),x1=Math.max(...line.map(w=>w.b.x1)),y0=Math.min(...line.map(w=>w.b.y0)),y1=Math.max(...line.map(w=>w.b.y1));
+    try{const bmp=await createImageBitmap(cap.img);const pad=Math.round(h*0.8);
+      const sx=Math.max(0,x0-pad),sy=Math.max(0,y0-pad),sw=Math.min(bmp.width,x1+pad)-sx,sh=Math.min(bmp.height,y1+pad)-sy;
+      const sc=Math.min(1,900/sw);const cv=document.createElement("canvas");cv.width=Math.round(sw*sc);cv.height=Math.round(sh*sc);
+      cv.getContext("2d").drawImage(bmp,sx,sy,sw,sh,0,0,cv.width,cv.height);
+      const bl=await new Promise(r=>cv.toBlob(r,"image/jpeg",0.85));const u=URL.createObjectURL(bl);S.edit.urls.push(u);return u}catch{return null}
+  }
+  return null;
+}
+const CONF_LABEL={amount:"Betrag",iban:"IBAN",invoiceDate:"Rechnungsdatum",invoiceNo:"Rechnungsnummer"};
+function confPending(){const c=S.edit?.conf;if(!c)return [];return Object.entries(c).filter(([,x])=>x.lvl!=="ok"&&!x.done).map(([k])=>k)}
+function drawConf(){
+  const c=S.edit?.conf;if(!c)return;
+  for(const [k,x] of Object.entries(c)){const el=$("#"+k);if(!el)continue;
+    el.style.borderColor=x.lvl==="ok"||x.done?"var(--ok)":x.lvl==="warn"?"var(--bad)":"var(--warn)";el.style.borderWidth="2px"}
+  const box=$("#confBox");if(!box)return;const pend=confPending();
+  box.innerHTML=pend.length?`<div class="sec"><h3>Bitte prüfen</h3>${pend.map(k=>{const x=c[k];return `<div style="padding:8px 0;border-bottom:1px solid var(--line)">
+    <div><b>${CONF_LABEL[k]}:</b> <span class="num">${esc(k==="amount"?eur(S.edit.inv.amount):k==="invoiceDate"?dfmt(S.edit.inv.invoiceDate):k==="iban"?(S.edit.inv.iban||"").replace(/(.{4})/g,"$1 ").trim():S.edit.inv[k]||"–")}</span></div>
+    ${x.msg?`<div class="status" style="color:${x.lvl==="warn"?"var(--bad)":"var(--warn)"};margin:2px 0 0">${esc(x.msg)}</div>`:""}
+    ${x.crop?`<img src="${x.crop}" alt="Ausschnitt aus der Rechnung" style="display:block;max-width:100%;margin:6px 0;border:1px solid var(--line);border-radius:8px">`:`<div class="status" style="margin:2px 0 0">Mit der Rechnung vergleichen.</div>`}
+    <div class="btnrow"><button type="button" class="btn" data-act="confok" data-f="${k}">Stimmt</button></div></div>`}).join("")}</div>`:"";
 }
 /* Foto für die Texterkennung vorbereiten: Graustufen, Schatten ausgleichen (Bild durch weichgezeichneten Hintergrund teilen) */
 async function prepareForOcr(file){
@@ -1093,12 +1184,20 @@ async function finishScanPdf(){
 }
 // Texterkennung für Scan-Ergebnis (Bilder sind schon aufbereitet) oder Datei
 async function readText(input){
-  if(input.images){await ensureTess();let t="";for(const im of input.images)t+=((await tessWorker.recognize(im)).data.text||"")+"\n";return t}
+  if(input.images){await ensureTess();let t="";for(const im of input.images)t+=(await tessRec(im))+"\n";return t}
   return docText(input.file||input);
 }
 
 /* ================= Leistungsnachweis erfassen (ein Nachweis -> mehrere Rechnungen) ================= */
 const PDFJS="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
+// Texterkennung eines Bildes; Wörter mit Position werden für Ausschnitte (Ampel) gesammelt
+async function tessRec(img){
+  let res;try{res=await tessWorker.recognize(img,{},{text:true,blocks:true})}catch{res=await tessWorker.recognize(img)}
+  const d=res?.data||{};
+  if(S.ocrCap){let words=d.words;if(!words?.length&&d.blocks)words=d.blocks.flatMap(b=>(b.paragraphs||[]).flatMap(p=>(p.lines||[]).flatMap(l=>l.words||[])));
+    S.ocrCap.push({img,words:(words||[]).map(w=>({text:w.text||"",b:w.bbox}))})}
+  return d.text||"";
+}
 async function docText(file){
   if(file.type==="application/pdf"||/\.pdf$/i.test(file.name||"")){
     await loadLib(PDFJS,()=>!!window.pdfjsLib);
@@ -1113,13 +1212,13 @@ async function docText(file){
       if(pt.replace(/\s/g,"").length<40){ // gescanntes PDF: Seite als Bild lesen
         const vp=page.getViewport({scale:2.2});const cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;
         await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise;
-        await ensureTess();const bl=await prepareForOcr(await new Promise(r=>cv.toBlob(r,"image/png")));pt=(await tessWorker.recognize(bl)).data.text||"";
+        await ensureTess();const bl=await prepareForOcr(await new Promise(r=>cv.toBlob(r,"image/png")));pt=await tessRec(bl);
       }
       text+=pt+"\n";
     }
     return text;
   }
-  await ensureTess();return (await tessWorker.recognize(await prepareForOcr(file))).data.text||"";
+  await ensureTess();return await tessRec(await prepareForOcr(file));
 }
 const PSTOP=new Set(["dr","med","prof","dipl","gmbh","ggmbh","mbh","mvz","co","kg","ag","ug","und","der","die","das","fuer","für","praxis","gemeinschaftspraxis","zentrum","ohg","gbr"]);
 const provWords=s=>String(s||"").toLowerCase().replace(/[^a-zäöüß0-9]+/g," ").split(" ").filter(w=>w.length>=4&&!PSTOP.has(w));
