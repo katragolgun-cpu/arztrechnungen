@@ -1,5 +1,5 @@
 // Offline-Unterstützung: App-Dateien und Texterkennung werden zwischengespeichert.
-const VERSION = "v21";
+const VERSION = "v22";
 const SHELL = "shell-" + VERSION;
 const RUNTIME = "runtime-" + VERSION;
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"];
@@ -11,13 +11,28 @@ self.addEventListener("install", e => {
 self.addEventListener("activate", e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== SHELL && k !== RUNTIME).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k !== SHELL && k !== RUNTIME && k !== "share-inbox").map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("fetch", e => {
   const req = e.request;
+  // Teilen-Menü: Datei zwischenlegen, dann App öffnen
+  if (req.method === "POST" && new URL(req.url).pathname.endsWith("/share")) {
+    e.respondWith((async () => {
+      try {
+        const fd = await req.formData(); const f = fd.get("file");
+        if (f && f.size) {
+          const c = await caches.open("share-inbox");
+          await c.put(new URL("shared-file", self.registration.scope).href,
+            new Response(f, { headers: { "content-type": f.type || "application/octet-stream", "x-name": encodeURIComponent(f.name || "Dokument") } }));
+        }
+      } catch (err) {}
+      return Response.redirect(new URL("./?share=1", self.registration.scope).href, 303);
+    })());
+    return;
+  }
   if (req.method !== "GET") return;
   const url = new URL(req.url);
 

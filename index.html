@@ -249,7 +249,7 @@ const S={inv:[],deleted:{},settings:structuredClone(DEFAULT_SETTINGS),loaded:fal
 function matchQ(i,q){
   const words=q.toLowerCase().split(/\s+/).filter(Boolean);if(!words.length)return true;
   const amt=+i.amount||0;const amtTxt=[amt.toFixed(2).replace(".",","),amt.toFixed(2),eur(amt).toLowerCase(),String(amt)].join(" ");
-  const hay=[i.provider,i.invoiceNo,(i.invoiceNo||"").replace(/[^0-9a-z]/gi,""),i.patient,i.reason,i.note,dfmt(i.invoiceDate),dfmt(i.receivedDate),i.invoiceDate,amtTxt].join(" ").toLowerCase();
+  const hay=[i.provider,i.invoiceNo,(i.invoiceNo||"").replace(/[^0-9a-z]/gi,""),i.patient,i.reason,i.note,dfmt(i.invoiceDate),dfmt(i.receivedDate),i.invoiceDate,amtTxt,i.bh?.appId,i.pkv?.appId].join(" ").toLowerCase();
   return words.every(w=>{
     if(/^\d+([.,]\d{1,2})?$/.test(w)&&/[.,]/.test(w)){const n=+w.replace(",",".");if(Math.abs(n-amt)<0.005)return true}
     return hay.includes(w)||hay.includes(w.replace(/[^0-9a-z]/gi,""))&&w.replace(/[^0-9a-z]/gi,"").length>=3;
@@ -549,12 +549,20 @@ async function openView(id){
     }
   }
 }
+// Kürzung: Betrag sichtbar, langer Grund aus dem Bescheid zum Aufklappen
+function cutHtml(amt,note,small){
+  const st=`color:var(--warn)${small?";font-size:12.5px":""}`;
+  return note?`<details style="${st}"><summary><b>Gekürzt:</b> ${eur(amt)} nicht beihilfefähig · Grund</summary>${esc(note)}</details>`
+    :`<span style="${st}"><b>Gekürzt:</b> ${eur(amt)} nicht beihilfefähig · Grund steht im Bescheid</span>`;
+}
 function sideLine(key,title,inv){
   const c=side(inv,key);const s=c.s;let info="",btn="";
   if(c.state==="na")info="Kein Anspruch";
   else if(c.state==="todo"){info=`${eur(c.expected)} erwartet`;btn=`<button type="button" class="btn primary" data-act="sub" data-k="${key}">Heute eingereicht</button>`}
   else if(c.state==="wait"){info=`${eur(c.expected)} erwartet · eingereicht ${dfmt(s.submitted)}`;btn=`<button type="button" class="btn primary" data-act="ask" data-k="${key}">Geld eingegangen</button>`}
   else{info=`${eur(c.received)} erhalten am ${dfmt(s.receivedDate)}${c.diff>0.004?` · <b style="color:var(--bad)">${eur(c.diff)} weniger als erwartet</b>`:c.diff<-0.004?` · ${eur(-c.diff)} mehr als erwartet`:""}`;
+    if(s.appId)info+=` · Antrag ${esc(s.appId)}`;
+    if(s.eligible!=null)info+=`<br>${cutHtml(r2(inv.amount-s.eligible),s.cutNote)}`;
     if(c.review){info+=`<br><b style="color:var(--bad)">Leistungsnachweis prüfen</b>`;btn=`<button type="button" class="btn primary" data-act="checkok" data-k="${key}">Geprüft</button>`}}
   let ask="";
   if(S.edit.ask===key)ask=`<div class="inline"><label class="f">Erhaltener Betrag (€)<input id="askAmt" class="num" inputmode="decimal" value="${c.expected.toFixed(2).replace(".",",")}"></label>
@@ -1084,26 +1092,42 @@ function parseProofText(text){
   for(const re of [/auszahlungsbetrag(?:\s+gesamt)?:?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i,/erstattungsbetrag\s+gesamt\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i,
     /(?:gesamterstattung|erstattung\s+gesamt|überweisungsbetrag|festgesetzte\s+beihilfe|beihilfe\s+gesamt|summe\s+beihilfe|gesamtbetrag\s+der\s+beihilfe|erstattungsbetrag|auszahlung)[^\d]{0,40}(\d{1,3}(?:\.\d{3})*,\d{2})/i]){
     const m=t.match(re);if(m){out.total=r2(m[1].replace(/\./g,"").replace(",","."));break}}
+  const num=x=>r2(x.replace(/\./g,"").replace(",","."));
+  const ai=t.match(/AppID:?\s*(\d{5,})/i);if(ai)out.appId=ai[1];
+  // Beihilfebescheid: Summe festgesetzte Beihilfe = Summe der Zeilen (auch bei Korrektur-Bescheiden, dort ist die Auszahlung kleiner)
+  const fs=t.match(/summe\s+festgesetzte\s+beihilfe:?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i);
+  if(fs){out.total=num(fs[1]);const ap=t.match(/auszahlungsbetrag:?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i);if(ap)out.payout=num(ap[1]);
+    const pre=t.match(/bereits\s+festgesetzte\s+beihilfe:?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i);if(pre)out.before=num(pre[1]);
+    out.correction=/korrektur/i.test(t)||!!pre}
+  // Nummerierte Hinweise (Gründe für Kürzungen)
+  out.notes={};const ls=t.split("\n");const hi=ls.findIndex(l=>/^\s*Hinweise\s*$/.test(l));
+  if(hi>=0){let cur=null;for(const l of ls.slice(hi+1)){if(/^\s*(Seite \d|Servicezeit|De-Mail|Antragshinweise)/i.test(l))break;
+    const m=l.match(/^\s*(\d{1,2})(?:\s+(.*))?$/);if(m){cur=m[1];out.notes[cur]=(m[2]||"").trim()}else if(cur)out.notes[cur]=(out.notes[cur]+" "+l.trim()).trim()}}
   return out;
 }
-function matchInvoices(text,k){
+function matchInvoices(text,k,opt={}){
   const low=text.toLowerCase(),lines=text.split("\n");
   const tw=new Set(provWords(text));
   const amtRe=a=>{const f1=a.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2}).replace(/\./g,"\\.?");return new RegExp("(?<![\\d.,])"+f1+"(?![\\d])")};
   const cands=[];
-  for(const inv of S.inv){const s=side(inv,k);if(s.state==="na"||(s.state==="done"&&!s.review))continue;
-    const a=r2(inv.amount);let score=0,refund=null;
+  for(const inv of S.inv){const s=side(inv,k);if(s.state==="na"||(s.state==="done"&&!s.review&&!opt.all))continue;
+    const a=r2(inv.amount);let score=0,refund=null,eligible=null,hints=[];
     const re=a>0?amtRe(a):null;const li=re?lines.findIndex(l=>re.test(l)):-1;
     if(li>=0){score+=2;
       // Erstattung steht in derselben Zeile hinter dem Rechnungsbetrag; gleicher Betrag dahinter = abgelehnt
       const l=lines[li],m=l.match(re),rest=l.slice(m.index+m[0].length);const nums=[...rest.matchAll(/(\d{1,3}(?:\.\d{3})*,\d{2})/g)].map(x=>r2(x[1].replace(/\./g,"").replace(",",".")));
-      if(nums.length)refund=Math.abs(nums[0]-a)<0.005?0:nums[nums.length-1];
+      if(k==="bh"&&nums.length>=2){ // Beihilfebescheid: erst beihilfefähiger Betrag, zuletzt Beihilfe, dahinter Hinweis-Nummern
+        eligible=nums[0];refund=nums[nums.length-1];
+        const all=[...rest.matchAll(/\d{1,3}(?:\.\d{3})*,\d{2}/g)];const last=all[all.length-1];
+        hints=(rest.slice(last.index+last[0].length).match(/\b\d{1,2}\b/g)||[]);
+      }
+      else if(nums.length)refund=Math.abs(nums[0]-a)<0.005?0:nums[nums.length-1];
       else{ // Betrag steht allein (z. B. stationär): Summenzeile "Betrag Erstattung" in den nächsten Zeilen suchen
         for(let j=li+1;j<Math.min(lines.length,li+8);j++){const mm=lines[j].trim().match(new RegExp("^"+re.source+"\\s+(\\d{1,3}(?:\\.\\d{3})*,\\d{2})"));if(mm){refund=r2(mm[1].replace(/\./g,"").replace(",","."));break}}}}
     if(inv.invoiceDate){const [y,m,d]=inv.invoiceDate.split("-");if(text.includes(`${d}.${m}.${y}`)||text.includes(`${d}.${m}.${y.slice(2)}`))score+=2}
     const pw=provWords(inv.provider);if(pw.some(w=>tw.has(w)))score+=1;
     if(inv.patient&&low.includes(inv.patient.toLowerCase()))score+=0.5;
-    if(score>=2)cands.push({id:inv.id,score,refund,amount:a,amt:li>=0});
+    if(score>=2)cands.push({id:inv.id,score,refund,eligible,hints,amount:a,amt:li>=0});
   }
   // Betrag allein reicht, wenn er nur bei einer offenen Rechnung vorkommt (AXA nennt kein Rechnungsdatum)
   return cands.filter(c=>c.score>=3||(c.amt&&cands.filter(o=>o.amt&&o.amount===c.amount).length===1)).sort((a,b)=>b.score-a.score);
@@ -1116,17 +1140,21 @@ async function openProof(input,pre){
   try{
     const text=await readText(input);if(S.edit?.mode!=="proof")return;
     const p=parseProofText(text);S.edit.k=S.edit.pre?.k||p.side||"bh";S.edit.date=p.date||today();S.edit.total=p.total??null;S.edit.text=text;
+    if(!p.appId){const fm=String(file?.name||"").match(/Bescheid_\d+_(\d+)_\d+/i);if(fm)p.appId=fm[1]}
+    Object.assign(S.edit,{appId:p.appId||null,notes:p.notes||{},payout:p.payout??null,before:p.before??null,correction:!!p.correction});
     fillProofRows();S.edit.msg=S.edit.rows.length?`${S.edit.rows.length} passende Rechnung${S.edit.rows.length===1?"":"en"} gefunden. Bitte Beträge prüfen.`:"Keine passende Rechnung sicher gefunden. Bitte unten zuordnen.";
   }catch(e){S.edit.msg="Der Nachweis konnte nicht gelesen werden. Bitte Rechnungen unten selbst zuordnen."}
   S.edit.busy=false;drawProof();
 }
 function fillProofRows(){const k=S.edit.k;
-  S.edit.rows=matchInvoices(S.edit.text||"",k).map(m=>{const inv=S.inv.find(x=>x.id===m.id);const s=side(inv,k);return {id:m.id,on:m.refund!==0,rejected:m.refund===0,amount:m.refund!=null?m.refund:s.state==="done"?s.received:s.expected}});
+  S.edit.rows=matchInvoices(S.edit.text||"",k,{all:S.edit.correction}).map(m=>{const inv=S.inv.find(x=>x.id===m.id);const s=side(inv,k);
+    const note=(m.hints||[]).map(h=>S.edit.notes?.[h]).filter(Boolean).join(" ");
+    return {id:m.id,on:m.refund!==0,rejected:m.refund===0,eligible:m.eligible,note,amount:m.refund!=null?m.refund:s.state==="done"?s.received:s.expected}});
   const pid=S.edit.pre?.id;if(pid&&!S.edit.rows.some(r=>r.id===pid)){const inv=S.inv.find(x=>x.id===pid);if(inv){const s=side(inv,k);S.edit.rows.unshift({id:pid,on:true,amount:s.state==="done"?s.received:s.expected})}}}
 function drawProof(){
   const e=S.edit,k=e.k;
   const rows=e.rows.map((r,i)=>{const inv=S.inv.find(x=>x.id===r.id);if(!inv)return "";const s=side(inv,k);
-    return `<div class="prow"><label class="pchk"><input type="checkbox" data-row="${i}" ${r.on?"checked":""}><span><b>${esc(inv.provider)}</b><br><span class="status">${esc(inv.patient)} · ${dfmt(inv.invoiceDate)} · ${eur(inv.amount)} · erwartet ${eur(s.expected)}</span>${r.rejected?`<br><span style="color:var(--bad);font-size:12.5px">Im Nachweis abgelehnt (0 €) – nur auswählen, wenn das endgültig ist</span>`:""}</span></label>
+    return `<div class="prow"><label class="pchk"><input type="checkbox" data-row="${i}" ${r.on?"checked":""}><span><b>${esc(inv.provider)}</b><br><span class="status">${esc(inv.patient)} · ${dfmt(inv.invoiceDate)} · ${eur(inv.amount)} · erwartet ${eur(s.expected)}</span>${r.rejected?`<br><span style="color:var(--bad);font-size:12.5px">Im Nachweis abgelehnt (0 €) – nur auswählen, wenn das endgültig ist</span>`:""}${r.eligible!=null&&r.eligible<r2(inv.amount)-0.004?`<br>${cutHtml(r2(inv.amount-r.eligible),r.note,true)}`:""}</span></label>
       <label class="f">Erstattet (€)<input class="num" inputmode="decimal" data-amt="${i}" value="${String(r.amount.toFixed(2)).replace(".",",")}"></label></div>`}).join("");
   const used=new Set(e.rows.map(r=>r.id));
   const others=S.inv.filter(x=>!used.has(x.id)&&(["todo","wait"].includes(side(x,k).state)||side(x,k).review)).sort((a,b)=>(b.invoiceDate||"").localeCompare(a.invoiceDate||""));
@@ -1134,6 +1162,7 @@ function drawProof(){
   const cmp=e.total==null?"":(Math.abs(sum-e.total)<0.01?`<span style="color:var(--ok);font-weight:600">passt zum Nachweis</span>`:`<span style="color:var(--warn);font-weight:600">Nachweis: ${eur(e.total)}, Differenz ${eur(r2(e.total-sum))}</span>`);
   sheet("Leistungsnachweis",`
     <div id="edStatus" class="status" style="margin-top:10px">${esc(e.msg||"")}</div>
+    ${e.appId||e.correction?`<div class="status" style="margin-top:6px">${e.appId?`Antrag ${esc(e.appId)}`:""}${e.correction?`${e.appId?" · ":""}<b>Korrektur-Bescheid:</b> ausgezahlt ${eur(e.payout)}${e.before!=null?`, ${eur(e.before)} kamen schon früher`:""}. Bei den Rechnungen wird die gesamte Beihilfe eingetragen.`:""}</div>`:""}
     <div class="sec">
       <div class="btnrow"><button type="button" class="btn ${k==="pkv"?"primary":""}" data-act="pside" data-k="pkv">PKV (AXA)</button><button type="button" class="btn ${k==="bh"?"primary":""}" data-act="pside" data-k="bh">Beihilfe</button></div>
       ${field("Datum des Nachweises","pdate",e.date,"date")}
@@ -1166,6 +1195,8 @@ async function applyProof(btn){
   for(const r of sel){
     const inv=structuredClone(S.inv.find(x=>x.id===r.id));if(!inv)continue;const s=inv[k]=inv[k]||{};
     if(!s.submitted)s.submitted=e.date;if(!s.receivedDate||s.checked!==false)s.receivedDate=e.date;s.received=r2(r.amount);s.checked=true;
+    if(e.appId)s.appId=e.appId;
+    if(r.eligible!=null&&r.eligible<r2(inv.amount)-0.004){s.eligible=r.eligible;s.cutNote=r.note||""}else{delete s.eligible;delete s.cutNote}
     s.proofFileId=fid;s.proofDriveId=null;s.proofUrl="";s.proofFolder=null;s.proofName=null;s.proofShared=true;s.proofDate=e.date;
     await saveInvoice(inv);
   }
@@ -1539,6 +1570,7 @@ async function driveBlob(driveId){if(!tokenValid()||!driveId)return null;try{ret
     const tq=await dbGet("meta","trash");S.trash=tq?.items||[];
   }catch(err){$("#list").innerHTML=`<div class="empty">Speicher nicht verfügbar. Bitte die App nicht im privaten Modus öffnen.</div>`;return}
   S.loaded=true;render();updateChip();
+  if(new URLSearchParams(location.search).has("share"))takeShared();
   if(AUTH?.token&&!S.settings.driveLinked){S.settings.driveLinked=true;await dbPut("meta",{key:"settings",...S.settings});updateChip()}
   if(AUTH?.error){
     // stille Anmeldung nicht möglich -> normal mit Bestätigung anmelden
@@ -1559,6 +1591,26 @@ async function driveBlob(driveId){if(!tokenValid()||!driveId)return null;try{ret
   try{await navigator.storage?.persist?.()}catch{}
   if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 })();
+/* ================= Dateien von außen: Teilen-Menü und „Öffnen mit“ ================= */
+async function takeShared(){
+  history.replaceState(null,"",location.pathname);
+  try{const c=await caches.open("share-inbox");const key=new URL("shared-file",location.origin+location.pathname).href;
+    const r=await c.match(key);if(!r)return;const b=await r.blob();await c.delete(key);
+    takeIncoming(new File([b],decodeURIComponent(r.headers.get("x-name")||"Dokument"),{type:b.type||r.headers.get("content-type")||""}))}catch{toast("Die geteilte Datei konnte nicht gelesen werden.")}
+}
+async function takeIncoming(f){
+  while(!S.loaded)await new Promise(r=>setTimeout(r,100));
+  if(S.edit)closeSheet();
+  if(/^Bescheid_/i.test(f.name)||/leistungsabrechnung|bescheid/i.test(f.name))return openProof({file:f});
+  sheet("Dokument übernehmen",`<div class="sec"><p class="status" style="margin:0">${esc(f.name)}</p>
+    <div class="btnrow"><button type="button" class="btn primary" data-act="inproof">Leistungsnachweis / Bescheid</button><button type="button" class="btn" data-act="ininv">Neue Rechnung</button></div></div>`,
+    `<button type="button" class="btn" data-act="incancel">Abbrechen</button>`);
+  $("#scrim").addEventListener("click",ev=>{const b=ev.target.closest("[data-act]");if(!b)return;
+    if(b.dataset.act==="incancel")return closeSheet();
+    if(b.dataset.act==="inproof"){closeSheet();return openProof({file:f})}
+    if(b.dataset.act==="ininv"){closeSheet();return openNew({file:f})}});
+}
+if("launchQueue" in window)launchQueue.setConsumer(async p=>{if(p.files?.length){try{takeIncoming(await p.files[0].getFile())}catch{}}});
 function closeSearch(){S.searchOpen=false;S.q="";$("#q").value="";$("#qClear").hidden=true;$("#searchRow").hidden=true;$("#btnSearch").setAttribute("aria-pressed","false")}
 $("#btnSearch").addEventListener("click",()=>{if(S.searchOpen){closeSearch()}else{S.searchOpen=true;S.select=null;$("#searchRow").hidden=false;$("#btnSearch").setAttribute("aria-pressed","true");$("#q").focus()}render()});
 (()=>{const q=$("#q"),c=$("#qClear");let t;

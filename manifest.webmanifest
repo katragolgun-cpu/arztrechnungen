@@ -9,6 +9,15 @@
   "orientation": "portrait",
   "background_color": "#f3f5f7",
   "theme_color": "#0d5f6b",
+  "share_target": {
+    "action": "./share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": { "files": [{ "name": "file", "accept": ["application/pdf", ".pdf", "image/*"] }] }
+  },
+  "file_handlers": [
+    { "action": "./", "accept": { "application/pdf": [".pdf"] } }
+  ],
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
