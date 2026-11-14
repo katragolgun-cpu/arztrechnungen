@@ -1,11 +1,11 @@
 // Offline-Unterstützung: App-Dateien und Texterkennung werden zwischengespeichert.
-const VERSION = "v22";
+const VERSION = "v23";
 const SHELL = "shell-" + VERSION;
 const RUNTIME = "runtime-" + VERSION;
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(SHELL).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(SHELL).then(c => c.addAll(FILES.map(f => new Request(f, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", e => {
@@ -45,6 +45,14 @@ self.addEventListener("fetch", e => {
         return res;
       }).catch(() => caches.match("index.html"))
     );
+    return;
+  }
+
+  // Manifest: immer erst Netz, damit Chrome Änderungen (z. B. Teilen-Menü) sofort sieht
+  if (url.origin === location.origin && url.pathname.endsWith("manifest.webmanifest")) {
+    e.respondWith(fetch(req, { cache: "no-cache" }).then(res => {
+      const copy = res.clone(); caches.open(SHELL).then(c => c.put(req, copy)); return res;
+    }).catch(() => caches.match(req)));
     return;
   }
 
