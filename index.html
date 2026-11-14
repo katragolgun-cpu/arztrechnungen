@@ -136,6 +136,38 @@ input.num{font-family:var(--f-num)}
 .inline{display:flex;gap:8px;align-items:end}
 .inline label{flex:1}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}}
+/* ---- v20: modernere Optik, Personenbilder ---- */
+:root{--r:16px;--shadow:0 1px 2px rgba(16,34,46,.06),0 4px 14px rgba(16,34,46,.06)}
+@media (prefers-color-scheme: dark){:root{--shadow:0 1px 2px rgba(0,0,0,.4)}}
+body{background:var(--bg)}
+header.top h1{font-size:26px;letter-spacing:-.02em}
+.card,.tile,.sumbar,.empty,.sec{border-color:transparent;box-shadow:var(--shadow)}
+.card{padding:14px 16px;border-radius:var(--r);transition:transform .12s ease}
+.card:active{transform:scale(.99)}
+.sumbar{background:linear-gradient(135deg,var(--accent),#0a4750);color:#fff;padding:16px 18px;border-radius:20px}
+@media (prefers-color-scheme: dark){.sumbar{background:linear-gradient(135deg,#0f4b55,#0a2f36)}}
+.sumbar .vals{flex-direction:column;gap:2px;font-size:13px;opacity:.95}
+.sumbar .vals>span{display:flex;align-items:baseline;gap:8px}
+.sumbar .pay b{color:#fff;font-size:26px} .sumbar .exp b{color:#cfe9ec;font-size:15px}
+.sumbar .chev{color:#cfe9ec}
+.search input{border-radius:14px;border-color:transparent;box-shadow:var(--shadow);padding:12px 40px 12px 14px}
+.chip{border-color:transparent;box-shadow:var(--shadow);padding:7px 14px}
+.people{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding:6px 4px 4px;justify-content:space-between}
+.people::-webkit-scrollbar{display:none}
+.pbtn{flex:none;border:0;background:none;padding:0;font:inherit;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:6px;width:58px}
+.pbtn .av{width:50px;height:50px;border-radius:50%;box-shadow:0 0 0 2px var(--bg),0 0 0 2px transparent;transition:box-shadow .15s}
+.pbtn[aria-pressed="true"] .av{box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--accent)}
+.pbtn span{font-size:12.5px;font-weight:600;max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pbtn[aria-pressed="true"] span{color:var(--accent)}
+.av{display:block;flex:none}
+.card .meta{display:flex;flex-wrap:wrap;align-items:center;gap:2px 0}
+.pchip{display:inline-flex;align-items:center;gap:5px;background:none;padding:0;font-size:12.5px;margin-right:8px;color:var(--ink)}
+.pchip .av{width:22px;height:22px;border-radius:50%}
+.avsel{display:flex;gap:8px;flex-wrap:wrap;grid-column:1/-1}
+.avsel label{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11.5px;color:var(--muted);cursor:pointer}
+.avsel input{position:absolute;opacity:0;pointer-events:none}
+.avsel .av{width:40px;height:40px;border-radius:50%;box-shadow:0 0 0 2px transparent}
+.avsel input:checked+.av{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--accent)}
 </style>
 </head>
 <body>
@@ -149,7 +181,7 @@ input.num{font-family:var(--f-num)}
   <section class="summary" id="summary" aria-label="Übersicht" hidden></section>
   <div class="search" role="search"><input type="text" inputmode="search" id="q" placeholder="Suchen: Nummer, Betrag, Arzt, Person, Datum" aria-label="Rechnungen durchsuchen" autocomplete="off" enterkeyhint="search"><button type="button" id="qClear" aria-label="Suche leeren" hidden>×</button></div>
   <nav class="chips" id="filters" aria-label="Filter"></nav>
-  <nav class="chips" id="people" aria-label="Personen"></nav>
+  <nav class="people" id="people" aria-label="Personen"></nav>
   <section class="list" id="list" aria-live="polite"><div class="empty">Rechnungen werden geladen …</div></section>
 </div>
 <button class="fab" id="btnAdd" type="button">+ Rechnung</button>
@@ -277,6 +309,31 @@ function dueText(c){
   return `<span class="due">Fällig am ${dfmt(c.due)}</span>`;
 }
 
+
+/* ================= Personenbilder (gezeichnet, keine Fotos) ================= */
+const AV_LABELS={papa:"Papa",mama:"Mama",tochter:"Mädchen",sohn:"Junge",initiale:"Initiale"};
+const AV_DEFAULT={olgun:"papa",pinar:"mama","pınar":"mama",ikra:"tochter",hamza:"sohn"};
+function avatarKey(p){if(p?.avatar&&AV_LABELS[p.avatar])return p.avatar;const k=(p?.name||"").trim().toLowerCase();return AV_DEFAULT[k]||"initiale"}
+function avatarFor(name){const p=S.settings.people.find(x=>x.name===name)||{name};return avatarSvg(avatarKey(p),name)}
+function avatarSvg(kind,name=""){
+  const SK="#E9B993",HR="#3A2A22",EY="#2A211C",CH="#F2A3A0";
+  const bg={papa:"#CFE2F6",mama:"#F6D6E2",tochter:"#FBE6C2",sohn:"#D2EFDC",initiale:"#E3E8EE",alle:"#0d5f6b"}[kind]||"#E3E8EE";
+  const shirt={papa:"#3E6FA8",mama:"#C2577E",tochter:"#E8913A",sohn:"#3E9A62"}[kind]||"#7C8A96";
+  const open=`<svg class="av" viewBox="0 0 64 64" aria-hidden="true"><defs><clipPath id="avc"><circle cx="32" cy="32" r="32"/></clipPath></defs><g clip-path="url(#avc)"><rect width="64" height="64" fill="${bg}"/>`;
+  if(kind==="alle")return open+`<circle cx="22" cy="27" r="7" fill="#fff" opacity=".95"/><circle cx="42" cy="27" r="7" fill="#fff" opacity=".95"/><circle cx="25" cy="42" r="5" fill="#fff" opacity=".8"/><circle cx="39" cy="42" r="5" fill="#fff" opacity=".8"/><path d="M8 64c2-9 7-13 14-13s12 4 14 13zM28 64c2-9 7-13 14-13s12 4 14 13z" fill="#fff" opacity=".35"/></g></svg>`;
+  if(kind==="initiale"||!AV_LABELS[kind]){const ini=esc((name||"?").trim().charAt(0).toUpperCase()||"?");return open+`<text x="32" y="41" text-anchor="middle" font-size="26" font-weight="700" fill="#4b5a67" font-family="system-ui,sans-serif">${ini}</text></g></svg>`}
+  const kid=kind==="tochter"||kind==="sohn";
+  const face=`<rect x="28" y="36" width="8" height="9" rx="3" fill="${SK}"/><ellipse cx="32" cy="28" rx="11" ry="12" fill="${SK}"/><circle cx="27.8" cy="28.5" r="1.5" fill="${EY}"/><circle cx="36.2" cy="28.5" r="1.5" fill="${EY}"/><path d="M28.6 33.2q3.4 2.8 6.8 0" stroke="${EY}" stroke-width="1.5" fill="none" stroke-linecap="round"/>`+(kid?`<circle cx="25" cy="32" r="2" fill="${CH}" opacity=".7"/><circle cx="39" cy="32" r="2" fill="${CH}" opacity=".7"/>`:"");
+  const body=`<path d="M11 66c0-13 9-21 21-21s21 8 21 21z" fill="${shirt}"/>`;
+  let back="",front="";
+  if(kind==="papa")front=`<path d="M20.6 27c-1-11 6-15.5 11.6-15.5 7.4 0 12.6 4.4 11.2 15.5-1.6-5.6-5.6-8.2-11.4-8.2-5.6 0-9.6 2.6-11.4 8.2z" fill="${HR}"/><path d="M21.5 31c1 7 5 10.5 10.5 10.5S41.5 38 42.5 31c-1.6 3.6-3.8 5.4-6 5.9-1.4-1.4-2.8-1.8-4.5-1.8s-3.1.4-4.5 1.8c-2.2-.5-4.4-2.3-6-5.9z" fill="${HR}" opacity=".85"/>`;
+  if(kind==="mama"){back=`<path d="M18 31c-1.5-15 6.5-21 14-21s15.5 6 14 21l1.5 17c-6 3-25 3-31 0z" fill="${HR}"/>`;front=`<path d="M21 27c.5-9 6-13 12-13 6.5 0 11 4 11 12-4.5-4.6-11-6.2-15.4-4.8-3 1-5.6 2.8-7.6 5.8z" fill="${HR}"/>`}
+  if(kind==="tochter"){back=`<circle cx="17.5" cy="31" r="6.5" fill="${HR}"/><circle cx="46.5" cy="31" r="6.5" fill="${HR}"/><circle cx="20" cy="25.5" r="2.4" fill="#E8913A"/><circle cx="44" cy="25.5" r="2.4" fill="#E8913A"/>`;front=`<path d="M21 28c-.5-10 5.5-14 11-14s11.5 4 11 14c-2.6-4.4-6.6-6.6-11-6.6s-8.4 2.2-11 6.6z" fill="${HR}"/>`}
+  if(kind==="sohn")front=`<path d="M21.2 27.5c-.8-10 5.2-13.8 10.8-13.8 6 0 11.6 3.8 10.8 13.8-1.8-4.6-5.4-7.2-10.8-7.2s-9 2.6-10.8 7.2z" fill="${HR}"/><path d="M29 15l3-5 3.4 5z" fill="${HR}"/>`;
+  const head=back+body+face+front;
+  const g=kid?`<g transform="translate(32 64) scale(.9) translate(-32 -64)">${head}</g>`:head;
+  return open+g+`</g></svg>`;
+}
 /* ================= Liste ================= */
 function render(){
   const rows=S.inv.map(i=>({i,c:calc(i)}));
@@ -287,7 +344,7 @@ function render(){
   if(S.select&&f.id!=="einreichen")S.select=null;
   renderSelectBar();
   const names=["alle",...S.settings.people.map(p=>p.name)];
-  $("#people").innerHTML=names.map(n=>`<button type="button" class="chip" data-p="${esc(n)}" aria-pressed="${n===S.person}">${n==="alle"?"Alle Personen":esc(n)}</button>`).join("");
+  $("#people").innerHTML=names.map(n=>`<button type="button" class="pbtn" data-p="${esc(n)}" aria-pressed="${n===S.person}">${n==="alle"?avatarSvg("alle"):avatarFor(n)}<span>${n==="alle"?"Alle":esc(n)}</span></button>`).join("");
   const L=$("#list");
   if(!S.loaded){L.innerHTML=`<div class="empty">Rechnungen werden geladen …</div>`;return}
   if(!S.inv.length){L.innerHTML=`<div class="empty">Noch keine Rechnungen.<br>Tippe auf <b>+ Rechnung</b> oder spiele unter <b>Einstellungen</b> deine Startdatei ein.</div>`;return}
@@ -309,7 +366,7 @@ function render(){
     const nx=nextStepText(i,c);
     html+=`<button type="button" class="card${sel?" selected":""}" data-id="${esc(i.id)}" ${S.select?`aria-pressed="${!!sel}"`:""}>
       <div class="row1">${S.select?`<span class="tick" aria-hidden="true">${sel?"✓":""}</span>`:""}<div class="who"><div class="prov">${esc(i.provider||"Ohne Rechnungssteller")}</div>
-      <div class="meta"><span class="pchip">${esc(i.patient||"?")}</span>${dfmt(i.invoiceDate)}${q&&i.invoiceNo?" · Nr. "+esc(i.invoiceNo):""}${i.reason?" · "+esc(i.reason):""}</div></div>
+      <div class="meta"><span class="pchip">${avatarFor(i.patient)}${esc(i.patient||"?")}</span>${dfmt(i.invoiceDate)}${q&&i.invoiceNo?" · Nr. "+esc(i.invoiceNo):""}${i.reason?" · "+esc(i.reason):""}</div></div>
       <div class="amt">${eur(c.amount)}</div></div>
       ${nx?`<div class="next s-${c.step}">${esc(nx)}</div>`:""}
       ${dueText(c)}
@@ -514,7 +571,7 @@ function drawView(thumb){
     ${inv.check?`<div class="checkline" style="margin-top:10px">Prüfen: ${esc(inv.check)} <button type="button" class="btn link" data-act="clearcheck">Erledigt</button></div>`:""}
     <div class="sec hero">
       <div class="big">${eur(c.amount)}</div>
-      <div class="meta"><span class="pchip">${esc(inv.patient)}</span>${dfmt(inv.invoiceDate)}${inv.invoiceNo?" · Nr. "+esc(inv.invoiceNo):""}</div>
+      <div class="meta"><span class="pchip">${avatarFor(inv.patient)}${esc(inv.patient)}</span>${dfmt(inv.invoiceDate)}${inv.invoiceNo?" · Nr. "+esc(inv.invoiceNo):""}</div>
       <div class="stamps">${stampPay(c)}${stampSide("PKV",c.pkv)}${stampSide("Beihilfe",c.bh)}</div>
     </div>
     <div class="sec">
@@ -1092,7 +1149,8 @@ function openSettings(){
   S.edit={mode:"settings",urls:[]};
   const rows=s.people.map((p,i)=>`<div class="grid2">
     <label class="f">Name<input id="pn${i}" value="${esc(p.name)}"></label>
-    <label class="f">Gruppe<select id="pg${i}">${Object.entries(GROUPS).map(([k,v])=>`<option value="${k}" ${k===p.group?"selected":""}>${v}</option>`).join("")}</select></label></div>`).join("");
+    <label class="f">Gruppe<select id="pg${i}">${Object.entries(GROUPS).map(([k,v])=>`<option value="${k}" ${k===p.group?"selected":""}>${v}</option>`).join("")}</select></label>
+    <div class="avsel" role="radiogroup" aria-label="Bild für ${esc(p.name)}">${Object.entries(AV_LABELS).map(([k,v])=>`<label><input type="radio" name="pa${i}" value="${k}" ${k===avatarKey(p)?"checked":""}>${avatarSvg(k,p.name)}${v}</label>`).join("")}</div></div>`).join("");
   const rates=Object.entries(GROUPS).map(([g,v])=>`<div class="grid2">
     ${field(v+" · PKV %","rp"+g,Math.round((s.rates[g]?.pkv||0)*100),"number")}
     ${field(v+" · Beihilfe %","rb"+g,Math.round((s.rates[g]?.bh||0)*100),"number")}</div>`).join("");
@@ -1142,7 +1200,7 @@ function openSettings(){
     }
   });
 }
-function collectPeople(){return S.settings.people.map((p,i)=>({name:($("#pn"+i)?.value??p.name).trim(),group:$("#pg"+i)?.value??p.group}))}
+function collectPeople(){return S.settings.people.map((p,i)=>({name:($("#pn"+i)?.value??p.name).trim(),group:$("#pg"+i)?.value??p.group,avatar:document.querySelector(`input[name="pa${i}"]:checked`)?.value||p.avatar||null}))}
 function blobToB64(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(blob)})}
 async function makeBackup(){
   try{
