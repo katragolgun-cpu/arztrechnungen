@@ -82,6 +82,8 @@ header.top p{margin:2px 0 0;color:var(--muted);font-size:13px}
 .guidebar .btnrow{margin:0}
 .guidebar .btn{background:rgba(255,255,255,.15);color:inherit;border-color:rgba(255,255,255,.35)}
 .guidebar .btn.primary{background:#fff;color:var(--accent);border-color:#fff}
+.txtbox{margin-top:8px}
+.txtbox textarea{width:100%;box-sizing:border-box;margin-top:6px;font:inherit;font-size:13.5px;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--sunken);color:var(--ink);resize:vertical}
 .grp{display:flex;align-items:center;gap:8px;width:100%;border:0;background:var(--sunken);color:var(--ink);font:inherit;font-size:13.5px;font-weight:600;text-align:left;padding:10px 12px;border-radius:12px;margin-top:4px}
 .grp .chev{width:14px;color:var(--muted);font-size:11px}
 .grp .gt{flex:1}
@@ -431,6 +433,11 @@ function render(){
   const oldNote=!srch&&f.id==="erledigt"&&hiddenOld?`<div class="searchinfo">${hiddenOld} erledigte Rechnung${hiddenOld===1?"":"en"} aus Vorjahren ausgeblendet. Über die Lupe findest du sie.</div>`:"";
   if(!list.length){L.innerHTML=html+`<div class="empty">${q?"Keine Treffer.":emptyTxt}</div>`+oldNote;return}
   // Warten: nach Abgabedatum gruppieren (frühestes noch offenes Einreichdatum), Gruppen ein-/ausklappbar
+  if(!srch&&!q&&f.id==="pruefen"){
+    for(const k of Object.keys(CHECK_KINDS)){const g=list.filter(r=>checkKind(r.i,r.c)===k);if(!g.length)continue;
+      html+=`<div class="year">${esc(CHECK_KINDS[k])} · ${g.length}</div>`;for(const r of g)html+=cardHtml(r,q)}
+    L.innerHTML=html+oldNote;return;
+  }
   const byDate=!srch&&!q&&f.id==="warten";
   if(byDate){
     const groups=new Map();
@@ -455,14 +462,17 @@ function render(){
 }
 /* ================= Geführter Durchlauf ================= */
 // Aufgaben in fester Reihenfolge: einreichen -> Nachweis prüfen -> überweisen -> nachfragen
-const GUIDE_KINDS={einreichen:"Einreichen",nachweis:"Nachweis prüfen",geld:"Geldeingang prüfen",ueberweisen:"Arzt bezahlen",nachfragen:"Nachfragen"};
+const GUIDE_KINDS={einreichen:"Einreichen",nachweis:"Nachweis prüfen",geld:"Geldeingang prüfen",ueberweisen:"Arzt bezahlen",nachfragen:"Nachfragen",pruefen:"Prüfen"};
+// Aufgabe noch offen? Prüfen hängt am Prüf-Hinweis, alles andere am Schritt
+const guideOpen=(it,c)=>it.k==="pruefen"?c.check:c.step===it.from;
 function guideTasks(){
   const out=[];
   for(const i of S.inv){const c=calc(i);let k=null;
-    if(c.step==="einreichen")k="einreichen";else if(c.step==="nachweis")k="nachweis";else if(c.step==="geld")k="geld";else if(c.step==="ueberweisen")k="ueberweisen";else if(c.step==="warten"&&c.askLong)k="nachfragen";
+    if(c.check)k="pruefen";else if(c.step==="einreichen")k="einreichen";else if(c.step==="nachweis")k="nachweis";else if(c.step==="geld")k="geld";else if(c.step==="ueberweisen")k="ueberweisen";else if(c.step==="warten"&&c.askLong)k="nachfragen";
     if(k)out.push({id:i.id,k,c,i})}
   const ord=Object.keys(GUIDE_KINDS);
-  return out.sort((a,b)=>ord.indexOf(a.k)-ord.indexOf(b.k)||(a.k==="ueberweisen"?(a.c.due||"").localeCompare(b.c.due||""):(a.i.invoiceDate||"").localeCompare(b.i.invoiceDate||"")));
+  const ck=Object.keys(CHECK_KINDS),kk=x=>x.k==="pruefen"?ck.indexOf(checkKind(x.i,x.c)):0;
+  return out.sort((a,b)=>ord.indexOf(a.k)-ord.indexOf(b.k)||kk(a)-kk(b)||(a.k==="ueberweisen"?(a.c.due||"").localeCompare(b.c.due||""):(a.i.invoiceDate||"").localeCompare(b.i.invoiceDate||"")));
 }
 function renderGuideCard(){
   const el=$("#guideCard");if(!el)return;
@@ -481,22 +491,75 @@ function guideStart(){
 function guideNext(){
   const g=S.guide;if(!g)return;g.i++;
   // Aufgaben überspringen, die inzwischen erledigt sind
-  while(g.i<g.items.length){const it=g.items[g.i],inv=S.inv.find(x=>x.id===it.id);if(inv&&calc(inv).step===it.from)break;g.i++}
+  while(g.i<g.items.length){const it=g.items[g.i],inv=S.inv.find(x=>x.id===it.id);if(inv&&guideOpen(it,calc(inv)))break;g.i++}
   if(g.i>=g.items.length){S.guide=null;closeSheet();render();toast("Fertig. Alle Aufgaben durchgegangen.");return}
   openView(g.items[g.i].id);
 }
 function guideStop(){S.guide=null;closeSheet();render()}
 function guideBar(inv,c){
   const g=S.guide;if(!g||g.items[g.i]?.id!==inv.id)return "";
-  const it=g.items[g.i],done=c.step!==it.from,last=g.i===g.items.length-1;
+  const it=g.items[g.i],done=!guideOpen(it,c),last=g.i===g.items.length-1;
   const how={einreichen:"PDF an die Beihilfe-App und die AXA-App senden, danach jeweils abhaken.",
     nachweis:"Betrag im Bescheid mit dem erwarteten Betrag vergleichen, dann „geprüft“ tippen.",
     geld:"In der Sparkassen-App nachsehen, ob die Erstattung eingegangen ist. Wenn ja, „Ja, Geld ist da“ tippen. Wenn nicht, überspringen.",
     ueberweisen:"Die Erstattung ist da. QR-Code in der Sparkassen-App scannen, dann „bezahlt“ tippen.",
-    nachfragen:"Seit über 4 Wochen keine Erstattung. Bei AXA bzw. Beihilfe nachfragen, dann weiter."}[it.k];
-  return `<div class="guidebar"><div class="gtop">Aufgabe ${g.i+1} von ${g.items.length} · ${GUIDE_KINDS[it.k]}</div>
+    nachfragen:"Seit über 4 Wochen keine Erstattung. Bei AXA bzw. Beihilfe nachfragen, dann weiter.",
+    pruefen:CHECK_HOW[checkKind(inv,c)]}[it.k];
+  return `<div class="guidebar"><div class="gtop">Aufgabe ${g.i+1} von ${g.items.length} · ${it.k==="pruefen"?esc(CHECK_KINDS[checkKind(inv,c)]):GUIDE_KINDS[it.k]}</div>
     <div class="gtxt">${done?(it.k==="geld"&&c.step==="ueberweisen"?"Geld bestätigt. Du kannst den Arzt jetzt direkt bezahlen, danach Weiter.":"Erledigt. Weiter zur nächsten Aufgabe."):how}</div>
     <div class="btnrow"><button type="button" class="btn${done||it.k==="nachfragen"?" primary":""}" data-act="gnext">${last?"Fertig":done||it.k==="nachfragen"?"Weiter":"Überspringen"}</button><button type="button" class="btn" data-act="gstop">Beenden</button></div></div>`;
+}
+/* ================= Prüfen: Arten, Anleitung, Texte ================= */
+const CHECK_KINDS={kuerzung:"Kürzung: akzeptieren oder Widerspruch",fehlbuchung:"AXA über Fehlbuchung informieren",zahlung:"Zahlung klären",klaeren:"Nachreichen oder nachfragen"};
+function checkKind(i,c){
+  if(c.cut>0.004)return "kuerzung";
+  if(c.over||i.refundDue)return "zahlung";
+  if(/fehlbuch/i.test(i.check||""))return "fehlbuchung";
+  return "klaeren";
+}
+const CHECK_HOW={
+  kuerzung:"Unten steht, wie viel gekürzt wurde. Kleine Beträge meist akzeptieren. Bei größeren Beträgen den Text unten als Widerspruch nutzen.",
+  fehlbuchung:"Den Text unten kopieren und über die AXA-App als Nachricht senden. Danach „Erledigt“ tippen.",
+  zahlung:"Klären, ob eine Mahngebühr enthalten war oder ob du zu viel überwiesen hast.",
+  klaeren:"Den Hinweis unten erledigen. Wenn ein Text dabei ist, kannst du ihn kopieren. Danach „Erledigt“ tippen."
+};
+function letter(lines){return lines.filter(x=>x!==null).join("\n")}
+function helpTexts(inv,c){
+  const out=[],nr=inv.invoiceNo?` (Rechnungsnummer ${inv.invoiceNo})`:"",rech=`Rechnung von ${inv.provider||"?"} vom ${dfmt(inv.invoiceDate)} über ${eur(c.amount)}${nr}`;
+  const sig=["","Mit freundlichen Grüßen","Olgun Katrag"];
+  if(/fehlbuch/i.test(inv.check||"")){
+    const m=(inv.check||"").match(/auf (\S+) statt (\S+?)[\s).]/i),falsch=m?m[1]:"[falsche Person]",richtig=m?m[2]:inv.patient;
+    const s=inv.pkv||{};
+    out.push({t:"Nachricht an AXA",x:letter(["Sehr geehrte Damen und Herren,","",
+      `die ${rech} betrifft ${richtig}.`,
+      `In Ihrer Abrechnung${s.proofDate?` vom ${dfmt(s.proofDate)}`:""}${s.appId?` (Vorgang ${s.appId})`:""} wurde sie bei ${falsch} gebucht.`,
+      `Bitte korrigieren Sie die Zuordnung auf ${richtig}.`,...sig])});
+  }
+  for(const [k,n] of [["pkv","AXA"],["bh","Beihilfe"]]){const x=c[k];if(!x.cutOpen)continue;
+    const s=x.s,base=s.proofDate||s.receivedDate,frist=k==="bh"&&base?addMonths(base,1):null;
+    const late=!!(frist&&frist<today());
+    out.push({t:late?`Bitte um Überprüfung an ${n}`:`Widerspruch an ${n}`,warn:late?`Die Widerspruchsfrist ist am ${dfmt(frist)} abgelaufen. Der Text bittet deshalb nur um Überprüfung.`:"",
+      x:letter(["Sehr geehrte Damen und Herren,","",
+      (()=>{const ref=`${base?` vom ${dfmt(base)}`:""}${s.appId?` (${k==="pkv"?"Vorgang":"Antrag"} ${s.appId})`:""}`;
+        return late?`ich bitte um Überprüfung ${k==="pkv"?"der Abrechnung":"des Beihilfebescheids"}${ref}.`:`gegen ${k==="pkv"?"die Abrechnung":"den Beihilfebescheid"}${ref} lege ich Widerspruch ein.`})(),
+      `Betroffen ist die ${rech} für ${inv.patient}.`,
+      `Erstattet wurden ${eur(x.received)}, erwartet hatte ich ${eur(x.expected)}. Die Differenz beträgt ${eur(x.diff)}.`,
+      "Bitte prüfen Sie die Kürzung erneut und teilen Sie mir die Gründe mit.",...sig])});
+  }
+  if(/nachfrag/i.test(inv.check||"")&&!/fehlbuch/i.test(inv.check||""))
+    out.push({t:"Nachfrage an AXA und Beihilfe",x:letter(["Sehr geehrte Damen und Herren,","",
+      `ich habe die ${rech} für ${inv.patient} eingereicht.`,
+      "Bisher habe ich dazu keine Abrechnung erhalten. Bitte teilen Sie mir den Bearbeitungsstand mit.",...sig])});
+  if(/originalrechnung/i.test(inv.check||""))
+    out.push({t:"Nachfrage an den Rechnungssteller",x:letter(["Sehr geehrte Damen und Herren,","",
+      `ich warte noch auf die Originalrechnung zur Behandlung von ${inv.patient}${inv.invoiceDate?` vom ${dfmt(inv.invoiceDate)}`:""} über ${eur(c.amount)}.`,
+      "Bitte senden Sie mir die Rechnung zu, damit ich sie bei meiner Versicherung einreichen kann.",...sig])});
+  if(!out.length)return "";
+  S.edit.texts=out;
+  return `<div class="sec"><h3>Text zum Kopieren</h3>${out.map((o,n)=>`<details class="txtbox"${n===0?" open":""}><summary><b>${esc(o.t)}</b></summary>
+    ${o.warn?`<p class="status" style="color:var(--warn);margin:6px 0">${esc(o.warn)}</p>`:""}<textarea readonly rows="9">${esc(o.x)}</textarea>
+    <div class="btnrow"><button type="button" class="btn" data-act="copytxt" data-n="${n}">Text kopieren</button></div></details>`).join("")}
+    <p class="status" style="margin:6px 0 0">Platzhalter in eckigen Klammern vor dem Senden ersetzen.</p></div>`;
 }
 function submittedWait(c){
   const ds=[c.pkv,c.bh].filter(x=>x.state==="wait"&&x.s.submitted).map(x=>x.s.submitted).sort();
@@ -764,6 +827,7 @@ function drawView(thumb){
       <div class="stamps">${stampPay(c)}${stampSide("PKV",c.pkv)}${stampSide("Beihilfe",c.bh)}</div>
     </div>
     <div class="sec nextstep"><h3>Nächster Schritt</h3>${nextHtml(inv,c)}</div>
+    ${c.check?helpTexts(inv,c):""}
     <div class="sec"><h3>Stand</h3>${statusLine("pkv","AXA",inv)}${statusLine("bh","Beihilfe",inv)}${payLine(inv,c)}</div>
     ${S.edit.thumb?`<div class="sec">${S.edit.thumb}</div>`:""}
     ${historyHtml(inv)}
@@ -833,6 +897,7 @@ async function viewClick(e){
   switch(b.dataset.act){
     case "close":S.guide=null;closeSheet();return render();
     case "gnext":return guideNext();
+    case "copytxt":{const o=S.edit.texts?.[+b.dataset.n];if(!o)return;try{await navigator.clipboard.writeText(o.x);toast("Text kopiert")}catch{toast("Kopieren nicht möglich – Text markieren und kopieren")}return}
     case "gstop":return guideStop();
     case "edit":{const urls=S.edit.urls;S.edit.urls=[];urls.forEach(u=>URL.revokeObjectURL(u));return openEditor(inv)}
     case "sub":{inv[k].submitted=today();await saveInvoice(inv);const c1=calc(inv);
