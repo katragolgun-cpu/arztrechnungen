@@ -582,6 +582,7 @@ function sumOpen(){return !!S.sumOpen}
 $("#sumBar").addEventListener("click",()=>{S.sumOpen=!S.sumOpen;try{localStorage.setItem("sumOpen",S.sumOpen?"1":"0")}catch{}render()});
 function renderBanner(){
   const b=$("#banner");
+  const mh=mailHints();if(mh.length){b.innerHTML=mh.join("<br>");b.hidden=false;return}
   if(!S.inv.length||S.settings.driveLinked){b.hidden=true;return}
   const last=S.settings.lastBackup;const age=last?days(last.slice(0,10),today()):null;
   if(age===null||age>30){
@@ -610,6 +611,8 @@ document.addEventListener("click",e=>{
     if(S.select){S.select.has(id)?S.select.delete(id):S.select.add(id);render();return}
     if(S.inv.some(x=>x.id===id))openView(id);return}
   if(e.target.closest("[data-act='backup']"))makeBackup();
+  const nb=e.target.closest("[data-act='noticeok']");if(nb){delete S.settings.mailNotice?.[nb.dataset.k];saveSettings();render();return}
+  const mb=e.target.closest("[data-act='mailok']");if(mb){const inv=structuredClone(S.inv.find(x=>x.id===mb.dataset.id));if(inv){inv[mb.dataset.k].mailOk=today();saveInvoice(inv)}return}
 });
 $("#btnAdd").addEventListener("click",async()=>{const r=await scanDocument("Rechnung scannen");if(r)openNew(r)});
 $("#btnSettings").addEventListener("click",openSettings);
@@ -1545,6 +1548,7 @@ async function applyProof(btn){
     if(!s.submitted)s.submitted=e.date;if(!r.already&&(!s.receivedDate||s.checked!==false))s.receivedDate=e.date;s.received=r2(r.amount);s.checked=true;if(!r.already&&!s.moneyIn&&r2(r.amount)>0)s.moneyIn=false;
     if(e.appId)s.appId=e.appId;
     if(r.eligible!=null&&r.eligible<r2(inv.amount)-0.004){s.eligible=r.eligible;s.cutNote=r.note||""}else{delete s.eligible;delete s.cutNote}
+    if(S.settings.mailNotice?.[k]){delete S.settings.mailNotice[k];saveSettings()}
     s.proofFileId=fid;s.proofDriveId=null;s.proofUrl="";s.proofFolder=null;s.proofName=null;s.proofShared=true;s.proofDate=e.date;
     await saveInvoice(inv);
   }
@@ -1573,7 +1577,11 @@ function openSettings(){
       <details><summary class="status">Verlauf anzeigen</summary><pre class="status" style="white-space:pre-wrap;margin:6px 0 0;font-size:12px">${esc((()=>{try{return JSON.parse(localStorage.getItem("glog")||"[]").join("\n")}catch{return ""}})()||"Noch keine Einträge.")}</pre></details>
       <div class="btnrow">${s.driveLinked
         ?`<button type="button" class="btn primary" data-act="sync">Jetzt abgleichen</button><button type="button" class="btn" data-act="unlink">Drive trennen</button>`
-        :`<button type="button" class="btn primary" data-act="link">Mit Google Drive verbinden</button>`}</div></div>
+        :`<button type="button" class="btn primary" data-act="link">Mit Google Drive verbinden</button>`}</div>
+      ${s.driveLinked?`<p class="status" style="margin:10px 0 0">${s.gmailOn
+        ?"E-Mails von AXA und Beihilfe werden ausgewertet: Eingangsbestätigungen haken „eingereicht“ ab, neue Nachrichten erscheinen als Hinweis."+(G.mailErr?" <b>Gmail ist gerade nicht lesbar.</b>":"")
+        :"Optional: E-Mails von AXA und Beihilfe auswerten. Eingangsbestätigungen haken „eingereicht“ automatisch ab. Gelesen werden nur Mails dieser beiden Absender."}</p>
+      <div class="btnrow">${s.gmailOn?`<button type="button" class="btn" data-act="gmailoff">Gmail-Auswertung ausschalten</button>`:`<button type="button" class="btn" data-act="gmailon">Gmail einbinden</button>`}</div>`:""}</div>
     <div class="sec"><h3>Sicherung als Datei</h3>
       <p class="status" style="margin:0">Zum Einspielen einer Sicherung (auch aus Drive, Ordner „Sicherungen“) oder für eine zusätzliche Kopie.${s.lastBackup?` Letzte Sicherung: ${dfmt(s.lastBackup.slice(0,10))}.`:""}</p>
       <div class="btnrow"><button type="button" class="btn" data-act="restore">Sicherung einspielen</button><button type="button" class="btn" data-act="backup">Sicherung erstellen</button></div></div>
@@ -1592,6 +1600,8 @@ function openSettings(){
       case "close":return closeSheet();
       case "backup":return makeBackup();
       case "link":closeSheet();return connectDrive();
+      case "gmailon":S.settings.gmailOn=true;S.settings.gmailSince=today();await saveSettings();closeSheet();return connectDrive(false);
+      case "gmailoff":S.settings.gmailOn=false;S.settings.mailNotice={};await saveSettings();closeSheet();toast("Gmail-Auswertung aus");return render();
       case "sync":closeSheet();return tokenValid()?syncNow():connectDrive(true);
       case "unlink":
         if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Wirklich trennen? Nochmal tippen";return}
@@ -1645,11 +1655,11 @@ async function restoreBackup(file){
 
 /* ================= Google Drive ================= */
 const GOOGLE_CLIENT_ID="592336920931-5s1klnrs64841o02016jk7mknm248rdf.apps.googleusercontent.com";
-const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.file";
+const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.file",GMAIL_SCOPE="https://www.googleapis.com/auth/gmail.readonly";
 const API="https://www.googleapis.com/drive/v3/files",UPLOAD="https://www.googleapis.com/upload/drive/v3/files";
 const DATA_NAME="arztrechnungen-daten.json",FOLDER_NAME="Arztrechnungen";
 const G={token:null,exp:0,client:null,busy:false,dirty:false,last:null,err:null,timer:null};
-const LOCAL_KEYS=["driveLinked","lastBackup","driveFolderId","driveBelegeId","driveDataId","driveAppId","driveInboxId","driveFolderMap","driveSnapId","lastSnapshot"];
+const LOCAL_KEYS=["driveLinked","lastBackup","driveFolderId","driveBelegeId","driveDataId","driveAppId","driveInboxId","driveFolderMap","driveSnapId","lastSnapshot","gmailOn","gmailSince","mailSeen","mailNotice"];
 try{const t=JSON.parse(localStorage.getItem("gtok")||"null");if(t&&t.exp>Date.now()){G.token=t.token;G.exp=t.exp}}catch{}
 const tokenValid=()=>!!G.token&&Date.now()<G.exp-60000;
 // Anmeldung per Weiterleitung: funktioniert auch in der installierten App (Anmeldefenster als Popup kommt dort nicht zurück)
@@ -1660,7 +1670,7 @@ function connectDrive(silent){
   const state=uid();
   glog((silent?"Stille ":"")+"Anmeldung gestartet ("+(matchMedia("(display-mode: standalone)").matches?"App":"Browser")+")");
   try{localStorage.setItem("gstate",JSON.stringify({state,silent:!!silent}))}catch{}
-  const p=new URLSearchParams({client_id:GOOGLE_CLIENT_ID,redirect_uri:REDIRECT_URI,response_type:"token",scope:DRIVE_SCOPE,
+  const p=new URLSearchParams({client_id:GOOGLE_CLIENT_ID,redirect_uri:REDIRECT_URI,response_type:"token",scope:S.settings.gmailOn?DRIVE_SCOPE+" "+GMAIL_SCOPE:DRIVE_SCOPE,
     include_granted_scopes:"true",state});
   if(silent)p.set("prompt","none");
   location.href="https://accounts.google.com/o/oauth2/v2/auth?"+p.toString();
@@ -1806,6 +1816,7 @@ async function syncNow(){
   G.busy=true;G.dirty=false;G.err=null;updateChip();
   try{
     await ensureFolders();
+    await mailCheck();
     for(const pp of S.settings.people||[])if(pp.name)await ensurePath(["Zum Einreichen","AXA",cleanName(pp.name)]);
     let remote=null;
     if(S.settings.driveDataId){
@@ -1891,6 +1902,55 @@ async function syncNow(){
   }catch(e){G.err=e.code==="auth"?"auth":"fail";G.dirty=true;glog("Abgleich fehlgeschlagen: "+(e?.message||e))}
   finally{G.busy=false;updateChip();render()}
   if(G.dirty&&!G.err)scheduleSync();
+}
+/* ---- Gmail: Bestätigungen und Benachrichtigungen von AXA und Beihilfe (nur lesen) ---- */
+const GMAIL="https://gmail.googleapis.com/gmail/v1/users/me/messages";
+const MAIL_Q="from:(noreply@bva.bund.de OR noreply-myaxa@axa.de) newer_than:30d";
+const isoDay=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+function b64u(x){try{const b=atob(x.replace(/-/g,"+").replace(/_/g,"/"));return new TextDecoder().decode(Uint8Array.from(b,c=>c.charCodeAt(0)))}catch{return ""}}
+function mailText(part){if(!part)return "";let t=part.body?.data?b64u(part.body.data):"";for(const c of part.parts||[])t+=" "+mailText(c);return t.replace(/<[^>]+>/g," ")}
+// Älteste passende Rechnung: zuerst schon als eingereicht getippte, sonst noch offene
+function matchSubmit(k,day){
+  const since=S.settings.gmailSince||"";
+  const c=S.inv.filter(i=>(+i[k]?.rate||0)>0&&!i[k].mailOk&&!i[k].receivedDate&&!S.deleted[i.id]
+    &&(i.createdAt||i.receivedDate||"").slice(0,10)<=day&&(!i[k].submitted||(i[k].submitted>=since&&i[k].submitted<=day)));
+  c.sort((a,b)=>(!!b[k].submitted-!!a[k].submitted)||(a[k].submitted||a.createdAt||"").localeCompare(b[k].submitted||b.createdAt||""));
+  return c[0]||null;
+}
+async function mailCheck(){
+  const st=S.settings;if(!st.gmailOn)return;
+  try{
+    const list=await (await gfetch(`${GMAIL}?q=${q(MAIL_Q)}&maxResults=50`)).json();
+    const seen=new Set(st.mailSeen||[]),since=st.gmailSince||today(),msgs=[];
+    for(const m of list.messages||[]){if(seen.has(m.id))continue;
+      const d=await (await gfetch(`${GMAIL}/${m.id}?format=full`)).json();
+      const h=n=>(d.payload?.headers||[]).find(x=>x.name.toLowerCase()===n)?.value||"";
+      msgs.push({id:m.id,ts:+d.internalDate,day:isoDay(new Date(+d.internalDate)),from:h("from").toLowerCase(),subj:h("subject"),text:mailText(d.payload)})}
+    msgs.sort((a,b)=>a.ts-b.ts);let n=0;
+    for(const m of msgs){
+      seen.add(m.id);if(m.day<since)continue; // ältere Mails nur merken
+      const k=m.from.includes("bva.bund.de")?"bh":m.from.includes("axa.de")?"pkv":null;if(!k)continue;const who=k==="pkv"?"AXA":"Beihilfe";
+      if(/erfolgreich eingereicht|eingereichten Dokumente/i.test(m.subj)){
+        const appId=(m.text.match(/Antrags-ID\s*(\d{4,})/i)||[])[1]||null;const inv=matchSubmit(k,m.day);
+        if(inv){const s=inv[k];if(!s.submitted)s.submitted=m.day;s.mailOk=m.day;if(appId&&!s.appId)s.appId=appId;inv.updatedAt=new Date().toISOString();await dbPut("invoices",inv);n++;
+          glog(`${who}: Eingang per E-Mail bestätigt (${dfmt(m.day)}) – ${inv.provider||"Rechnung"}${appId?", Antrag "+appId:""}`)}
+        else glog(`${who}: Bestätigung vom ${dfmt(m.day)} ohne passende Rechnung`);
+      }else{st.mailNotice={...(st.mailNotice||{}),[k]:m.day};glog(`${who}: neue Nachricht (${dfmt(m.day)})`)}
+    }
+    st.mailSeen=[...seen].slice(-300);G.mailErr=false;
+    if(n)toast(n===1?"Einreichung per E-Mail bestätigt":`${n} Einreichungen per E-Mail bestätigt`);
+  }catch(e){if(e.code==="auth")throw e;G.mailErr=true;glog("Gmail nicht lesbar – Zugriff erteilt und Gmail-API aktiviert?")}
+}
+// Hinweise aus den Mails für den Startbildschirm
+function mailHints(){
+  const st=S.settings;if(!st.gmailOn)return [];const out=[];
+  for(const [k,day] of Object.entries(st.mailNotice||{}))
+    out.push(`<span>${k==="pkv"?"Neue Nachricht in My AXA":"Neue Nachricht der Beihilfe"} vom ${dfmt(day)}. Abrechnung in der ${k==="pkv"?"AXA":"Beihilfe"}-App öffnen und hier über „Bescheid ${k==="pkv"?"AXA":"Beihilfe"}“ erfassen.</span><button type="button" class="btn" data-act="noticeok" data-k="${k}">Erledigt</button>`);
+  const since=st.gmailSince||"9999";
+  for(const i of S.inv)for(const k of ["pkv","bh"]){const s=i[k];
+    if(s?.submitted&&s.submitted>=since&&!s.mailOk&&!s.receivedDate&&days(s.submitted,today())>=2)
+      out.push(`<span>${esc(i.provider||"Rechnung")}: ${k==="pkv"?"AXA":"Beihilfe"} hat den Eingang nicht per E-Mail bestätigt. Upload prüfen.</span><button type="button" class="btn" data-act="mailok" data-id="${i.id}" data-k="${k}">Ist angekommen</button>`)}
+  return out;
 }
 // Tagessicherung: einmal am Tag eine datierte Kopie in _App-Daten/Sicherungen, nichts wird überschrieben oder gelöscht
 async function dailySnapshot(data){
