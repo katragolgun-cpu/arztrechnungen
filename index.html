@@ -439,7 +439,7 @@ function render(){
   if(!srch&&f.id==="einreichen"&&list.length>1)html+=`<div class="btnrow listtools">${S.select
     ?`<button type="button" class="btn" data-act="selall">Alle auswählen</button><button type="button" class="btn" data-act="selnone">Auswahl beenden</button>`
     :`<button type="button" class="btn" data-act="selstart">Mehrere auswählen</button>`}</div>`;
-  if(!srch&&f.id==="warten"&&!S.select)html+=`<div class="btnrow listtools prooftools"><button type="button" class="btn" data-act="proofstart" data-k="pkv">Nachweis AXA</button><button type="button" class="btn" data-act="proofstart" data-k="bh">Nachweis Beihilfe</button></div>`;
+  if(!srch&&f.id==="warten"&&!S.select)html+=`<div class="btnrow listtools prooftools"><button type="button" class="btn primary" data-act="proofstart" data-k="pkv">Nachweis AXA</button><button type="button" class="btn primary" data-act="proofstart" data-k="bh">Nachweis Beihilfe</button></div>`;
   const oldNote=!srch&&f.id==="erledigt"&&hiddenOld?`<div class="searchinfo">${hiddenOld} erledigte Rechnung${hiddenOld===1?"":"en"} aus Vorjahren ausgeblendet. Über die Lupe findest du sie.</div>`:"";
   if(!list.length){L.innerHTML=html+`<div class="empty">${q?"Keine Treffer.":emptyTxt}</div>`+oldNote;return}
   // Warten: nach Abgabedatum gruppieren (frühestes noch offenes Einreichdatum), Gruppen ein-/ausklappbar
