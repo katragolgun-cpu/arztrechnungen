@@ -1567,7 +1567,7 @@ function openSettings(){
     <div id="edStatus" class="status" style="margin-top:10px"></div>
     <div class="sec"><h3>Google Drive</h3>
       <p class="status" style="margin:0">${s.driveLinked
-        ?"Rechnungen, Fotos und Leistungsnachweise werden im Drive-Ordner „Arztrechnungen“ gespeichert."
+        ?"Rechnungen, Fotos und Leistungsnachweise werden im Drive-Ordner „Arztrechnungen“ gespeichert. Jeden Tag kommt eine datierte Sicherung nach „_App-Daten/Sicherungen“."+(s.lastSnapshot?" Letzte: "+dfmt(s.lastSnapshot)+".":"")
         :"Nach dem Verbinden liegen alle Rechnungen, Fotos und Leistungsnachweise im Drive-Ordner „Arztrechnungen“."}</p>
       <p class="status" id="driveStatus" style="margin:0;font-weight:600"></p>
       <details><summary class="status">Verlauf anzeigen</summary><pre class="status" style="white-space:pre-wrap;margin:6px 0 0;font-size:12px">${esc((()=>{try{return JSON.parse(localStorage.getItem("glog")||"[]").join("\n")}catch{return ""}})()||"Noch keine Einträge.")}</pre></details>
@@ -1575,7 +1575,7 @@ function openSettings(){
         ?`<button type="button" class="btn primary" data-act="sync">Jetzt abgleichen</button><button type="button" class="btn" data-act="unlink">Drive trennen</button>`
         :`<button type="button" class="btn primary" data-act="link">Mit Google Drive verbinden</button>`}</div></div>
     <div class="sec"><h3>Sicherung als Datei</h3>
-      <p class="status" style="margin:0">Zum Einspielen der Startdatei oder für eine zusätzliche Kopie.${s.lastBackup?` Letzte Sicherung: ${dfmt(s.lastBackup.slice(0,10))}.`:""}</p>
+      <p class="status" style="margin:0">Zum Einspielen einer Sicherung (auch aus Drive, Ordner „Sicherungen“) oder für eine zusätzliche Kopie.${s.lastBackup?` Letzte Sicherung: ${dfmt(s.lastBackup.slice(0,10))}.`:""}</p>
       <div class="btnrow"><button type="button" class="btn" data-act="restore">Sicherung einspielen</button><button type="button" class="btn" data-act="backup">Sicherung erstellen</button></div></div>
     <div class="sec"><h3>Anteile</h3>${rates}<p class="status" style="margin:0">Gilt für neue Rechnungen.</p></div>
     <div class="sec"><h3>Personen</h3>${rows}<div class="btnrow"><button type="button" class="btn" data-act="addp">Person hinzufügen</button></div></div>
@@ -1634,8 +1634,10 @@ async function restoreBackup(file){
     for(const inv of d.invoices){
       const l=local.get(inv.id);
       if(l)for(const k of SLOTS){const ls=slot(l,k),ms=slot(inv,k);if(ls.fileId&&!ms.fileId&&(!ms.driveId||ms.driveId===ls.driveId))ms.fileId=ls.fileId}
+      if(S.deleted?.[inv.id]){delete S.deleted[inv.id];inv.updatedAt=new Date().toISOString()}
       await dbPut("invoices",inv);
     }
+    await dbPut("meta",{key:"deleted",items:S.deleted});
     if(d.settings){const keep=Object.fromEntries(LOCAL_KEYS.map(k=>[k,S.settings[k]]));S.settings={...DEFAULT_SETTINGS,...d.settings,...keep};await saveSettings()}
     S.inv=await dbAll("invoices");closeSheet();render();toast(`${d.invoices.length} Rechnungen eingespielt`);scheduleSync();
   }catch(err){setStatus("Einspielen fehlgeschlagen: "+(err?.message||err),true)}
@@ -1647,7 +1649,7 @@ const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.file";
 const API="https://www.googleapis.com/drive/v3/files",UPLOAD="https://www.googleapis.com/upload/drive/v3/files";
 const DATA_NAME="arztrechnungen-daten.json",FOLDER_NAME="Arztrechnungen";
 const G={token:null,exp:0,client:null,busy:false,dirty:false,last:null,err:null,timer:null};
-const LOCAL_KEYS=["driveLinked","lastBackup","driveFolderId","driveBelegeId","driveDataId","driveAppId","driveInboxId","driveFolderMap"];
+const LOCAL_KEYS=["driveLinked","lastBackup","driveFolderId","driveBelegeId","driveDataId","driveAppId","driveInboxId","driveFolderMap","driveSnapId","lastSnapshot"];
 try{const t=JSON.parse(localStorage.getItem("gtok")||"null");if(t&&t.exp>Date.now()){G.token=t.token;G.exp=t.exp}}catch{}
 const tokenValid=()=>!!G.token&&Date.now()<G.exp-60000;
 // Anmeldung per Weiterleitung: funktioniert auch in der installierten App (Anmeldefenster als Popup kommt dort nicht zurück)
@@ -1883,11 +1885,24 @@ async function syncNow(){
     const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
     const up=await uploadMultipart(S.settings.driveDataId?{}:{name:DATA_NAME,parents:[S.settings.driveAppId]},blob,S.settings.driveDataId);
     if(!S.settings.driveDataId)S.settings.driveDataId=up.id;
+    await dailySnapshot(data);
     await dbPut("meta",{key:"settings",...S.settings});
     G.last=new Date();glog("Abgleich erfolgreich ("+S.inv.length+" Rechnungen)");
   }catch(e){G.err=e.code==="auth"?"auth":"fail";G.dirty=true;glog("Abgleich fehlgeschlagen: "+(e?.message||e))}
   finally{G.busy=false;updateChip();render()}
   if(G.dirty&&!G.err)scheduleSync();
+}
+// Tagessicherung: einmal am Tag eine datierte Kopie in _App-Daten/Sicherungen, nichts wird überschrieben oder gelöscht
+async function dailySnapshot(data){
+  const day=today();if(S.settings.lastSnapshot===day)return;
+  try{
+    if(!S.settings.driveSnapId)S.settings.driveSnapId=await findOrCreateFolder("Sicherungen",S.settings.driveAppId);
+    const name=`Sicherung_${day}.json`;
+    if(!await findFile(name,S.settings.driveSnapId)){
+      await uploadMultipart({name,parents:[S.settings.driveSnapId]},new Blob([JSON.stringify(data)],{type:"application/json"}));
+      glog("Tagessicherung erstellt: "+name)}
+    S.settings.lastSnapshot=day;
+  }catch(e){if(e.code==="auth")throw e;S.settings.driveSnapId=null;glog("Tagessicherung fehlgeschlagen")}
 }
 // Kein Knopf oben: nur ein Punkt an "Einstellungen", wenn Änderungen noch nicht in Drive liegen
 function driveStatus(){
