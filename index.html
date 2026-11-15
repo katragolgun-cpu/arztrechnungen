@@ -65,6 +65,8 @@ header.top p{margin:2px 0 0;color:var(--muted);font-size:13px}
 .meta{color:var(--muted);font-size:13px;margin-top:2px}
 .amt{font-family:var(--f-num);font-weight:600;font-size:16px;white-space:nowrap}
 .pchip{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--sunken);color:var(--ink);margin-right:6px}
+.bico{width:1.25em;height:1.25em;vertical-align:-.28em;margin-right:4px;flex:none}
+.stamp .bico{width:1.35em;height:1.35em;vertical-align:-.32em}
 .stamps{display:flex;flex-wrap:wrap;gap:6px}
 .stamp{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:3px 8px;border-radius:6px;border:1.5px solid currentColor;line-height:1.3;white-space:nowrap}
 .stamp b{font-family:var(--f-num);font-weight:600;letter-spacing:0;text-transform:none}
@@ -185,6 +187,8 @@ header.top h1{font-size:26px;letter-spacing:-.02em}
 .sumbar .vals>span{display:flex;align-items:baseline;gap:8px}
 .sumbar .pay b{color:#fff;font-size:26px} .sumbar .exp b{color:#cfe9ec;font-size:15px}
 .sumbar .chev{color:#cfe9ec}
+.sumbar .expsplit{font-size:12px;color:#cfe9ec;font-family:var(--f-num);white-space:nowrap}
+.sumbar .expsplit .bico{margin-left:4px;background:#fff;border-radius:4px}
 .search input{border-radius:14px;border-color:transparent;box-shadow:var(--shadow);padding:12px 40px 12px 14px}
 .chip{border-color:transparent;box-shadow:var(--shadow);padding:7px 14px}
 .people{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding:6px 4px 4px;justify-content:space-between}
@@ -510,7 +514,7 @@ function cardHtml({i,c},q){
       <div class="row1">${S.select?`<span class="tick" aria-hidden="true">${sel?"✓":""}</span>`:""}<div class="who"><div class="prov">${esc(i.provider||"Ohne Rechnungssteller")}</div>
       <div class="meta"><span class="pchip">${avatarFor(i.patient)}${esc(i.patient||"?")}</span>${dfmt(i.invoiceDate)}${q&&i.invoiceNo?" · Nr. "+esc(i.invoiceNo):""}${i.reason?" · "+esc(i.reason):""}</div></div>
       <div class="amt">${eur(c.amount)}</div></div>
-      ${nx?`<div class="next s-${c.step}">${esc(nx)}</div>`:""}
+      ${nx?`<div class="next s-${c.step}">${esc(nx).replace(/\b(PKV|AXA|Beihilfe)\b/g,m=>sideLbl(m))}</div>`:""}
       ${dueText(c)}
       ${(()=>{const st=problemStamps(c);return st?`<div class="stamps">${st}</div>`:""})()}
     </button>`;
@@ -535,6 +539,13 @@ async function bulkSubmit(which){
   }
   S.select=null;render();toast(`${n} Rechnung${n===1?"":"en"} als eingereicht markiert`);
 }
+// Eigene Symbole (keine Firmenlogos): PKV/AXA = blaues Schild, Beihilfe = grünes Amtsgebäude
+const SIDE_ICON={
+  pkv:'<svg class="bico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.2 4 5.2v6.1c0 5 3.4 9.1 8 10.5 4.6-1.4 8-5.5 8-10.5V5.2z" fill="#2f5fa8"/><path d="M8.3 12.2l2.5 2.5 4.9-5" stroke="#fff" stroke-width="2.1" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  bh:'<svg class="bico" viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="#2e7d4f"/><path d="M12 4.6 5 8.4h14z" fill="#fff"/><rect x="5.6" y="9.4" width="12.8" height="1.4" fill="#fff"/><path d="M7.2 11.6h1.7v5.2H7.2zM11.15 11.6h1.7v5.2h-1.7zM15.1 11.6h1.7v5.2h-1.7z" fill="#fff"/><rect x="5" y="17.5" width="14" height="1.8" rx=".4" fill="#fff"/></svg>'
+};
+const sideIco=n=>/^(pkv|axa)$/i.test(n)?SIDE_ICON.pkv:/^(bh|beihilfe)$/i.test(n)?SIDE_ICON.bh:"";
+const sideLbl=n=>sideIco(n)+n;
 function stampPay(c){
   if(!c.unpaid)return c.open<-0.004?`<span class="stamp s-bad">Überzahlt <b>${eur(-c.open)}</b></span>`:`<span class="stamp s-ok">Bezahlt</span>`;
   return `<span class="stamp ${c.overdue?"s-bad":"s-todo"}">Zahlen <b>${eur(c.open)}</b>${c.overdue&&c.daysLeft!=null?` · ${-c.daysLeft} Tg. überfällig`:""}</span>`;
@@ -543,16 +554,16 @@ function stampPay(c){
 function problemStamps(c){
   const out=[];
   // Überfällig, Überzahlt und Nachfragen stehen schon im Text der Karte; Kürzungen nicht immer
-  for(const [n,x] of [["AXA",c.pkv],["Beihilfe",c.bh]])if(x.cutOpen&&c.step!=="erledigt")out.push(`<span class="stamp s-bad">${n} gekürzt <b>−${eur(x.diff)}</b></span>`);
+  for(const [n,x] of [["AXA",c.pkv],["Beihilfe",c.bh]])if(x.cutOpen&&c.step!=="erledigt")out.push(`<span class="stamp s-bad">${sideLbl(n)} gekürzt <b>−${eur(x.diff)}</b></span>`);
   return out.join("");
 }
 function stampSide(n,s){
-  if(s.state==="na")return `<span class="stamp s-na">${n} –</span>`;
-  if(s.state==="todo")return `<span class="stamp s-todo">${n} einreichen</span>`;
-  if(s.state==="wait")return `<span class="stamp s-wait">${n} <b>${eur(s.expected)}</b> erwartet</span>`;
-  if(s.review)return `<span class="stamp s-bad">${n} Nachweis prüfen</span>`;
-  if(s.diff>0.004)return `<span class="stamp s-bad">${n} gekürzt <b>−${eur(s.diff)}</b></span>`;
-  return `<span class="stamp s-ok">${n} erstattet</span>`;
+  if(s.state==="na")return `<span class="stamp s-na">${sideLbl(n)} –</span>`;
+  if(s.state==="todo")return `<span class="stamp s-todo">${sideLbl(n)} einreichen</span>`;
+  if(s.state==="wait")return `<span class="stamp s-wait">${sideLbl(n)} <b>${eur(s.expected)}</b> erwartet</span>`;
+  if(s.review)return `<span class="stamp s-bad">${sideLbl(n)} Nachweis prüfen</span>`;
+  if(s.diff>0.004)return `<span class="stamp s-bad">${sideLbl(n)} gekürzt <b>−${eur(s.diff)}</b></span>`;
+  return `<span class="stamp s-ok">${sideLbl(n)} erstattet</span>`;
 }
 function renderSummary(rows){
   let pay=0,payN=0,over=0,wP=0,wB=0,todoN=0,todoB=0,cut=0,cutN=0;
@@ -568,14 +579,14 @@ function renderSummary(rows){
   const bhHint=todoB<=0?"Nichts offen für die Beihilfe":(todoB>=min?`Beihilfe ${eur(todoB)} – Mindestsumme erreicht`:`Beihilfe ${eur(todoB)}, noch ${eur(min-todoB)} bis ${eur(min)}`);
   $("#summary").innerHTML=`
    <button type="button" class="tile hot" data-f="zahlen"><span class="lbl">Zu bezahlen</span><span class="val">${eur(pay)}</span><span class="sub">${payN} Rechnung${payN===1?"":"en"}${over?` · ${over} überfällig`:""}</span></button>
-   <button type="button" class="tile wait" data-f="warten"><span class="lbl">Erstattung erwartet</span><span class="val">${eur(wP+wB)}</span><span class="sub">PKV ${eur(wP)} · Beihilfe ${eur(wB)}</span></button>
+   <button type="button" class="tile wait" data-f="warten"><span class="lbl">Erstattung erwartet</span><span class="val">${eur(wP+wB)}</span><span class="sub"><span style="display:block">${SIDE_ICON.pkv}PKV ${eur(wP)}</span><span style="display:block">${SIDE_ICON.bh}Beihilfe ${eur(wB)}</span></span></button>
    <button type="button" class="tile todo" data-f="einreichen"><span class="lbl">Noch einreichen</span><span class="val">${todoN}</span><span class="sub">${esc(bhHint)}</span></button>
    <button type="button" class="tile cut" data-f="pruefen"><span class="lbl">Gekürzt</span><span class="val">${eur(cut)}</span><span class="sub">${cutN} Rechnung${cutN===1?"":"en"} mit Differenz</span></button>`;
   $("#sub").textContent=`${S.inv.length} Rechnungen · ${S.settings.people.map(p=>p.name).join(", ")}`;
   const open=sumOpen();
   $("#summary").hidden=!open;
   const bar=$("#sumBar");bar.setAttribute("aria-expanded",String(open));
-  bar.innerHTML=`<span class="vals"><span class="pay">Zu bezahlen <b>${eur(pay)}</b></span><span class="exp">Erwartet <b>${eur(wP+wB)}</b></span></span><span class="chev">${open?"Weniger ▲":"Mehr ▼"}</span>`;
+  bar.innerHTML=`<span class="vals"><span class="pay">Zu bezahlen <b>${eur(pay)}</b></span><span class="exp">Erwartet <b>${eur(wP+wB)}</b>${wP+wB>0?` <span class="expsplit">${SIDE_ICON.pkv}${eur(wP)} ${SIDE_ICON.bh}${eur(wB)}</span>`:""}</span></span><span class="chev">${open?"Weniger ▲":"Mehr ▼"}</span>`;
 }
 try{S.sumOpen=localStorage.getItem("sumOpen")==="1"}catch{S.sumOpen=false}
 function sumOpen(){return !!S.sumOpen}
@@ -705,9 +716,9 @@ function submitHtml(inv,c){
   const steps=[["bh","Beihilfe","Beihilfe-App","Antragsart: <b>Beihilfe</b>"],["pkv","AXA","AXA-App",`Person: <b>${esc(inv.patient||"")}</b>`]].filter(([k])=>c[k].state!=="na");
   let open=false;
   const rows=steps.map(([k,n,app,hint],i)=>{const x=c[k];
-    if(x.state!=="todo")return `<div class="line"><div><div class="t">${i+1}. ${n}</div><div class="s" style="color:var(--ok)">Eingereicht am ${dfmt(x.s.submitted)}</div></div></div>`;
+    if(x.state!=="todo")return `<div class="line"><div><div class="t">${i+1}. ${sideLbl(n)}</div><div class="s" style="color:var(--ok)">Eingereicht am ${dfmt(x.s.submitted)}</div></div></div>`;
     const active=!open;open=true;
-    return `<div class="line" style="${active?"":"opacity:.5"}"><div><div class="t">${i+1}. ${n}</div><div class="s">${hint}</div></div></div>
+    return `<div class="line" style="${active?"":"opacity:.5"}"><div><div class="t">${i+1}. ${sideLbl(n)}</div><div class="s">${hint}</div></div></div>
       ${active?`<div class="btnrow"><button type="button" class="btn" data-act="subshare" data-k="${k}" ${f?"":"disabled"}>PDF an ${app} senden</button><button type="button" class="btn primary" data-act="sub" data-k="${k}">Bei ${n} eingereicht</button></div>`:""}`}).join("");
   const note=f===null?"Beleg wird geladen …":f===false?"Beleg nicht auf diesem Handy. Bitte in der App wie bisher aus Google Drive wählen.":"";
   return `${rows}${note?`<p class="status" style="margin:6px 0 0">${note}</p>`:""}`;
@@ -805,7 +816,7 @@ function statusLine(key,title,inv){
     if(s.eligible!=null)info+=`<br>${cutHtml(r2(inv.amount-s.eligible),s.cutNote,false,key)}`;
     if(s.obj)info+=`<br>Widerspruch vom ${dfmt(s.obj.date)}: ${!s.obj.result?"Ergebnis offen":s.obj.result==="nachzahlung"?"Nachzahlung erhalten":"abgelehnt"}`;
     else if(s.cutOk&&c.diff>0.004)info+="<br>Kürzung akzeptiert";}
-  return `<div class="line"><div><div class="t">${title}</div><div class="s">${info}</div></div></div>`;
+  return `<div class="line"><div><div class="t">${sideLbl(title)}</div><div class="s">${info}</div></div></div>`;
 }
 function payLine(inv,c){
   const info=c.unpaid?`${eur(c.open)} offen`:(c.open<-0.004?`${eur(-c.open)} zu viel überwiesen`:isApo(inv)&&!inv.payment?.date?"In der Apotheke bezahlt":`Bezahlt am ${dfmt(inv.payment?.date)}`);
