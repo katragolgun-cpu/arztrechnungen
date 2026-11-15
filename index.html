@@ -406,7 +406,7 @@ function render(){
   if(!S.inv.length){L.innerHTML=`<div class="empty">Noch keine Rechnungen.<br>Tippe auf <b>+ Rechnung</b> oder spiele unter <b>Einstellungen</b> deine Startdatei ein.</div>`;return}
   const q=S.q.trim();
   const list=(q?mine.filter(r=>matchQ(r.i,q)):srch?mine:vis.filter(r=>f.test(r.c))).sort((a,b)=>(b.i.invoiceDate||"").localeCompare(a.i.invoiceDate||""));
-  const emptyTxt={einreichen:"Nichts einzureichen.",warten:"Keine offenen Erstattungen.",nachweis:"Keine Nachweise zu prüfen.",ueberweisen:"Nichts zu überweisen.",erledigt:"Noch nichts erledigt."}[f.id]||"Keine Rechnungen in dieser Ansicht.";
+  const emptyTxt={einreichen:"Alles eingereicht – keine offenen Einreichungen.",warten:"Keine offenen Erstattungen.",nachweis:"Keine Nachweise zu prüfen.",ueberweisen:"Nichts zu überweisen.",erledigt:"Noch nichts erledigt."}[f.id]||"Keine Rechnungen in dieser Ansicht.";
   let html="";
   if(srch&&!q)html+=`<div class="searchinfo">Alle ${list.length} Rechnungen${S.person!=="alle"?" von "+esc(S.person):""}. Tippe oben, um zu suchen.</div>`;
   if(q)html+=`<div class="searchinfo">${list.length} Treffer für „${esc(q)}“ in allen Rechnungen${S.person!=="alle"?" von "+esc(S.person):""}. Filter sind während der Suche aus.</div>`;
