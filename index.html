@@ -62,6 +62,7 @@ header.top p{margin:2px 0 0;color:var(--muted);font-size:13px}
 .who{min-width:0;flex:1}
 .row1 .tick+.who{margin-left:2px}
 .prov{font-weight:600;font-size:15.5px;overflow-wrap:anywhere}
+.via{font-size:12.5px;color:var(--muted);margin-top:1px}
 .meta{color:var(--muted);font-size:13px;margin-top:2px}
 .amt{font-family:var(--f-num);font-weight:600;font-size:16px;white-space:nowrap}
 .pchip{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--sunken);color:var(--ink);margin-right:6px}
@@ -279,7 +280,7 @@ const S={inv:[],deleted:{},settings:structuredClone(DEFAULT_SETTINGS),loaded:fal
 function matchQ(i,q){
   const words=q.toLowerCase().split(/\s+/).filter(Boolean);if(!words.length)return true;
   const amt=+i.amount||0;const amtTxt=[amt.toFixed(2).replace(".",","),amt.toFixed(2),eur(amt).toLowerCase(),String(amt)].join(" ");
-  const hay=[i.provider,i.invoiceNo,(i.invoiceNo||"").replace(/[^0-9a-z]/gi,""),i.patient,i.reason,i.note,dfmt(i.invoiceDate),dfmt(i.receivedDate),i.invoiceDate,amtTxt,i.bh?.appId,i.pkv?.appId].join(" ").toLowerCase();
+  const hay=[i.provider,i.doctor,i.treatDate,i.invoiceNo,(i.invoiceNo||"").replace(/[^0-9a-z]/gi,""),i.patient,i.reason,i.note,dfmt(i.invoiceDate),dfmt(i.receivedDate),i.invoiceDate,amtTxt,i.bh?.appId,i.pkv?.appId].join(" ").toLowerCase();
   return words.every(w=>{
     if(/^\d+([.,]\d{1,2})?$/.test(w)&&/[.,]/.test(w)){const n=+w.replace(",",".");if(Math.abs(n-amt)<0.005)return true}
     return hay.includes(w)||hay.includes(w.replace(/[^0-9a-z]/gi,""))&&w.replace(/[^0-9a-z]/gi,"").length>=3;
@@ -533,7 +534,9 @@ const CHECK_HOW={
 };
 function letter(lines){return lines.filter(x=>x!==null).join("\n")}
 function helpTexts(inv,c){
-  const out=[],nr=inv.invoiceNo?` (Rechnungsnummer ${inv.invoiceNo})`:"",rech=`Rechnung von ${inv.provider||"?"} vom ${dfmt(inv.invoiceDate)} über ${eur(c.amount)}${nr}`;
+  const out=[],doc=(inv.doctor||"").replace(/\s*\([^)]*\)/g,"").trim(),
+    extra=[inv.invoiceNo&&`Rechnungsnummer ${inv.invoiceNo}`,doc&&doc!==inv.provider&&`Behandlung bei ${doc}${inv.treatDate?" am "+inv.treatDate:""}`].filter(Boolean),
+    rech=`Rechnung von ${inv.provider||"?"} vom ${dfmt(inv.invoiceDate)} über ${eur(c.amount)}${extra.length?` (${extra.join(", ")})`:""}`;
   const sig=["","Mit freundlichen Grüßen","Olgun Katrag"];
   if(/fehlbuch/i.test(inv.check||"")){
     const m=(inv.check||"").match(/auf (\S+) statt (\S+?)[\s).]/i),falsch=m?m[1]:"[falsche Person]",richtig=m?m[2]:inv.patient;
@@ -578,7 +581,7 @@ function cardHtml({i,c},q){
     const sel=S.select?S.select.has(i.id):null;
     const nx=nextStepText(i,c);
     html+=`<button type="button" class="card${sel?" selected":""}" data-id="${esc(i.id)}" ${S.select?`aria-pressed="${!!sel}"`:""}>
-      <div class="row1">${S.select?`<span class="tick" aria-hidden="true">${sel?"✓":""}</span>`:""}<div class="who"><div class="prov">${esc(i.provider||"Ohne Rechnungssteller")}</div>
+      <div class="row1">${S.select?`<span class="tick" aria-hidden="true">${sel?"✓":""}</span>`:""}<div class="who"><div class="prov">${esc(i.doctor||i.provider||"Ohne Rechnungssteller")}</div>${i.doctor&&i.provider?`<div class="via">über ${esc(i.provider)}${i.treatDate?" · Behandlung "+esc(i.treatDate):""}</div>`:""}
       <div class="meta"><span class="pchip">${avatarFor(i.patient)}${esc(i.patient||"?")}</span>${dfmt(i.invoiceDate)}${q&&i.invoiceNo?" · Nr. "+esc(i.invoiceNo):""}${i.reason?" · "+esc(i.reason):""}</div></div>
       <div class="amt">${eur(c.amount)}</div></div>
       ${nx?`<div class="next s-${c.step}">${esc(nx)}</div>`:""}
@@ -826,12 +829,13 @@ function paySection(inv,c){
 function drawView(thumb){
   if(thumb!==undefined)S.edit.thumb=thumb;
   const inv=S.inv.find(x=>x.id===S.edit.id);const c=calc(inv);
-  sheet(inv.provider||"Rechnung",`
+  sheet(inv.doctor||inv.provider||"Rechnung",`
     ${guideBar(inv,c)}
     <div id="edStatus" class="status" style="margin-top:10px"></div>
     <div class="sec hero">
       <div class="big">${eur(c.amount)}</div>
       <div class="meta"><span class="pchip">${avatarFor(inv.patient)}${esc(inv.patient)}</span>${dfmt(inv.invoiceDate)}${inv.invoiceNo?" · Nr. "+esc(inv.invoiceNo):""}</div>
+      ${inv.doctor?`<div class="via">Rechnung über ${esc(inv.provider||"?")}${inv.treatDate?" · Behandlung "+esc(inv.treatDate):""}</div>`:inv.treatDate?`<div class="via">Behandlung ${esc(inv.treatDate)}</div>`:""}
       <div class="stamps">${stampPay(c)}${stampSide("PKV",c.pkv)}${stampSide("Beihilfe",c.bh)}</div>
     </div>
     <div class="sec nextstep"><h3>Nächster Schritt</h3>${nextHtml(inv,c)}</div>
@@ -1009,6 +1013,9 @@ function drawEditor(){
         <label class="f">Person<select id="patient">${opts}</select></label>
         ${field("Betrag (€)","amount",inv.amount,"number")}
         ${field("Rechnungssteller","provider",inv.provider,"text","full",'autocomplete="off" list="provList"')}
+        ${field("Behandelt von (Arzt/Praxis)","doctor",inv.doctor,"text","full",'autocomplete="off" list="docList" placeholder="bei PVS, Mediserv usw. ausfüllen"')}
+        ${field("Behandlung am","treatDate",inv.treatDate,"text","",'placeholder="z. B. 13.05.2026"')}
+        <datalist id="docList">${[...new Set(S.inv.map(i=>i.doctor).filter(Boolean))].map(p=>`<option value="${esc(p)}">`).join("")}</datalist>
         ${field("Rechnungsdatum","invoiceDate",inv.invoiceDate,"date")}
         ${field("Rechnungsnummer","invoiceNo",inv.invoiceNo)}
         <label class="f">Art<select id="kind">${[["arzt","Arzt"],["apotheke","Apotheke (sofort bezahlt)"],["krankenhaus","Krankenhaus"],["sonstiges","Sonstiges"]].map(([k,l])=>`<option value="${k}" ${k===(inv.kind||(isApo(inv)?"apotheke":"arzt"))?"selected":""}>${l}</option>`).join("")}</select></label>
@@ -1092,7 +1099,7 @@ function readForm(){
   const nn=id=>{const x=v(id).trim();if(x==="")return "";return r2(x.includes(",")?x.replace(/\./g,"").replace(",","."):x)};
   inv.patient=v("patient");inv.group=rateFor(inv.patient).group;
   inv.amount=nn("amount");
-  for(const k of ["invoiceDate","receivedDate","provider","invoiceNo","reason","iban","note","dueDate"])inv[k]=v(k).trim();
+  for(const k of ["invoiceDate","receivedDate","provider","doctor","treatDate","invoiceNo","reason","iban","note","dueDate"])inv[k]=v(k).trim();
   inv.kind=v("kind")||inv.kind||"";
   inv.iban=inv.iban.replace(/\s+/g,"").toUpperCase();
   for(const key of ["pkv","bh"]){const s=inv[key]=inv[key]||{};
@@ -1658,7 +1665,11 @@ function openSettings(){
         :`<button type="button" class="btn primary" data-act="link">Mit Google Drive verbinden</button>`}</div></div>
     <div class="sec"><h3>Sicherung als Datei</h3>
       <p class="status" style="margin:0">Zum Einspielen der Startdatei oder für eine zusätzliche Kopie.${s.lastBackup?` Letzte Sicherung: ${dfmt(s.lastBackup.slice(0,10))}.`:""}</p>
-      <div class="btnrow"><button type="button" class="btn" data-act="restore">Sicherung einspielen</button><button type="button" class="btn" data-act="backup">Sicherung erstellen</button></div></div>
+      <div class="btnrow"><button type="button" class="btn" data-act="restore">Sicherung einspielen</button><button type="button" class="btn" data-act="backup">Sicherung erstellen</button></div>
+      <details style="margin-top:8px"><summary class="status">Nachtrag einfügen</summary>
+        <p class="status" style="margin:6px 0">Text aus dem Chat hier einfügen. Ergänzt nur Arzt und Behandlungsdatum, sonst ändert sich nichts.</p>
+        <textarea id="patchTxt" rows="5" style="width:100%;box-sizing:border-box;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--sunken);color:var(--ink)"></textarea>
+        <div class="btnrow"><button type="button" class="btn primary" data-act="patchapply">Übernehmen</button></div></details></div>
     <div class="sec"><h3>Startbild</h3>
       <p class="status" style="margin:0">Wird beim Öffnen kurz gezeigt. Das Bild bleibt nur auf diesem Handy und wird nicht hochgeladen.</p>
       <div id="splashPrev"></div>
@@ -1690,6 +1701,11 @@ function openSettings(){
         p.onchange=async()=>{p.accept=acc;const f=p.files[0];if(!f)return;const blob=await shrink(f,1600,0.85);
           await dbPut("meta",{key:"splash",blob});try{localStorage.setItem("splash","1")}catch{}showSplashPrev();toast("Startbild gespeichert")};p.click();return}
       case "splashdel":{await tx("meta","readwrite",st=>st.delete("splash"));try{localStorage.removeItem("splash")}catch{}showSplashPrev();toast("Startbild entfernt");return}
+      case "patchapply":{let list;try{list=JSON.parse($("#patchTxt").value.trim())}catch{setStatus("Text nicht lesbar. Bitte vollständig kopieren.",true);return}
+        if(!Array.isArray(list)){setStatus("Text nicht lesbar.",true);return}
+        let n=0,miss=0;for(const x of list){const cur=S.inv.find(i=>i.id===x.id);if(!cur){miss++;continue}
+          const inv=structuredClone(cur);if(x.doctor)inv.doctor=String(x.doctor).trim();if(x.treatDate)inv.treatDate=String(x.treatDate).trim();await saveInvoice(inv);n++}
+        $("#patchTxt").value="";setStatus(`${n} Rechnung${n===1?"":"en"} ergänzt${miss?`, ${miss} nicht gefunden`:""}.`);toast(`${n} Rechnungen ergänzt`);return}
       case "restore":{const p=$("#pickBackup");p.value="";p.onchange=()=>{const f=p.files[0];if(f)restoreBackup(f)};p.click();return}
       case "addp":S.settings.people=[...collectPeople(),{name:"",group:"K"}];return openSettings();
       case "save":
