@@ -72,6 +72,11 @@ header.top p{margin:2px 0 0;color:var(--muted);font-size:13px}
 .s-wait{color:var(--wait);background:var(--wait-soft)} .s-bad{color:var(--bad);background:var(--bad-soft)}
 .s-na{color:var(--muted);background:var(--sunken);border-style:dashed}
 .empty{background:var(--surface);border:1px dashed var(--line);border-radius:var(--r);padding:24px 16px;text-align:center;color:var(--muted)}
+.grp{display:flex;align-items:center;gap:8px;width:100%;border:0;background:var(--sunken);color:var(--ink);font:inherit;font-size:13.5px;font-weight:600;text-align:left;padding:10px 12px;border-radius:12px;margin-top:4px}
+.grp .chev{width:14px;color:var(--muted);font-size:11px}
+.grp .gt{flex:1}
+.grp .gs{display:block;color:var(--muted);font-weight:500;font-size:12px;margin-top:1px}
+.grp .ga{font-weight:600}
 .year{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;margin-top:6px}
 .fab{position:fixed;right:max(18px,calc(env(safe-area-inset-right,0px) + 18px));bottom:calc(84px + env(safe-area-inset-bottom,0px));width:58px;height:58px;display:flex;align-items:center;justify-content:center;background:var(--accent);color:var(--accent-ink);border:0;border-radius:50%;padding:0;box-shadow:0 6px 20px rgba(0,0,0,.22);z-index:7}
 .fab svg{width:28px;height:28px}
@@ -248,7 +253,7 @@ const DEFAULT_SETTINGS={
   minBeihilfe:200,payDays:30,warnDays:7,lastBackup:null
 };
 const GROUPS={A:"Antragsteller",E:"Ehepartner",K:"Kind"};
-const S={inv:[],deleted:{},settings:structuredClone(DEFAULT_SETTINGS),loaded:false,filter:"einreichen",person:"alle",edit:null,select:null,q:""};
+const S={inv:[],deleted:{},settings:structuredClone(DEFAULT_SETTINGS),loaded:false,filter:"einreichen",person:"alle",edit:null,select:null,q:"",grpClosed:new Set()};
 /* Suche: Rechnungsnummer, Betrag (106,45 / 106.45 / 106), Rechnungssteller, Person, Grund, Notiz, Datum */
 function matchQ(i,q){
   const words=q.toLowerCase().split(/\s+/).filter(Boolean);if(!words.length)return true;
@@ -411,10 +416,35 @@ function render(){
   if(!srch&&["warten","nachweis"].includes(f.id)&&!S.select)html+=`<div class="btnrow listtools"><button type="button" class="btn" data-act="proofstart">Leistungsnachweis erfassen</button></div>`;
   const oldNote=!srch&&f.id==="erledigt"&&hiddenOld?`<div class="searchinfo">${hiddenOld} erledigte Rechnung${hiddenOld===1?"":"en"} aus Vorjahren ausgeblendet. Über die Lupe findest du sie.</div>`:"";
   if(!list.length){L.innerHTML=html+`<div class="empty">${q?"Keine Treffer.":emptyTxt}</div>`+oldNote;return}
+  // Warten: nach Abgabedatum gruppieren (frühestes noch offenes Einreichdatum), Gruppen ein-/ausklappbar
+  const byDate=!srch&&!q&&f.id==="warten";
+  if(byDate){
+    const groups=new Map();
+    for(const r of list){const d=submittedWait(r.c);if(!groups.has(d))groups.set(d,[]);groups.get(d).push(r)}
+    const keys=[...groups.keys()].sort((a,b)=>b.localeCompare(a));
+    for(const d of keys){
+      const g=groups.get(d),open=!S.grpClosed.has(d);
+      const sum=g.reduce((a,{c})=>a+(c.pkv.state==="wait"?c.pkv.expected:0)+(c.bh.state==="wait"?c.bh.expected:0),0);
+      const ago=d?days(d,today()):null;
+      html+=`<button type="button" class="grp" data-grp="${esc(d)}" aria-expanded="${open}"><span class="chev">${open?"▼":"▶"}</span><span class="gt">${d?"Abgegeben am "+dfmt(d):"Ohne Abgabedatum"}<span class="gs">${ago!==null?(ago===0?"heute":`vor ${ago} Tag${ago===1?"":"en"}`)+" · ":""}${g.length} Rechnung${g.length===1?"":"en"}</span></span><span class="ga num">${eur(sum)}</span></button>`;
+      if(open)for(const r of g)html+=cardHtml(r,q);
+    }
+    L.innerHTML=html+oldNote;return;
+  }
   let lastYear=null;
-  for(const {i,c} of list){
-    const y=(i.invoiceDate||"").slice(0,4);
+  for(const r of list){
+    const y=(r.i.invoiceDate||"").slice(0,4);
     if(y!==lastYear){html+=`<div class="year">${esc(y||"Ohne Datum")}</div>`;lastYear=y}
+    html+=cardHtml(r,q);
+  }
+  L.innerHTML=html+oldNote;
+}
+function submittedWait(c){
+  const ds=[c.pkv,c.bh].filter(x=>x.state==="wait"&&x.s.submitted).map(x=>x.s.submitted).sort();
+  return ds[0]||"";
+}
+function cardHtml({i,c},q){
+    let html="";
     const sel=S.select?S.select.has(i.id):null;
     const nx=nextStepText(i,c);
     html+=`<button type="button" class="card${sel?" selected":""}" data-id="${esc(i.id)}" ${S.select?`aria-pressed="${!!sel}"`:""}>
@@ -425,8 +455,7 @@ function render(){
       ${dueText(c)}
       ${(()=>{const st=problemStamps(c);return st?`<div class="stamps">${st}</div>`:""})()}
     </button>`;
-  }
-  L.innerHTML=html+oldNote;
+    return html;
 }
 /* ---- Mehrere auf einmal als eingereicht markieren ---- */
 function renderSelectBar(){
@@ -507,6 +536,7 @@ document.addEventListener("click",e=>{
   if(e.target.closest(".sheet"))return;
   const f=e.target.closest("[data-f]");if(f){S.filter=f.dataset.f;S.select=null;closeSearch();render();window.scrollTo({top:0});return}
   const p=e.target.closest("[data-p]");if(p){S.person=p.dataset.p;render();return}
+  const gr=e.target.closest("[data-grp]");if(gr){const d=gr.dataset.grp;S.grpClosed.has(d)?S.grpClosed.delete(d):S.grpClosed.add(d);render();return}
   const a=e.target.closest("[data-act]");
   if(a){const act=a.dataset.act;
     if(act==="selstart"){S.select=new Set();render();return}
