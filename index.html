@@ -84,6 +84,12 @@ header.top p{margin:2px 0 0;color:var(--muted);font-size:13px}
 .guidebar .btn.primary{background:#fff;color:var(--accent);border-color:#fff}
 .txtbox{margin-top:8px}
 .txtbox textarea{width:100%;box-sizing:border-box;margin-top:6px;font:inherit;font-size:13.5px;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--sunken);color:var(--ink);resize:vertical}
+#splash{position:fixed;inset:0;z-index:100;background:#163a6b;overflow:hidden;transition:opacity .35s ease}
+#splash img{width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(1.08);transition:opacity .35s ease,transform 1.2s ease-out}
+#splash.on img{opacity:1;transform:scale(1)}
+#splash.out{opacity:0}
+@media (prefers-reduced-motion: reduce){#splash img{transform:none;transition:opacity .2s}}
+.splashprev{width:96px;height:128px;object-fit:cover;border-radius:10px;border:1px solid var(--line);display:block;margin:6px 0}
 .grp{display:flex;align-items:center;gap:8px;width:100%;border:0;background:var(--sunken);color:var(--ink);font:inherit;font-size:13.5px;font-weight:600;text-align:left;padding:10px 12px;border-radius:12px;margin-top:4px}
 .grp .chev{width:14px;color:var(--muted);font-size:11px}
 .grp .gt{flex:1}
@@ -208,6 +214,8 @@ header.top h1{font-size:26px;letter-spacing:-.02em}
 </style>
 </head>
 <body>
+<div id="splash" hidden><img alt=""></div>
+<script>try{if(localStorage.getItem("splash")==="1")document.getElementById("splash").hidden=false}catch(e){}</script>
 <div class="wrap">
   <header class="top">
     <div><h1>PKV &amp; Beihilfe</h1><p id="sub">Arztrechnungen der Familie</p></div>
@@ -1622,6 +1630,11 @@ async function applyProof(btn){
 
 /* ================= Einstellungen & Sicherung ================= */
 async function saveSettings(){S.settings.updatedAt=new Date().toISOString();await dbPut("meta",{key:"settings",...S.settings});scheduleSync()}
+async function showSplashPrev(){
+  const box=$("#splashPrev");if(!box)return;let rec=null;try{rec=await dbGet("meta","splash")}catch{}
+  if(rec?.blob){const u=URL.createObjectURL(rec.blob);S.edit?.urls?.push(u);box.innerHTML=`<img class="splashprev" src="${u}" alt="Startbild">`}else box.innerHTML=`<p class="status" style="margin:6px 0">Kein Startbild gewählt.</p>`;
+  const d=$("#splashDel");if(d)d.hidden=!rec?.blob;
+}
 function openSettings(){
   const s=S.settings;
   S.edit={mode:"settings",urls:[]};
@@ -1646,6 +1659,10 @@ function openSettings(){
     <div class="sec"><h3>Sicherung als Datei</h3>
       <p class="status" style="margin:0">Zum Einspielen der Startdatei oder für eine zusätzliche Kopie.${s.lastBackup?` Letzte Sicherung: ${dfmt(s.lastBackup.slice(0,10))}.`:""}</p>
       <div class="btnrow"><button type="button" class="btn" data-act="restore">Sicherung einspielen</button><button type="button" class="btn" data-act="backup">Sicherung erstellen</button></div></div>
+    <div class="sec"><h3>Startbild</h3>
+      <p class="status" style="margin:0">Wird beim Öffnen kurz gezeigt. Das Bild bleibt nur auf diesem Handy und wird nicht hochgeladen.</p>
+      <div id="splashPrev"></div>
+      <div class="btnrow"><button type="button" class="btn" data-act="splashpick">Bild wählen</button><button type="button" class="btn" data-act="splashdel" id="splashDel" hidden>Entfernen</button></div></div>
     <div class="sec"><h3>Anteile</h3>${rates}<p class="status" style="margin:0">Gilt für neue Rechnungen.</p></div>
     <div class="sec"><h3>Personen</h3>${rows}<div class="btnrow"><button type="button" class="btn" data-act="addp">Person hinzufügen</button></div></div>
     <div class="sec"><h3>Regeln</h3><div class="grid2">
@@ -1654,6 +1671,7 @@ function openSettings(){
       ${field("Warnen vor Fälligkeit (Tage)","warnD",s.warnDays??7,"number")}</div></div>
   `,`<button type="button" class="btn" data-act="close">Abbrechen</button><button type="button" class="btn primary" data-act="save">Speichern</button>`);
   updateChip();
+  showSplashPrev();
   $("#scrim").addEventListener("click",async e=>{
     const b=e.target.closest("[data-act]");if(!b)return;
     const n=id=>+String($("#"+id).value).replace(",",".")||0;
@@ -1668,6 +1686,10 @@ function openSettings(){
         G.token=null;try{localStorage.removeItem("gtok")}catch{}
         for(const k of LOCAL_KEYS.filter(k=>k.startsWith("drive")))S.settings[k]=k==="driveLinked"?false:null;
         await dbPut("meta",{key:"settings",...S.settings});closeSheet();updateChip();render();toast("Drive getrennt. Die Daten in Drive bleiben erhalten.");return;
+      case "splashpick":{const p=$("#pick");const acc=p.accept;p.accept="image/*";p.value="";
+        p.onchange=async()=>{p.accept=acc;const f=p.files[0];if(!f)return;const blob=await shrink(f,1600,0.85);
+          await dbPut("meta",{key:"splash",blob});try{localStorage.setItem("splash","1")}catch{}showSplashPrev();toast("Startbild gespeichert")};p.click();return}
+      case "splashdel":{await tx("meta","readwrite",st=>st.delete("splash"));try{localStorage.removeItem("splash")}catch{}showSplashPrev();toast("Startbild entfernt");return}
       case "restore":{const p=$("#pickBackup");p.value="";p.onchange=()=>{const f=p.files[0];if(f)restoreBackup(f)};p.click();return}
       case "addp":S.settings.people=[...collectPeople(),{name:"",group:"K"}];return openSettings();
       case "save":
@@ -1978,8 +2000,20 @@ try{if(localStorage.getItem("gdirty")==="1")G.dirty=true}catch{}
 async function driveBlob(driveId){if(!tokenValid()||!driveId)return null;try{return await (await gfetch(`${API}/${driveId}?alt=media`)).blob()}catch{return null}}
 
 /* ================= Start ================= */
+/* ================= Startbild (nur auf diesem Gerät) ================= */
+async function runSplash(){
+  const el=$("#splash");let rec=null;
+  try{rec=await dbGet("meta","splash")}catch{}
+  if(!rec?.blob){el.hidden=true;try{localStorage.removeItem("splash")}catch{}return}
+  const u=URL.createObjectURL(rec.blob),img=el.querySelector("img");
+  el.hidden=false;let done=false;
+  const end=()=>{if(done)return;done=true;el.classList.add("out");setTimeout(()=>{el.hidden=true;el.classList.remove("on","out");URL.revokeObjectURL(u)},360)};
+  el.onclick=end;
+  img.onload=()=>{requestAnimationFrame(()=>el.classList.add("on"));setTimeout(end,1100)};
+  img.onerror=end;img.src=u;setTimeout(end,2500); // Sicherheitsnetz
+}
 (async()=>{
-  render();
+  render();runSplash();
   try{
     const st=await dbGet("meta","settings");if(st){const {key,...rest}=st;S.settings={...DEFAULT_SETTINGS,...rest}}
     S.inv=await dbAll("invoices");
