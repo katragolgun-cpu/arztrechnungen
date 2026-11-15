@@ -438,7 +438,7 @@ function render(){
   if(!srch&&f.id==="einreichen"&&list.length>1)html+=`<div class="btnrow listtools">${S.select
     ?`<button type="button" class="btn" data-act="selall">Alle auswählen</button><button type="button" class="btn" data-act="selnone">Auswahl beenden</button>`
     :`<button type="button" class="btn" data-act="selstart">Mehrere auswählen</button>`}</div>`;
-  if(!srch&&f.id==="warten"&&!S.select)html+=`<div class="btnrow listtools"><button type="button" class="btn" data-act="proofstart">Leistungsnachweis erfassen</button></div>`;
+  if(!srch&&f.id==="warten"&&!S.select)html+=`<div class="btnrow listtools"><button type="button" class="btn" data-act="proofstart" data-k="pkv">Nachweis AXA</button><button type="button" class="btn" data-act="proofstart" data-k="bh">Nachweis Beihilfe</button></div>`;
   const oldNote=!srch&&f.id==="erledigt"&&hiddenOld?`<div class="searchinfo">${hiddenOld} erledigte Rechnung${hiddenOld===1?"":"en"} aus Vorjahren ausgeblendet. Über die Lupe findest du sie.</div>`:"";
   if(!list.length){L.innerHTML=html+`<div class="empty">${q?"Keine Treffer.":emptyTxt}</div>`+oldNote;return}
   // Warten: nach Abgabedatum gruppieren (frühestes noch offenes Einreichdatum), Gruppen ein-/ausklappbar
@@ -691,7 +691,7 @@ document.addEventListener("click",e=>{
     if(act==="selnone"){S.select=null;render();return}
     if(act==="selall"){S.select=new Set([...document.querySelectorAll(".card[data-id]")].map(x=>x.dataset.id));render();return}
     if(act==="bulk"){bulkSubmit(a.dataset.k);return}
-    if(act==="proofstart"){startProof();return}
+    if(act==="proofstart"){startProof(a.dataset.k);return}
     if(act==="guidestart"){guideStart();return}
   }
   const c=e.target.closest(".card[data-id]");
@@ -1572,7 +1572,7 @@ function matchInvoices(text,k,opt={}){
   // Betrag allein reicht, wenn er nur bei einer offenen Rechnung vorkommt (AXA nennt kein Rechnungsdatum)
   return cands.filter(c=>c.score>=3||(c.amt&&cands.filter(o=>o.amt&&o.amount===c.amount).length===1)).sort((a,b)=>b.score-a.score);
 }
-async function startProof(){const r=await scanDocument("Leistungsnachweis scannen");if(r)openProof(r)}
+async function startProof(k){const r=await scanDocument(k==="pkv"?"AXA-Nachweis scannen":k==="bh"?"Beihilfe-Bescheid scannen":"Leistungsnachweis scannen");if(r)openProof(r,k?{k}:undefined)}
 async function openProof(input,pre){
   const file=input.pdf||input.file||input;
   S.edit={mode:"proof",file,urls:[],k:pre?.k||"bh",pre:pre||null,rows:[],date:today(),total:null,busy:true,msg:"Leistungsnachweis wird gelesen …"};
