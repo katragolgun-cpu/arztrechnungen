@@ -447,6 +447,20 @@ function render(){
       html+=`<div class="year">${esc(CHECK_KINDS[k])} · ${g.length}</div>`;for(const r of g)html+=cardHtml(r,q)}
     L.innerHTML=html+oldNote;return;
   }
+  // Erledigt: nach Monat der Rechnung, neueste Gruppe offen
+  if(!srch&&!q&&f.id==="erledigt"){
+    const M=["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+    const groups=new Map();for(const r of list){const k=(r.i.invoiceDate||"").slice(0,7);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r)}
+    const keys=[...groups.keys()].sort((a,b)=>b.localeCompare(a));
+    if(!S.doneOpen)S.doneOpen=new Set(keys.slice(0,1));
+    for(const k of keys){const g=groups.get(k),open=S.doneOpen.has(k);
+      const back=g.reduce((a,{c})=>a+(c.pkv.state==="done"?c.pkv.received:0)+(c.bh.state==="done"?c.bh.received:0),0);
+      const label=k?`${M[+k.slice(5,7)-1]} ${k.slice(0,4)}`:"Ohne Datum";
+      html+=`<button type="button" class="grp" data-grpm="${esc(k)}" aria-expanded="${open}"><span class="chev">${open?"▼":"▶"}</span><span class="gt">${label}<span class="gs">${g.length} Rechnung${g.length===1?"":"en"} · erstattet ${eur(back)}</span></span><span class="ga num">${eur(g.reduce((a,{c})=>a+c.amount,0))}</span></button>`;
+      if(open)for(const r of g)html+=cardHtml(r,q);
+    }
+    L.innerHTML=html+oldNote;return;
+  }
   const byDate=!srch&&!q&&f.id==="warten";
   if(byDate){
     const groups=new Map();
@@ -669,6 +683,7 @@ document.addEventListener("click",e=>{
   if(e.target.closest(".sheet"))return;
   const f=e.target.closest("[data-f]");if(f){S.filter=f.dataset.f;S.select=null;closeSearch();render();window.scrollTo({top:0});return}
   const p=e.target.closest("[data-p]");if(p){S.person=p.dataset.p;render();return}
+  const gm=e.target.closest("[data-grpm]");if(gm){const k=gm.dataset.grpm;S.doneOpen.has(k)?S.doneOpen.delete(k):S.doneOpen.add(k);render();return}
   const gr=e.target.closest("[data-grp]");if(gr){const d=gr.dataset.grp;S.grpClosed.has(d)?S.grpClosed.delete(d):S.grpClosed.add(d);render();return}
   const a=e.target.closest("[data-act]");
   if(a){const act=a.dataset.act;
