@@ -1,5 +1,5 @@
 // Offline-Unterstützung: App-Dateien und Texterkennung werden zwischengespeichert.
-const VERSION = "v34";
+const VERSION = "v35";
 const SHELL = "shell-" + VERSION;
 const RUNTIME = "runtime-" + VERSION;
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"];
@@ -35,6 +35,8 @@ self.addEventListener("fetch", e => {
   }
   if (req.method !== "GET") return;
   const url = new URL(req.url);
+  // Testversion unter /test/ nicht anfassen
+  if (url.pathname.includes("/test/")) return;
 
   // App-Seite: erst Netz (für Updates), sonst Zwischenspeicher
   if (req.mode === "navigate") {
