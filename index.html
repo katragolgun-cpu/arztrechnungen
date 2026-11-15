@@ -2068,7 +2068,7 @@ async function mailCheck(){
 function mailHints(){
   const st=S.settings;if(!st.gmailOn)return [];const out=[];
   for(const [k,day] of Object.entries(st.mailNotice||{}))
-    out.push(`<span>${k==="pkv"?"Neue Nachricht in My AXA":"Neue Nachricht der Beihilfe"} vom ${dfmt(day)}. Abrechnung in der ${k==="pkv"?"AXA":"Beihilfe"}-App öffnen und hier über „Bescheid ${k==="pkv"?"AXA":"Beihilfe"}“ erfassen.</span><button type="button" class="btn" data-act="noticeok" data-k="${k}">Erledigt</button>`);
+    out.push(`<span>${k==="pkv"?"Neue Nachricht in My AXA":"Neue Nachricht der Beihilfe"} vom ${dfmt(day)}. In der ${k==="pkv"?"AXA":"Beihilfe"}-App den Bescheid öffnen und teilen an „PKV+Beihilfe“.</span><button type="button" class="btn" data-act="noticeok" data-k="${k}">Erledigt</button>`);
   const since=st.gmailSince||"9999";
   for(const i of S.inv)for(const k of ["pkv","bh"]){const s=i[k];
     if(s?.submitted&&s.submitted>=since&&!s.mailOk&&!s.receivedDate&&days(s.submitted,today())>=2)
