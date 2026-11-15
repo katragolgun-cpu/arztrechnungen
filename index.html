@@ -854,7 +854,11 @@ function nextHtml(inv,c){
     return p(`Ist die Erstattung von ${n} auf deinem Konto?<br><b>${eur(x.received)}</b> laut ${k==="pkv"?"Abrechnung":"Bescheid"} vom ${dfmt(x.s.proofDate||x.s.receivedDate)}.<br>Schau in die Sparkassen-App. Erst wenn das Geld da ist, bezahlst du den Arzt.`)+one("moneyok","Ja, Geld ist da",k)}
   if(c.step==="ueberweisen"||S.edit.showPay)return paySection(inv,c);
   if(inv.refundDue||c.over)return feeHtml(inv,c);
-  for(const k of ["bh","pkv"]){const h=objHtml(k,side(inv,k));if(h)return `<p class="status" style="margin:0 0 6px"><b>${k==="pkv"?"AXA":"Beihilfe"}:</b></p>`+h}
+  // Offene Kürzung oder offener Widerspruch zuerst, erst dann bereits geklärte Seiten anzeigen
+  {const ks=["bh","pkv"],open=k=>{const x=side(inv,k);return x.cutOpen||(x.s.obj&&!x.s.obj.result)};
+   const order=[...ks.filter(open),...ks.filter(k=>!open(k))];
+   const parts=order.map(k=>[k,objHtml(k,side(inv,k))]).filter(([,h])=>h);
+   if(parts.length)return parts.map(([k,h])=>`<p class="status" style="margin:0 0 6px"><b>${k==="pkv"?"AXA":"Beihilfe"}:</b></p>`+h).join(`<div style="height:12px"></div>`)}
   return p("Alles erledigt. Hier ist nichts mehr zu tun.");
 }
 // Stand je Seite, nur Text
