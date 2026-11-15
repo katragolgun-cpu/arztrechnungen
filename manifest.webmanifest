@@ -1,26 +1,57 @@
 {
-  "name": "Arztrechnungen",
-  "short_name": "Rechnungen",
-  "description": "Arztrechnungen der Familie: Zahlung, PKV- und Beihilfe-Erstattung im Blick.",
+  "name": "PKV & Beihilfe",
+  "short_name": "PKV+Beihilfe",
+  "description": "Arztrechnungen der Familie: Einreichen bei PKV und Beihilfe, Erstattung und Zahlung im Blick.",
   "lang": "de",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f3f5f7",
-  "theme_color": "#0d5f6b",
+  "theme_color": "#163a6b",
   "share_target": {
     "action": "./share",
     "method": "POST",
     "enctype": "multipart/form-data",
-    "params": { "files": [{ "name": "file", "accept": ["application/pdf", ".pdf", "image/*"] }] }
+    "params": {
+      "files": [
+        {
+          "name": "file",
+          "accept": [
+            "application/pdf",
+            ".pdf",
+            "image/*"
+          ]
+        }
+      ]
+    }
   },
   "file_handlers": [
-    { "action": "./", "accept": { "application/pdf": [".pdf"] } }
+    {
+      "action": "./",
+      "accept": {
+        "application/pdf": [
+          ".pdf"
+        ]
+      }
+    }
   ],
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Arztrechnungen</title>
-<meta name="theme-color" content="#0d5f6b">
+<title>PKV & Beihilfe</title>
+<meta name="theme-color" content="#163a6b">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -13,7 +13,7 @@
 :root{
   --bg:#f3f5f7; --surface:#ffffff; --sunken:#e8ecf0; --line:#d5dce3;
   --ink:#16222e; --muted:#5b6b7a;
-  --accent:#0d5f6b; --accent-ink:#ffffff;
+  --accent:#163a6b; --accent-ink:#ffffff;
   --ok:#1f7a45; --ok-soft:#dcefe3;
   --warn:#9a5b00; --warn-soft:#f7ead2;
   --bad:#b0322b; --bad-soft:#f6dedc;
@@ -24,7 +24,7 @@
 }
 @media (prefers-color-scheme: dark){:root{
   --bg:#0f161c; --surface:#172129; --sunken:#1e2a34; --line:#2b3a46;
-  --ink:#e6edf2; --muted:#93a4b3; --accent:#4fb3bf; --accent-ink:#06262b;
+  --ink:#e6edf2; --muted:#93a4b3; --accent:#7fb2e8; --accent-ink:#0b1f3a;
   --ok:#5cc489; --ok-soft:#173326; --warn:#e2a54a; --warn-soft:#3a2c14;
   --bad:#f0827a; --bad-soft:#3d1d1b; --wait:#8fa9e6; --wait-soft:#1e2a45; color-scheme:dark}}
 *{box-sizing:border-box}
@@ -181,12 +181,12 @@ header.top h1{font-size:26px;letter-spacing:-.02em}
 .card,.tile,.sumbar,.empty,.sec{border-color:transparent;box-shadow:var(--shadow)}
 .card{padding:14px 16px;border-radius:var(--r);transition:transform .12s ease}
 .card:active{transform:scale(.99)}
-.sumbar{background:linear-gradient(135deg,var(--accent),#0a4750);color:#fff;padding:16px 18px;border-radius:20px}
+.sumbar{background:linear-gradient(135deg,#163a6b,#0e2748);color:#fff;padding:16px 18px;border-radius:20px}
 @media (prefers-color-scheme: dark){.sumbar{background:linear-gradient(135deg,#0f4b55,#0a2f36)}}
 .sumbar .vals{flex-direction:column;gap:2px;font-size:13px;opacity:.95}
 .sumbar .vals>span{display:flex;align-items:baseline;gap:8px}
-.sumbar .pay b{color:#fff;font-size:26px} .sumbar .exp b{color:#cfe9ec;font-size:15px}
-.sumbar .chev{color:#cfe9ec}
+.sumbar .pay b{color:#fff;font-size:26px} .sumbar .exp b{color:#cfe0f5;font-size:15px}
+.sumbar .chev{color:#cfe0f5}
 .search input{border-radius:14px;border-color:transparent;box-shadow:var(--shadow);padding:12px 40px 12px 14px}
 .chip{border-color:transparent;box-shadow:var(--shadow);padding:7px 14px}
 .people{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding:6px 4px 4px;justify-content:space-between}
@@ -210,7 +210,7 @@ header.top h1{font-size:26px;letter-spacing:-.02em}
 <body>
 <div class="wrap">
   <header class="top">
-    <div><h1>Arztrechnungen</h1><p id="sub">Beihilfe und PKV im Blick</p></div>
+    <div><h1>PKV &amp; Beihilfe</h1><p id="sub">Arztrechnungen der Familie</p></div>
     <div class="hbtns"><button class="iconbtn sq" id="btnSearch" type="button" aria-label="Alle Rechnungen durchsuchen" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></button><button class="iconbtn sq" id="btnSettings" type="button" aria-label="Einstellungen" style="position:relative"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span class="dot" id="settingsDot" hidden></span></button></div>
   </header>
   <div id="banner" class="banner" hidden></div>
@@ -380,7 +380,7 @@ function avatarKey(p){if(p?.avatar&&AV_LABELS[p.avatar])return p.avatar;const k=
 function avatarFor(name){const p=S.settings.people.find(x=>x.name===name)||{name};return avatarSvg(avatarKey(p),name)}
 function avatarSvg(kind,name=""){
   const SK="#E9B993",HR="#3A2A22",EY="#2A211C",CH="#F2A3A0";
-  const bg={papa:"#CFE2F6",mama:"#F6D6E2",tochter:"#FBE6C2",sohn:"#D2EFDC",initiale:"#E3E8EE",alle:"#0d5f6b"}[kind]||"#E3E8EE";
+  const bg={papa:"#CFE2F6",mama:"#F6D6E2",tochter:"#FBE6C2",sohn:"#D2EFDC",initiale:"#E3E8EE",alle:"#163a6b"}[kind]||"#E3E8EE";
   const shirt={papa:"#3E6FA8",mama:"#C2577E",tochter:"#E8913A",sohn:"#3E9A62"}[kind]||"#7C8A96";
   const open=`<svg class="av" viewBox="0 0 64 64" aria-hidden="true"><defs><clipPath id="avc"><circle cx="32" cy="32" r="32"/></clipPath></defs><g clip-path="url(#avc)"><rect width="64" height="64" fill="${bg}"/>`;
   if(kind==="alle")return open+`<circle cx="22" cy="27" r="7" fill="#fff" opacity=".95"/><circle cx="42" cy="27" r="7" fill="#fff" opacity=".95"/><circle cx="25" cy="42" r="5" fill="#fff" opacity=".8"/><circle cx="39" cy="42" r="5" fill="#fff" opacity=".8"/><path d="M8 64c2-9 7-13 14-13s12 4 14 13zM28 64c2-9 7-13 14-13s12 4 14 13z" fill="#fff" opacity=".35"/></g></svg>`;
@@ -1379,7 +1379,7 @@ function drawScanEdit(){
   const k=Math.min(maxW/cur.w,maxH/cur.h);cv.width=Math.round(cur.w*k);cv.height=Math.round(cur.h*k);cur.k=k;
   const ctx=cv.getContext("2d");
   const paint=()=>{ctx.drawImage(cur.src,0,0,cv.width,cv.height);const q=cur.quad.map(([x,y])=>[x*k,y*k]);
-    ctx.fillStyle="rgba(13,95,107,.18)";ctx.strokeStyle="#4fb3bf";ctx.lineWidth=3;ctx.beginPath();q.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.fillStyle="rgba(22,58,107,.18)";ctx.strokeStyle="#7fb2e8";ctx.lineWidth=3;ctx.beginPath();q.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fill();ctx.stroke();
     for(const [x,y] of q){ctx.beginPath();ctx.arc(x,y,13,0,7);ctx.fillStyle="rgba(255,255,255,.9)";ctx.fill();ctx.lineWidth=3;ctx.stroke()}};
   paint();
   let drag=-1;
