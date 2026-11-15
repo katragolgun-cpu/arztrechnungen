@@ -148,7 +148,7 @@ input.num{font-family:var(--f-num)}
 .morelist .btn{width:100%;text-align:left;justify-content:flex-start}
 .nextstep .line{padding:6px 0}
 .next{font-size:13.5px;font-weight:600}
-.next.s-einreichen{color:var(--warn)} .next.s-warten{color:var(--wait)} .next.s-ueberweisen{color:var(--accent)} .next.s-nachweis{color:var(--bad)}
+.next.s-geld{color:var(--wait)} .next.s-einreichen{color:var(--warn)} .next.s-warten{color:var(--wait)} .next.s-ueberweisen{color:var(--accent)} .next.s-nachweis{color:var(--bad)}
 .due{font-size:12.5px;color:var(--muted)} .due.warn{color:var(--warn);font-weight:600} .due.bad{color:var(--bad);font-weight:600}
 .listtools{justify-content:flex-end}
 .card.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
@@ -299,8 +299,9 @@ function side(inv,key){
   // Geld eingegangen, Leistungsnachweis noch nicht geprüft (ältere Einträge ohne Angabe gelten als geprüft)
   const review=state==="done"&&s.checked===false;
   const waitDays=state==="wait"&&s.submitted?days(s.submitted,today()):0;
+  const moneyOpen=state==="done"&&s.moneyIn===false&&received>0.004; // Bescheid da, Geld auf dem Konto noch nicht bestätigt
   const cutOpen=state==="done"&&diff>0.004&&!s.cutOk; // Kürzung noch nicht akzeptiert oder per Widerspruch geklärt
-  return {rate,expected,state,received,diff,review,waitDays,cutOpen,s};
+  return {rate,expected,state,received,diff,review,waitDays,cutOpen,moneyOpen,s};
 }
 function calc(inv){
   const amount=r2(inv.amount),fee=r2(inv.fee),paid=isApo(inv)&&!(+inv.payment?.amount)?amount:r2(inv.payment?.amount),open=r2(amount+fee-paid); // Mahngebühr: zahlen ja, Erstattung nein
@@ -317,7 +318,8 @@ function calc(inv){
   const todo=pkv.state==="todo"||bh.state==="todo";
   const wait=pkv.state==="wait"||bh.state==="wait";
   const review=pkv.review||bh.review;
-  const step=todo?"einreichen":wait?"warten":review?"nachweis":unpaid?"ueberweisen":"erledigt";
+  const money=unpaid&&(pkv.moneyOpen||bh.moneyOpen); // erst zahlen, wenn die Erstattung auf dem Konto ist
+  const step=todo?"einreichen":wait?"warten":review?"nachweis":money?"geld":unpaid?"ueberweisen":"erledigt";
   const over=open<-0.004&&!inv.refundDue; // überzahlt, noch nicht geklärt
   return {amount,fee,over,paid,open,unpaid,overdue,dueSoon,due,daysLeft,age,pkv,bh,cut,todo,wait,review,step,askLong,objOpen,done:step==="erledigt",check:!!inv.check||cut>0.004||over||!!inv.refundDue};
 }
@@ -339,7 +341,7 @@ const NAV_ICONS={
 const FILTERS=[
   {id:"einreichen",label:"Einreichen",nav:1,test:c=>c.step==="einreichen"},
   {id:"warten",label:"Warten",nav:1,test:c=>c.step==="warten"},
-  {id:"nachweis",label:"Nachweis",nav:1,test:c=>c.step==="nachweis"},
+  {id:"nachweis",label:"Nachweis",nav:1,test:c=>c.step==="nachweis"||c.step==="geld"},
   {id:"ueberweisen",label:"Überweisen",nav:1,test:c=>c.step==="ueberweisen"},
   {id:"erledigt",label:"Erledigt",nav:1,test:c=>c.step==="erledigt"},
   {id:"pruefen",label:"Prüfen",test:c=>c.check},
@@ -353,6 +355,7 @@ function nextStepText(i,c){
     const long=[["AXA",c.pkv],["Beihilfe",c.bh]].filter(([,x])=>x.waitDays>ASK_DAYS);
     return `Warten auf ${w.join(" und ")}`+(long.length?` · seit ${Math.max(...long.map(([,x])=>x.waitDays))} Tagen, bei ${long.map(([n])=>n).join(" und ")} nachfragen`:"")}
   if(c.step==="nachweis"){const w=[["PKV",c.pkv],["Beihilfe",c.bh]].filter(([,x])=>x.review).map(([n,x])=>x.diff>0.004?`${n} ${eur(x.received)} statt ${eur(x.expected)}`:`${n} ${eur(x.received)}`);return `Nachweis prüfen: ${w.join(", ")}`}
+  if(c.step==="geld"){const w=[["AXA",c.pkv],["Beihilfe",c.bh]].filter(([,x])=>x.moneyOpen).map(([n,x])=>`${n} ${eur(x.received)}`);return `Geld da? ${w.join(" und ")} auf dem Konto prüfen`}
   if(c.step==="ueberweisen")return `Jetzt ${eur(c.open)} überweisen`;
   if(c.objOpen)return "Widerspruch eingelegt, Ergebnis offen";
   if(i.refundDue)return `${eur(-c.open)} zu viel bezahlt: beim Arzt zurückfordern`;
@@ -417,14 +420,14 @@ function render(){
   if(!S.inv.length){L.innerHTML=`<div class="empty">Noch keine Rechnungen.<br>Tippe auf <b>+ Rechnung</b> oder spiele unter <b>Einstellungen</b> deine Startdatei ein.</div>`;return}
   const q=S.q.trim();
   const list=(q?mine.filter(r=>matchQ(r.i,q)):srch?mine:vis.filter(r=>f.test(r.c))).sort((a,b)=>(b.i.invoiceDate||"").localeCompare(a.i.invoiceDate||""));
-  const emptyTxt={einreichen:"Alles eingereicht – keine offenen Einreichungen.",warten:"Keine offenen Erstattungen.",nachweis:"Keine Nachweise zu prüfen.",ueberweisen:"Nichts zu überweisen.",erledigt:"Noch nichts erledigt."}[f.id]||"Keine Rechnungen in dieser Ansicht.";
+  const emptyTxt={einreichen:"Alles eingereicht – keine offenen Einreichungen.",warten:"Keine offenen Erstattungen.",nachweis:"Keine Nachweise zu prüfen, kein Geldeingang offen.",ueberweisen:"Nichts zu überweisen.",erledigt:"Noch nichts erledigt."}[f.id]||"Keine Rechnungen in dieser Ansicht.";
   let html="";
   if(srch&&!q)html+=`<div class="searchinfo">Alle ${list.length} Rechnungen${S.person!=="alle"?" von "+esc(S.person):""}. Tippe oben, um zu suchen.</div>`;
   if(q)html+=`<div class="searchinfo">${list.length} Treffer für „${esc(q)}“ in allen Rechnungen${S.person!=="alle"?" von "+esc(S.person):""}. Filter sind während der Suche aus.</div>`;
   if(!srch&&f.id==="einreichen"&&list.length>1)html+=`<div class="btnrow listtools">${S.select
     ?`<button type="button" class="btn" data-act="selall">Alle auswählen</button><button type="button" class="btn" data-act="selnone">Auswahl beenden</button>`
     :`<button type="button" class="btn" data-act="selstart">Mehrere auswählen</button>`}</div>`;
-  if(!srch&&["warten","nachweis"].includes(f.id)&&!S.select)html+=`<div class="btnrow listtools"><button type="button" class="btn" data-act="proofstart">Leistungsnachweis erfassen</button></div>`;
+  if(!srch&&f.id==="warten"&&!S.select)html+=`<div class="btnrow listtools"><button type="button" class="btn" data-act="proofstart">Leistungsnachweis erfassen</button></div>`;
   const oldNote=!srch&&f.id==="erledigt"&&hiddenOld?`<div class="searchinfo">${hiddenOld} erledigte Rechnung${hiddenOld===1?"":"en"} aus Vorjahren ausgeblendet. Über die Lupe findest du sie.</div>`:"";
   if(!list.length){L.innerHTML=html+`<div class="empty">${q?"Keine Treffer.":emptyTxt}</div>`+oldNote;return}
   // Warten: nach Abgabedatum gruppieren (frühestes noch offenes Einreichdatum), Gruppen ein-/ausklappbar
@@ -452,11 +455,11 @@ function render(){
 }
 /* ================= Geführter Durchlauf ================= */
 // Aufgaben in fester Reihenfolge: einreichen -> Nachweis prüfen -> überweisen -> nachfragen
-const GUIDE_KINDS={einreichen:"Einreichen",nachweis:"Nachweis prüfen",ueberweisen:"Arzt bezahlen",nachfragen:"Nachfragen"};
+const GUIDE_KINDS={einreichen:"Einreichen",nachweis:"Nachweis prüfen",geld:"Geldeingang prüfen",ueberweisen:"Arzt bezahlen",nachfragen:"Nachfragen"};
 function guideTasks(){
   const out=[];
   for(const i of S.inv){const c=calc(i);let k=null;
-    if(c.step==="einreichen")k="einreichen";else if(c.step==="nachweis")k="nachweis";else if(c.step==="ueberweisen")k="ueberweisen";else if(c.step==="warten"&&c.askLong)k="nachfragen";
+    if(c.step==="einreichen")k="einreichen";else if(c.step==="nachweis")k="nachweis";else if(c.step==="geld")k="geld";else if(c.step==="ueberweisen")k="ueberweisen";else if(c.step==="warten"&&c.askLong)k="nachfragen";
     if(k)out.push({id:i.id,k,c,i})}
   const ord=Object.keys(GUIDE_KINDS);
   return out.sort((a,b)=>ord.indexOf(a.k)-ord.indexOf(b.k)||(a.k==="ueberweisen"?(a.c.due||"").localeCompare(b.c.due||""):(a.i.invoiceDate||"").localeCompare(b.i.invoiceDate||"")));
@@ -465,6 +468,7 @@ function renderGuideCard(){
   const el=$("#guideCard");if(!el)return;
   if(!S.loaded||!S.inv.length||S.select){el.hidden=true;return}
   const t=guideTasks();el.hidden=false;
+  try{if(navigator.setAppBadge){t.length?navigator.setAppBadge(t.length):navigator.clearAppBadge()}}catch{}
   if(!t.length){el.innerHTML=`<div class="gl"><b>Heute nichts zu tun</b><span>Alle Rechnungen warten oder sind erledigt.</span></div>`;return}
   const n={};for(const x of t)n[x.k]=(n[x.k]||0)+1;
   const parts=Object.keys(GUIDE_KINDS).filter(k=>n[k]).map(k=>`${n[k]} × ${GUIDE_KINDS[k]}`);
@@ -487,10 +491,11 @@ function guideBar(inv,c){
   const it=g.items[g.i],done=c.step!==it.from,last=g.i===g.items.length-1;
   const how={einreichen:"PDF an die Beihilfe-App und die AXA-App senden, danach jeweils abhaken.",
     nachweis:"Betrag im Bescheid mit dem erwarteten Betrag vergleichen, dann „geprüft“ tippen.",
+    geld:"In der Sparkassen-App nachsehen, ob die Erstattung eingegangen ist. Wenn ja, „Ja, Geld ist da“ tippen. Wenn nicht, überspringen.",
     ueberweisen:"Die Erstattung ist da. QR-Code in der Sparkassen-App scannen, dann „bezahlt“ tippen.",
     nachfragen:"Seit über 4 Wochen keine Erstattung. Bei AXA bzw. Beihilfe nachfragen, dann weiter."}[it.k];
   return `<div class="guidebar"><div class="gtop">Aufgabe ${g.i+1} von ${g.items.length} · ${GUIDE_KINDS[it.k]}</div>
-    <div class="gtxt">${done?"Erledigt. Weiter zur nächsten Aufgabe.":how}</div>
+    <div class="gtxt">${done?(it.k==="geld"&&c.step==="ueberweisen"?"Geld bestätigt. Du kannst den Arzt jetzt direkt bezahlen, danach Weiter.":"Erledigt. Weiter zur nächsten Aufgabe."):how}</div>
     <div class="btnrow"><button type="button" class="btn${done||it.k==="nachfragen"?" primary":""}" data-act="gnext">${last?"Fertig":done||it.k==="nachfragen"?"Weiter":"Überspringen"}</button><button type="button" class="btn" data-act="gstop">Beenden</button></div></div>`;
 }
 function submittedWait(c){
@@ -781,6 +786,8 @@ function nextHtml(inv,c){
     return p(`Warten auf die Erstattung.<br>${txt}<br>Kommt ein Bescheid oder eine Abrechnung, hier erfassen.`)+one("proofcap","Leistungsnachweis erfassen",w.length===1?w[0][0]:"")}
   if(c.step==="nachweis"){const [k,n]=[["pkv","AXA"],["bh","Beihilfe"]].find(([k])=>c[k].review);const x=c[k];
     return p(`${n}-Nachweis prüfen: ${eur(x.received)} erhalten, ${eur(x.expected)} erwartet.`)+one("checkok",`${n} geprüft`,k)}
+  if(c.step==="geld"&&!S.edit.showPay){const [k,n]=[["pkv","AXA"],["bh","Beihilfe"]].find(([k])=>c[k].moneyOpen);const x=c[k];
+    return p(`Ist die Erstattung von ${n} auf deinem Konto?<br><b>${eur(x.received)}</b> laut ${k==="pkv"?"Abrechnung":"Bescheid"} vom ${dfmt(x.s.proofDate||x.s.receivedDate)}.<br>Schau in die Sparkassen-App. Erst wenn das Geld da ist, bezahlst du den Arzt.`)+one("moneyok","Ja, Geld ist da",k)}
   if(c.step==="ueberweisen"||S.edit.showPay)return paySection(inv,c);
   if(inv.refundDue||c.over)return feeHtml(inv,c);
   for(const k of ["bh","pkv"]){const h=objHtml(k,side(inv,k));if(h)return `<p class="status" style="margin:0 0 6px"><b>${k==="pkv"?"AXA":"Beihilfe"}:</b></p>`+h}
@@ -793,6 +800,7 @@ function statusLine(key,title,inv){
   else if(c.state==="todo")info=`${eur(c.expected)} erwartet · noch nicht eingereicht`;
   else if(c.state==="wait")info=`${eur(c.expected)} erwartet · eingereicht ${dfmt(s.submitted)}`;
   else{info=`${eur(c.received)} erhalten am ${dfmt(s.receivedDate)}${c.diff>0.004?` · <b style="color:var(--bad)">${eur(c.diff)} weniger als erwartet</b>`:c.diff<-0.004?` · ${eur(-c.diff)} mehr als erwartet`:""}`;
+    if(c.moneyOpen)info+=` · <b style="color:var(--wait)">Geld auf dem Konto noch nicht bestätigt</b>`;
     if(s.appId)info+=` · Antrag ${esc(s.appId)}`;
     if(s.eligible!=null)info+=`<br>${cutHtml(r2(inv.amount-s.eligible),s.cutNote,false,key)}`;
     if(s.obj)info+=`<br>Widerspruch vom ${dfmt(s.obj.date)}: ${!s.obj.result?"Ergebnis offen":s.obj.result==="nachzahlung"?"Nachzahlung erhalten":"abgelehnt"}`;
@@ -833,7 +841,7 @@ async function viewClick(e){
       if(navigator.canShare?.({files:[f]})){try{await navigator.share({files:[f],title:f.name})}catch{}}else toast("Teilen wird hier nicht unterstützt");return}
     case "ask":S.edit.ask=k;S.edit.moreOpen=false;drawView();$(".nextstep")?.scrollIntoView({block:"center"});$("#askAmt")?.focus();return;
     case "askno":S.edit.ask=null;return drawView();
-    case "got":{const v=r2(String($("#askAmt").value).replace(/\./g,"").replace(",","."));inv[k].received=v;inv[k].receivedDate=today();if(!inv[k].submitted)inv[k].submitted=today();
+    case "got":{const v=r2(String($("#askAmt").value).replace(/\./g,"").replace(",","."));inv[k].received=v;inv[k].receivedDate=today();inv[k].moneyIn=today();if(!inv[k].submitted)inv[k].submitted=today();
       inv[k].checked=false;S.edit.ask=null;await saveInvoice(inv);toast("Geld eingegangen – jetzt Leistungsnachweis prüfen");return drawView()}
     case "resub":S.edit.resub=k;S.edit.moreOpen=false;drawView();$(".nextstep")?.scrollIntoView({block:"center"});return;
     case "resubno":S.edit.resub=null;return drawView();
@@ -842,6 +850,7 @@ async function viewClick(e){
       x.note=x.note?`${x.note} (${was})`:was;
       x.submitted=null;x.receivedDate=null;x.received="";delete x.checked;
       S.edit.resub=null;await saveInvoice(inv);toast((k==="pkv"?"PKV":"Beihilfe")+": wieder bei Schritt 1 Einreichen");return drawView()}
+    case "moneyok":inv[k].moneyIn=today();await saveInvoice(inv);{const c1=calc(inv);toast(c1.step==="ueberweisen"?"Geld da. Jetzt den Arzt bezahlen.":(k==="pkv"?"AXA":"Beihilfe")+": Geld bestätigt")}return drawView();
     case "checkok":inv[k].checked=true;await saveInvoice(inv);toast((k==="pkv"?"PKV":"Beihilfe")+": geprüft");return drawView();
     case "objset":inv[k].obj={date:today(),result:null};await saveInvoice(inv);toast("Widerspruch eingetragen");return drawView();
     case "objyes":inv[k].obj.result="nachzahlung";inv[k].obj.resultDate=today();inv[k].cutOk=true;await saveInvoice(inv);toast("Nachzahlung eingetragen. Den Korrektur-Bescheid über „Leistungsnachweis erfassen“ übernehmen.");return drawView();
@@ -1533,7 +1542,7 @@ async function applyProof(btn){
   const fid=await storeFile(blob,`${e.date}_${k==="pkv"?"PKV":"Beihilfe"}_Leistungsnachweis${blob.type==="application/pdf"?".pdf":".jpg"}`);
   for(const r of sel){
     const inv=structuredClone(S.inv.find(x=>x.id===r.id));if(!inv)continue;const s=inv[k]=inv[k]||{};
-    if(!s.submitted)s.submitted=e.date;if(!r.already&&(!s.receivedDate||s.checked!==false))s.receivedDate=e.date;s.received=r2(r.amount);s.checked=true;
+    if(!s.submitted)s.submitted=e.date;if(!r.already&&(!s.receivedDate||s.checked!==false))s.receivedDate=e.date;s.received=r2(r.amount);s.checked=true;if(!r.already&&!s.moneyIn&&r2(r.amount)>0)s.moneyIn=false;
     if(e.appId)s.appId=e.appId;
     if(r.eligible!=null&&r.eligible<r2(inv.amount)-0.004){s.eligible=r.eligible;s.cutNote=r.note||""}else{delete s.eligible;delete s.cutNote}
     s.proofFileId=fid;s.proofDriveId=null;s.proofUrl="";s.proofFolder=null;s.proofName=null;s.proofShared=true;s.proofDate=e.date;
