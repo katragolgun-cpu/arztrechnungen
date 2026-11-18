@@ -362,7 +362,7 @@ function dueDate(inv){
    einreichen -> bescheid (warten) -> geld (warten) -> bezahlen -> erledigt.
    Daneben Aufgaben zum Klären (Kürzung, Fehlbuchung, Nachfragen …), die den Ablauf nicht blockieren. */
 const STEP_LABEL={einreichen:"Einreichen",bescheid:"Warten auf Bescheid",geld:"Warten auf Geld",bezahlen:"Arzt bezahlen",erledigt:"Erledigt"};
-const TASK_LABEL={einreichen:"Einreichen",bezahlen:"Arzt bezahlen",kuerzung:"Kürzung: akzeptieren oder Widerspruch",fehlbuchung:"AXA über Fehlbuchung informieren",
+const TASK_LABEL={einreichen:"Einreichen",bezahlen:"Arzt bezahlen",kuerzung:"Kürzung oder Ablehnung: akzeptieren oder Widerspruch",fehlbuchung:"AXA über Fehlbuchung informieren",
   nachreichen:"Unterlagen nachreichen",original:"Originalrechnung anfordern",nachfrage:"Nachfragen",nachfragen:"Nachfragen: lange kein Bescheid",zahlung:"Zahlung klären",sonst:"Klären"};
 const KLAEREN=["kuerzung","fehlbuchung","nachreichen","original","nachfrage","nachfragen","zahlung","sonst"];
 function calc(inv){
@@ -612,7 +612,7 @@ function lineText(i,c,task){
   return "";
 }
 function taskLine(i,c,x){
-  if(x.t==="kuerzung"){const s=c[x.k];return `${SN(x.k)} hat ${eur(s.diff)} weniger erstattet`}
+  if(x.t==="kuerzung"){const s=c[x.k];return s.received<=0.004?`${SN(x.k)} hat abgelehnt (0 € statt ${eur(s.expected)})`:`${SN(x.k)} hat ${eur(s.diff)} weniger erstattet`}
   if(x.t==="nachfragen"){const s=c[x.k];return `${SN(x.k)}: seit ${s.waitDays} Tagen kein Bescheid`}
   if(x.t==="zahlung")return i.refundDue?`${eur(-c.open)} zu viel bezahlt: zurückfordern`:`${eur(-c.open)} mehr überwiesen als die Rechnung`;
   const is=(i.issues||[]).find(z=>z.id===x.issue);return is?.text||TASK_LABEL[x.t];
@@ -935,7 +935,7 @@ function taskBody(inv,c,x){
   const rech=rechText(inv,c),L=a=>a.filter(v=>v!==null).join("\n");
   if(x.t==="kuerzung"){const s=c[x.k],b=s.b,frist=x.k==="bh"&&b?.date?addMonths(b.date,1):null,late=!!(frist&&frist<today());
     const ref=`${b?.date?` vom ${dfmt(b.date)}`:""}${b?.appId?` (${x.k==="pkv"?"Vorgang":"Antrag"} ${b.appId})`:""}`;
-    return `<p class="status" style="margin:2px 0 6px">${eur(s.received)} erhalten, ${eur(s.expected)} erwartet: <b style="color:var(--bad)">${eur(s.diff)} weniger</b>.${s.item?.note?`<br>Grund laut Bescheid: ${esc(s.item.note)}`:""}<br>${frist?(late?`Widerspruchsfrist am ${dfmt(frist)} abgelaufen.`:`<b style="color:var(--warn)">Widerspruch möglich bis ${dfmt(frist)}.</b>`):""}</p>`
+    return `<p class="status" style="margin:2px 0 6px">${s.received<=0.004?`<b style="color:var(--bad)">Abgelehnt:</b> 0 € erhalten, ${eur(s.expected)} erwartet.`:`${eur(s.received)} erhalten, ${eur(s.expected)} erwartet: <b style="color:var(--bad)">${eur(s.diff)} weniger</b>.`}${s.item?.note?`<br>Grund laut Bescheid: ${esc(s.item.note)}`:""}<br>${frist?(late?`Widerspruchsfrist am ${dfmt(frist)} abgelaufen.`:`<b style="color:var(--warn)">Widerspruch möglich bis ${dfmt(frist)}.</b>`):""}</p>`
       +textBox(late?`Bitte um Überprüfung an ${SN(x.k)}`:`Widerspruch an ${SN(x.k)}`,L(["Sehr geehrte Damen und Herren,","",
         late?`ich bitte um Überprüfung ${x.k==="pkv"?"der Abrechnung":"des Beihilfebescheids"}${ref}.`:`gegen ${x.k==="pkv"?"die Abrechnung":"den Beihilfebescheid"}${ref} lege ich Widerspruch ein.`,
         `Betroffen ist die ${rech} für ${inv.patient}.`,`Erstattet wurden ${eur(s.received)}, erwartet hatte ich ${eur(s.expected)}. Die Differenz beträgt ${eur(s.diff)}.`,
@@ -1321,7 +1321,7 @@ function fillProofRows(){const e=S.edit,k=e.k;
   const ms=matchInvoices(e.text||"",k);
   e.rows=ms.map(m=>{const inv=S.inv.find(x=>x.id===m.id);const s=side(inv,k);
     const note=(m.hints||[]).map(h=>e.notes?.[h]).filter(Boolean).join(" ");
-    return {id:m.id,already:s.state==="done"&&!e.correction,on:m.refund!==0&&!m.ambiguous,ambiguous:!!m.ambiguous,rejected:m.refund===0,eligible:m.eligible,note,
+    return {id:m.id,already:s.state==="done"&&!e.correction,on:!m.ambiguous,ambiguous:!!m.ambiguous,rejected:m.refund===0,eligible:m.eligible,note,
       amount:m.refund!=null?m.refund:s.state==="done"?s.received:s.expected}});
   // Schon erledigte nur anhaken, wenn der Bescheid nur erledigte betrifft (Nachtrag); sonst nur anzeigen und mitzählen
   if(e.rows.some(r=>!r.already))e.rows.forEach(r=>{if(r.already)r.on=false});
@@ -1330,7 +1330,7 @@ function fillProofRows(){const e=S.edit,k=e.k;
 function drawProof(){
   const e=S.edit,k=e.k;
   const rows=e.rows.map((r,i)=>{const inv=S.inv.find(x=>x.id===r.id);if(!inv)return "";const s=side(inv,k);
-    return `<div class="prow"><label class="pchk"><input type="checkbox" data-row="${i}" ${r.on?"checked":""}><span><b>${esc(title(inv))}</b><br><span class="status">${esc(inv.patient)} · ${dfmt(inv.invoiceDate)} · ${eur(inv.amount)} · erwartet ${eur(s.expected)}</span>${r.rejected?`<br><span style="color:var(--bad);font-size:12.5px">Im Bescheid abgelehnt (0 €) – nur auswählen, wenn das endgültig ist</span>`:""}${r.ambiguous?`<br><span style="color:var(--warn);font-size:12.5px">Gleicher Betrag wie eine andere Rechnung – bitte selbst auswählen</span>`:""}${r.already?`<br><span class="status" style="font-size:12.5px">Hat schon einen Bescheid (${eur(s.received)} vom ${dfmt(s.b?.date)})</span>`:""}${r.eligible!=null&&r.eligible<r2(inv.amount)-0.004?`<br><span style="color:var(--warn);font-size:12.5px"><b>Gekürzt:</b> ${eur(r2(inv.amount-r.eligible))}${r.note?" · "+esc(r.note):""}</span>`:""}</span></label>
+    return `<div class="prow"><label class="pchk"><input type="checkbox" data-row="${i}" ${r.on?"checked":""}><span><b>${esc(title(inv))}</b><br><span class="status">${esc(inv.patient)} · ${dfmt(inv.invoiceDate)} · ${eur(inv.amount)} · erwartet ${eur(s.expected)}</span>${r.rejected?`<br><span style="color:var(--bad);font-size:12.5px">Im Bescheid abgelehnt (0 €) – wird als Ablehnung übernommen, danach unter „Klären“</span>`:""}${r.ambiguous?`<br><span style="color:var(--warn);font-size:12.5px">Gleicher Betrag wie eine andere Rechnung – bitte selbst auswählen</span>`:""}${r.already?`<br><span class="status" style="font-size:12.5px">Hat schon einen Bescheid (${eur(s.received)} vom ${dfmt(s.b?.date)})</span>`:""}${r.eligible!=null&&r.eligible<r2(inv.amount)-0.004?`<br><span style="color:var(--warn);font-size:12.5px"><b>Gekürzt:</b> ${eur(r2(inv.amount-r.eligible))}${r.note?" · "+esc(r.note):""}</span>`:""}</span></label>
       <label class="f">Erstattet (€)<input class="num" inputmode="decimal" data-amt="${i}" value="${String((+r.amount||0).toFixed(2)).replace(".",",")}"></label></div>`}).join("");
   const used=new Set(e.rows.map(r=>r.id));
   const isOpen=x=>["todo","wait"].includes(side(x,k).state);
