@@ -233,6 +233,8 @@ header.top h1{font-size:26px;letter-spacing:-.02em}
 .hrow{display:flex;gap:12px;padding:4px 0;border-bottom:1px solid var(--line)} .hrow .num{min-width:84px;color:var(--muted)}
 .btn.link.inl{padding:0;font-size:inherit;text-decoration:underline}
 #sumBar{cursor:default}
+.mline{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.mline .btn{flex:none}
 </style>
 </head>
 <body>
@@ -478,7 +480,7 @@ function rowsFor(){const rows=S.inv.map(i=>({i,c:calc(i)}));return S.person==="a
 function bescheidMine(b){return S.person==="alle"||b.items.some(it=>S.inv.find(x=>x.id===it.invId)?.patient===S.person)}
 function counts(rows){
   return {zutun:rows.reduce((a,r)=>a+r.c.tasks.length,0),
-    laeuft:rows.filter(r=>r.c.step==="bescheid"||r.c.objOpen).length+S.besch.filter(b=>bescheidMine(b)&&geldOffen(b)).length};
+    laeuft:rows.filter(r=>r.c.step==="bescheid"||r.c.objOpen||r.c.pkv.moneyOpen||r.c.bh.moneyOpen).length};
 }
 // Bescheid wartet auf Geld: Betrag > 0, noch nicht als eingegangen markiert
 function geldOffen(b){return !b.moneyIn&&b.items.some(it=>r2(it.refund)>0.004&&isLatest(b,it))}
@@ -521,8 +523,8 @@ function zutunHtml(rows){
   const t=guideTasks(rows);
   let h="";
   if(t.length)h+=`<div class="guidecard"><div class="gl"><b>${t.length} Aufgabe${t.length===1?"":"n"}</b><span>${esc(guideSummary(t))}</span></div><button type="button" class="btn primary" data-act="guidestart">Los geht's</button></div>`;
-  const gm=S.besch.filter(b=>bescheidMine(b)&&geldOffen(b)).length;
-  if(gm)h+=`<button type="button" class="hint" data-area="laeuft">${gm} Bescheid${gm===1?"":"e"} warte${gm===1?"t":"n"} auf das Geld. Ist es da? Unter <b>Läuft</b> bestätigen, danach kannst du bezahlen.</button>`;
+  const gm=rows.filter(r=>r.c.pkv.moneyOpen||r.c.bh.moneyOpen).length;
+  if(gm)h+=`<button type="button" class="hint" data-area="laeuft">${gm} Rechnung${gm===1?" wartet":"en warten"} auf das Geld. Ist es da? Unter <b>Läuft</b> bestätigen, danach kannst du bezahlen.</button>`;
   const ein=rows.filter(r=>r.c.step==="einreichen").sort((a,b)=>(a.i.invoiceDate||"").localeCompare(b.i.invoiceDate||""));
   const bez=rows.filter(r=>r.c.step==="bezahlen").sort((a,b)=>(a.c.due||"9").localeCompare(b.c.due||"9"));
   const kl=rows.flatMap(r=>r.c.klaeren.map(x=>({...r,task:x}))).sort((a,b)=>taskOrder(a.task)-taskOrder(b.task)||(a.i.invoiceDate||"").localeCompare(b.i.invoiceDate||""));
@@ -547,10 +549,11 @@ function laeuftHtml(rows){
     for(const d of [...g.keys()].sort((a,b)=>b.localeCompare(a))){const list=g.get(d),ago=d?days(d,today()):null;
       const sum=list.reduce((a,{c})=>a+(c.pkv.state==="wait"?c.pkv.expected:0)+(c.bh.state==="wait"?c.bh.expected:0),0);
       h+=grp("w:"+d,d?"Eingereicht am "+dfmt(d):"Ohne Datum",`${ago!==null?(ago===0?"heute":`vor ${ago} Tag${ago===1?"":"en"}`)+" · ":""}${list.length} Rechnung${list.length===1?"":"en"}`,eur(sum),list.map(r=>cardHtml(r,{})).join(""))}}
-  const gb=S.besch.filter(b=>bescheidMine(b)&&geldOffen(b)).sort((a,b)=>(a.date||"").localeCompare(b.date||""));
-  h+=sectionHead("Warten auf Geld",gb.length);
-  if(!gb.length)h+=`<div class="empty">Kein Bescheid wartet auf den Geldeingang.</div>`;
-  for(const b of gb)h+=bcardHtml(b,true);
+  // Je Rechnung eine Karte: AXA und Beihilfe untereinander, jeweils mit „Geld da“
+  const gm=rows.filter(r=>r.c.pkv.moneyOpen||r.c.bh.moneyOpen).sort((a,b)=>(a.i.invoiceDate||"").localeCompare(b.i.invoiceDate||""));
+  h+=sectionHead("Warten auf Geld",gm.length);
+  if(!gm.length)h+=`<div class="empty">Keine Rechnung wartet auf den Geldeingang.</div>`;
+  for(const r of gm)h+=moneyCardHtml(r);
   const ob=rows.filter(r=>r.c.objOpen);
   if(ob.length){h+=sectionHead("Widerspruch läuft",ob.length);for(const r of ob)h+=cardHtml(r,{})}
   return h;
@@ -565,6 +568,20 @@ function bcardHtml(b,withMoney){
     <div class="meta">${inv.length} Rechnung${inv.length===1?"":"en"}${names?" · "+esc(names):""}${b.appId?" · Antrag "+esc(b.appId):""}${b.manual?" · ohne Dokument":""}</div></div>
     <div class="amt">${eur(bescheidSum(b))}</div></div></button>
     ${withMoney?`<div class="btnrow"><button type="button" class="btn primary" data-act="bmoney" data-bid="${esc(b.id)}">Geld ist da</button></div>`:""}</div>`;
+}
+// Karte „Warten auf Geld“: eine Rechnung, beide Seiten
+function moneyCardHtml({i,c}){
+  const line=x=>{
+    if(x.state==="na")return "";
+    const n=SN(x.k);
+    if(x.moneyOpen){const others=x.b.items.filter(it=>it.invId!==i.id).length;
+      return `<div class="mline"><div><b>${n} ${eur(x.received)}</b><div class="status">Bescheid vom ${dfmt(x.b.date)}${others?` · zusammen mit ${others} weiteren Rechnung${others===1?"":"en"}, Überweisung ${eur(bescheidSum(x.b))}`:""}</div></div><button type="button" class="btn primary" data-act="bmoney" data-bid="${esc(x.b.id)}">Geld da</button></div>`}
+    if(x.state==="done")return `<div class="mline"><div>${n} ${eur(x.received)}<div class="status" style="color:var(--ok)">${x.b.moneyIn?"Geld da am "+dfmt(x.b.moneyIn):"kein Geld erwartet"}</div></div></div>`;
+    return `<div class="mline"><div>${n} ${eur(x.expected)}<div class="status">${x.state==="wait"?"Bescheid fehlt noch":"noch nicht eingereicht"}</div></div></div>`;
+  };
+  return `<div class="bcard"><button type="button" class="bmain" data-open="${esc(i.id)}"><div class="row1"><div class="who"><div class="prov">${esc(title(i))}</div>${i.billing?`<div class="via">über ${esc(i.billing)}</div>`:""}
+    <div class="meta"><span class="pchip">${avatarFor(i.patient)}${esc(i.patient||"?")}</span>${dfmt(i.invoiceDate)}</div></div><div class="amt">${eur(c.amount)}</div></div></button>
+    ${line(c.pkv)}${line(c.bh)}</div>`;
 }
 /* ---- Archiv: erledigte Rechnungen und alle Bescheide ---- */
 function archivHtml(rows){
@@ -707,6 +724,7 @@ document.addEventListener("click",e=>{
     if(act==="settings")return openSettings();
     if(act==="importstart")return openSettings("import");
   }
+  const op=e.target.closest("[data-open]");if(op){openView(op.dataset.open);return}
   const bm=e.target.closest("[data-bid]");if(bm){openBescheid(bm.dataset.bid);return}
   const c=e.target.closest(".card[data-id]");
   if(c){const id=c.dataset.id;
@@ -782,8 +800,8 @@ function fname(inv,blob){return `${inv.invoiceDate||today()}_${inv.patient}_${ti
 async function moneyIn(bid){
   const b=S.besch.find(x=>x.id===bid);if(!b)return;
   const nb=structuredClone(b);nb.moneyIn=today();await saveBescheid(nb);
-  const pay=b.items.map(it=>S.inv.find(x=>x.id===it.invId)).filter(i=>i&&calc(i).step==="bezahlen").length;
-  toast(pay?`Geld da. ${pay} Rechnung${pay===1?"":"en"} jetzt unter „Zu tun“ bezahlen.`:"Geld als eingegangen markiert");
+  const pay=b.items.map(it=>S.inv.find(x=>x.id===it.invId)).filter(i=>i&&calc(i).step==="bezahlen").length,n=b.items.length;
+  toast(`${SN(b.k)}: Geld da${n>1?` (gilt für alle ${n} Rechnungen dieses Bescheids)`:""}.`+(pay?` ${pay} Rechnung${pay===1?"":"en"} jetzt unter „Zu tun“ bezahlen.`:""));
 }
 
 /* ================= Ansicht einer Rechnung ================= */
