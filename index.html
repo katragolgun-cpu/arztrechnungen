@@ -1571,10 +1571,18 @@ function matchInvoices(text,k,opt={}){
     if(inv.invoiceDate){const [y,m,d]=inv.invoiceDate.split("-");if(text.includes(`${d}.${m}.${y}`)||text.includes(`${d}.${m}.${y.slice(2)}`))score+=2}
     const pw=provWords(inv.provider);if(pw.some(w=>tw.has(w)))score+=1;
     if(inv.patient&&low.includes(inv.patient.toLowerCase()))score+=0.5;
-    if(score>=2)cands.push({id:inv.id,score,refund,eligible,hints,amount:a,amt:li>=0});
+    if(score>=2)cands.push({id:inv.id,score,refund,eligible,hints,amount:a,amt:li>=0,open:s.state!=="done"||s.review});
   }
-  // Betrag allein reicht, wenn er nur bei einer offenen Rechnung vorkommt (AXA nennt kein Rechnungsdatum)
-  return cands.filter(c=>c.score>=3||(c.amt&&cands.filter(o=>o.amt&&o.amount===c.amount).length===1)).sort((a,b)=>b.score-a.score);
+  // Betrag allein reicht, wenn er nur bei einer Rechnung vorkommt (AXA nennt kein Rechnungsdatum).
+  // Gleicher Betrag bei mehreren: ist genau eine davon noch offen, gilt diese; sonst alle zur Auswahl ohne Haken.
+  const keep=c=>{
+    if(c.score>=3)return true;if(!c.amt)return false;
+    const g=cands.filter(o=>o.amt&&o.amount===c.amount);if(g.length===1)return true;
+    if(g.some(o=>o.score>=3))return false; // eine Rechnung passt eindeutig besser
+    const op=g.filter(o=>o.open);if(op.length===1)return op[0]===c;
+    if(op.length>1&&!c.open)return false; // erledigte nicht anbieten, wenn mehrere offene in Frage kommen
+    c.ambiguous=true;return true};
+  return cands.filter(keep).sort((a,b)=>b.score-a.score);
 }
 async function startProof(k){const r=await scanDocument(k==="pkv"?"AXA-Bescheid scannen":k==="bh"?"Beihilfe-Bescheid scannen":"Leistungsnachweis scannen");if(r)openProof(r,k?{k}:undefined)}
 async function openProof(input,pre){
@@ -1589,6 +1597,7 @@ async function openProof(input,pre){
     fillProofRows();const n=S.edit.rows.length,old=S.edit.rows.filter(r=>r.already).length;
     S.edit.msg=!n?"Zu diesem Nachweis ist keine Rechnung in der App. Die Rechnungen aus dem Nachweis stehen unten."
       :old===n?`Bereits erfasst: ${n} Rechnung${n===1?"":"en"}. Übernehmen ergänzt nur Antrags-ID, Kürzungen und den Nachweis.`
+      :S.edit.rows.some(r=>r.ambiguous)?`Gleicher Betrag bei mehreren Rechnungen – bitte die richtige anhaken.`
       :`${n} passende Rechnung${n===1?"":"en"} gefunden. Bitte Beträge prüfen.`;
   }catch(e){S.edit.msg="Der Nachweis konnte nicht gelesen werden. Bitte Rechnungen unten selbst zuordnen."}
   S.edit.busy=false;drawProof();
@@ -1599,12 +1608,12 @@ function fillProofRows(){const k=S.edit.k;
   const done=id=>{const s=side(S.inv.find(x=>x.id===id),k);return s.state==="done"&&!s.review};
   S.edit.rows=ms.map(m=>{const inv=S.inv.find(x=>x.id===m.id);const s=side(inv,k);
     const note=(m.hints||[]).map(h=>S.edit.notes?.[h]).filter(Boolean).join(" ");
-    return {id:m.id,already:done(m.id)&&!S.edit.correction,on:m.refund!==0,rejected:m.refund===0,eligible:m.eligible,note,amount:m.refund!=null?m.refund:s.state==="done"?s.received:s.expected}});
+    return {id:m.id,already:done(m.id)&&!S.edit.correction,on:m.refund!==0&&!m.ambiguous,ambiguous:!!m.ambiguous,rejected:m.refund===0,eligible:m.eligible,note,amount:m.refund!=null?m.refund:s.state==="done"?s.received:s.expected}});
   const pid=S.edit.pre?.id;if(pid&&!S.edit.rows.some(r=>r.id===pid)){const inv=S.inv.find(x=>x.id===pid);if(inv){const s=side(inv,k);S.edit.rows.unshift({id:pid,on:true,amount:s.state==="done"?s.received:s.expected})}}}
 function drawProof(){
   const e=S.edit,k=e.k;
   const rows=e.rows.map((r,i)=>{const inv=S.inv.find(x=>x.id===r.id);if(!inv)return "";const s=side(inv,k);
-    return `<div class="prow"><label class="pchk"><input type="checkbox" data-row="${i}" ${r.on?"checked":""}><span><b>${esc(inv.provider)}</b><br><span class="status">${esc(inv.patient)} · ${dfmt(inv.invoiceDate)} · ${eur(inv.amount)} · erwartet ${eur(s.expected)}</span>${r.rejected?`<br><span style="color:var(--bad);font-size:12.5px">Im Nachweis abgelehnt (0 €) – nur auswählen, wenn das endgültig ist</span>`:""}${r.already?`<br><span class="status" style="font-size:12.5px">Bereits erledigt (${eur(s.received)} am ${dfmt(s.s.receivedDate)})</span>`:""}${r.eligible!=null&&r.eligible<r2(inv.amount)-0.004?`<br>${cutHtml(r2(inv.amount-r.eligible),r.note,true,k)}`:""}</span></label>
+    return `<div class="prow"><label class="pchk"><input type="checkbox" data-row="${i}" ${r.on?"checked":""}><span><b>${esc(inv.provider)}</b><br><span class="status">${esc(inv.patient)} · ${dfmt(inv.invoiceDate)} · ${eur(inv.amount)} · erwartet ${eur(s.expected)}</span>${r.rejected?`<br><span style="color:var(--bad);font-size:12.5px">Im Nachweis abgelehnt (0 €) – nur auswählen, wenn das endgültig ist</span>`:""}${r.ambiguous?`<br><span style="color:var(--warn);font-size:12.5px">Gleicher Betrag wie eine andere Rechnung – bitte selbst auswählen</span>`:""}${r.already?`<br><span class="status" style="font-size:12.5px">Bereits erledigt (${eur(s.received)} am ${dfmt(s.s.receivedDate)})</span>`:""}${r.eligible!=null&&r.eligible<r2(inv.amount)-0.004?`<br>${cutHtml(r2(inv.amount-r.eligible),r.note,true,k)}`:""}</span></label>
       <label class="f">Erstattet (€)<input class="num" inputmode="decimal" data-amt="${i}" value="${String(r.amount.toFixed(2)).replace(".",",")}"></label></div>`}).join("");
   const used=new Set(e.rows.map(r=>r.id));
   const isOpen=x=>["todo","wait"].includes(side(x,k).state)||side(x,k).review;
