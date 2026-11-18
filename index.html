@@ -1609,6 +1609,8 @@ function fillProofRows(){const k=S.edit.k;
   S.edit.rows=ms.map(m=>{const inv=S.inv.find(x=>x.id===m.id);const s=side(inv,k);
     const note=(m.hints||[]).map(h=>S.edit.notes?.[h]).filter(Boolean).join(" ");
     return {id:m.id,already:done(m.id)&&!S.edit.correction,on:m.refund!==0&&!m.ambiguous,ambiguous:!!m.ambiguous,rejected:m.refund===0,eligible:m.eligible,note,amount:m.refund!=null?m.refund:s.state==="done"?s.received:s.expected}});
+  // Erledigte nur anhaken, wenn der Bescheid ausschließlich erledigte Rechnungen betrifft (Nachtrag); sonst nur anzeigen
+  if(S.edit.rows.some(r=>!r.already))S.edit.rows.forEach(r=>{if(r.already)r.on=false});
   const pid=S.edit.pre?.id;if(pid&&!S.edit.rows.some(r=>r.id===pid)){const inv=S.inv.find(x=>x.id===pid);if(inv){const s=side(inv,k);S.edit.rows.unshift({id:pid,on:true,amount:s.state==="done"?s.received:s.expected})}}}
 function drawProof(){
   const e=S.edit,k=e.k;
@@ -1619,7 +1621,8 @@ function drawProof(){
   const isOpen=x=>["todo","wait"].includes(side(x,k).state)||side(x,k).review;
   const others=S.inv.filter(x=>!used.has(x.id)&&side(x,k).state!=="na").sort((a,b)=>(isOpen(b)-isOpen(a))||(b.invoiceDate||"").localeCompare(a.invoiceDate||""));
   const sum=r2(e.rows.filter(r=>r.on).reduce((a,r)=>a+(+r.amount||0),0));
-  const cmp=e.total==null?"":(Math.abs(sum-e.total)<0.01?`<span style="color:var(--ok);font-weight:600">passt zum Nachweis</span>`:`<span style="color:var(--warn);font-weight:600">Nachweis: ${eur(e.total)}, Differenz ${eur(r2(e.total-sum))}</span>`);
+  const prev=r2(e.rows.filter(r=>r.already&&!r.on).reduce((a,r)=>a+(+r.amount||0),0)); // schon erledigt, im selben Bescheid
+  const cmp=e.total==null?"":(Math.abs(sum+prev-e.total)<0.01?`<span style="color:var(--ok);font-weight:600">passt zum Nachweis</span>`:`<span style="color:var(--warn);font-weight:600">Nachweis: ${eur(e.total)}, Differenz ${eur(r2(e.total-sum-prev))}</span>`);
   sheet("Leistungsnachweis",`
     <div id="edStatus" class="status" style="margin-top:10px">${esc(e.msg||"")}</div>
     ${e.appId||e.correction?`<div class="status" style="margin-top:6px">${e.appId?`Antrag ${esc(e.appId)}`:""}${e.correction?`${e.appId?" · ":""}<b>Korrektur-Bescheid:</b> ausgezahlt ${eur(e.payout)}${e.before!=null?`, ${eur(e.before)} kamen schon früher`:""}. Bei den Rechnungen wird die gesamte Beihilfe eingetragen.`:""}</div>`:""}
@@ -1629,7 +1632,7 @@ function drawProof(){
     </div>
     ${e.busy?"":`<div class="sec"><h3>Zugeordnete Rechnungen</h3>${rows||`<p class="status" style="margin:0">Noch keine Rechnung zugeordnet.</p>${e.lines?.length?`<p class="status" style="margin:6px 0 0">Im Nachweis stehen:<br>${e.lines.map(l=>`${esc(l.person)} · ${esc(l.date)} · ${eur(l.amount)} → ${eur(l.refund)}`).join("<br>")}</p><p class="status" style="margin:6px 0 0">Fehlt eine Rechnung in der App, leg sie erst mit + an. Ist sie schon da, wähl sie hier aus.</p>`:""}`}
       ${others.length?`<label class="f">Weitere Rechnung zuordnen<select id="addRow"><option value="">– auswählen –</option>${others.map(x=>`<option value="${esc(x.id)}">${esc(x.provider)} · ${esc(x.patient)} · ${dfmt(x.invoiceDate)} · ${eur(x.amount)}</option>`).join("")}</select></label>`:""}
-      <div class="calc"><span>Summe erstattet</span><span><span class="num">${eur(sum)}</span> ${cmp}</span></div></div>`}
+      <div class="calc"><span>Summe erstattet</span><span><span class="num">${eur(sum)}</span>${prev>0.004?` <span class="status">+ ${eur(prev)} bereits erledigt</span>`:""} ${cmp}</span></div></div>`}
   `,`<button type="button" class="btn" data-act="pcancel">Abbrechen</button><button type="button" class="btn primary" data-act="papply" ${e.busy?"disabled":""}>Übernehmen</button>`);
   const sc=$("#scrim");
   sc.addEventListener("change",ev=>{
