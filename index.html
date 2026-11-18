@@ -136,6 +136,7 @@ input.num{font-family:var(--f-num)}
 .btnrow{display:flex;flex-wrap:wrap;gap:8px}
 .btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:9px;padding:9px 13px;font:inherit;font-size:14px}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.btn.done{background:#1f7a45;color:#fff;border-color:#1f7a45;font-weight:700}
 .btn.danger{color:var(--bad);border-color:var(--bad)}
 .btn.link{border:0;background:none;color:var(--accent);font-weight:600;padding:6px 0}
 .btn[disabled]{opacity:.55}
@@ -801,9 +802,9 @@ function submitHtml(inv,c){
     if(x.state!=="todo")return `<div class="line"><div><div class="t">${i+1}. ${n}</div><div class="s" style="color:var(--ok)">Eingereicht am ${dfmt(x.s.submitted)}</div></div></div>`;
     const active=!open;open=true;
     return `<div class="line" style="${active?"":"opacity:.5"}"><div><div class="t">${i+1}. ${n}</div><div class="s">${hint}</div></div></div>
-      ${active&&k==="pkv"?(inv.docDriveId?`<p class="status" style="margin:6px 0 0">AXA-App öffnen, Person <b>${esc(inv.patient||"")}</b> wählen, Beleg hinzufügen → <b>Datei</b> → <b>Drive</b> → <b>Arztrechnungen › Zum Einreichen › AXA › ${esc(cleanName(inv.patient||"Ohne Person"))}</b> → <b>${esc(wantedName(inv,"doc"))}</b>.<br>Nach dem Absenden hierher zurück und abhaken. Die Datei wandert dann von selbst ins Archiv.</p>`
+      ${active&&k==="pkv"?(inv.docDriveId?`<p class="status" style="margin:6px 0 0">① AXA-App öffnen, Person <b>${esc(inv.patient||"")}</b> wählen, Beleg hinzufügen → <b>Datei</b> → <b>Drive</b> → <b>Arztrechnungen › Zum Einreichen › AXA › ${esc(cleanName(inv.patient||"Ohne Person"))}</b> → <b>${esc(wantedName(inv,"doc"))}</b>.<br>② Nach dem Absenden hierher zurück und abhaken. Die Datei wandert dann von selbst ins Archiv.</p>`
         :`<p class="status" style="margin:6px 0 0">Die Rechnung ist noch nicht in Drive. Bitte erst abgleichen (Einstellungen › Jetzt abgleichen) oder die PDF aufs Handy speichern und in der AXA-App unter <b>Datei</b> › <b>Downloads</b> wählen.</p>${S.edit.subSaved?`<p class="status" style="margin:4px 0 0;color:var(--ok)">Gespeichert im Ordner Downloads.</p>`:""}`):""}
-      ${active?`<div class="btnrow">${k==="pkv"?(inv.docDriveId?"":`<button type="button" class="btn" data-act="subsave" ${f?"":"disabled"}>PDF aufs Handy speichern</button>`):`<button type="button" class="btn" data-act="subshare" data-k="${k}" ${f?"":"disabled"}>PDF an ${app} senden</button>`}<button type="button" class="btn primary" data-act="sub" data-k="${k}">Bei ${n} eingereicht</button></div>`:""}`}).join("");
+      ${active?`<div class="btnrow">${k==="pkv"?(inv.docDriveId?"":`<button type="button" class="btn primary" data-act="subsave" ${f?"":"disabled"}>① ↓ PDF aufs Handy speichern</button>`):`<button type="button" class="btn primary" data-act="subshare" data-k="${k}" ${f?"":"disabled"}>① ↗ PDF an ${app} senden</button>`}<button type="button" class="btn done" data-act="sub" data-k="${k}">② ✓ Erledigt – bei ${n} eingereicht</button></div>`:""}`}).join("");
   const note=f===null?"Beleg wird geladen …":f===false?"Beleg nicht auf diesem Handy. Bitte in der App wie bisher aus Google Drive wählen.":"";
   return `${rows}${note?`<p class="status" style="margin:6px 0 0">${note}</p>`:""}`;
 }
