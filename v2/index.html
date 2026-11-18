@@ -1,0 +1,2131 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>PKV & Beihilfe – Testversion 2</title>
+<meta name="theme-color" content="#9a5b00">
+<meta name="robots" content="noindex">
+<link rel="icon" href="../icon-192.png">
+<style>
+/* Layout: mobile-first ledger — summary tiles, filter chips, stack of bill cards with stamp-style status marks; bottom sheet: short view first, details on demand */
+:root{
+  --bg:#f3f5f7; --surface:#ffffff; --sunken:#e8ecf0; --line:#d5dce3;
+  --ink:#16222e; --muted:#5b6b7a;
+  --accent:#163a6b; --accent-ink:#ffffff;
+  --ok:#1f7a45; --ok-soft:#dcefe3;
+  --warn:#9a5b00; --warn-soft:#f7ead2;
+  --bad:#b0322b; --bad-soft:#f6dedc;
+  --wait:#3e5a9a; --wait-soft:#dfe6f5;
+  --f-ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-num:ui-monospace,"Roboto Mono","SFMono-Regular",Consolas,monospace;
+  --r:12px; color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0f161c; --surface:#172129; --sunken:#1e2a34; --line:#2b3a46;
+  --ink:#e6edf2; --muted:#93a4b3; --accent:#7fb2e8; --accent-ink:#0b1f3a;
+  --ok:#5cc489; --ok-soft:#173326; --warn:#e2a54a; --warn-soft:#3a2c14;
+  --bad:#f0827a; --bad-soft:#3d1d1b; --wait:#8fa9e6; --wait-soft:#1e2a45; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent;
+  padding:calc(12px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(150px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+[hidden]{display:none!important}
+.wrap{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+header.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+header.top h1{font-size:22px;margin:0;font-weight:700}
+header.top p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.iconbtn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:8px 12px;font:inherit;font-size:14px}
+.banner{background:var(--warn-soft);color:var(--warn);border-radius:var(--r);padding:10px 14px;font-size:14px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:640px){.summary{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:4px;min-width:0;text-align:left;font:inherit;color:inherit}
+.tile .lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.tile .val{font-family:var(--f-num);font-size:20px;font-weight:600}
+.tile .sub{font-size:12.5px;color:var(--muted)}
+.tile.hot .val,.tile.cut .val{color:var(--bad)} .tile.wait .val{color:var(--wait)} .tile.todo .val{color:var(--warn)}
+.search{position:relative}
+.search input{width:100%;font:inherit;font-size:16px;padding:10px 38px 10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink)}
+.search button{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--muted);font-size:20px;line-height:1;padding:4px 8px}
+.searchinfo{font-size:13.5px;color:var(--muted)}
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 12px;font:inherit;font-size:13.5px;white-space:nowrap}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chip .c{font-family:var(--f-num);font-size:12px;opacity:.7;margin-left:4px}
+.list{display:flex;flex-direction:column;gap:10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:10px;text-align:left;font:inherit;color:inherit;width:100%}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row1{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.who{min-width:0;flex:1}
+.row1 .tick+.who{margin-left:2px}
+.prov{font-weight:600;font-size:15.5px;overflow-wrap:anywhere}
+.via{font-size:12.5px;color:var(--muted);margin-top:1px}
+.meta{color:var(--muted);font-size:13px;margin-top:2px}
+.amt{font-family:var(--f-num);font-weight:600;font-size:16px;white-space:nowrap}
+.pchip{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--sunken);color:var(--ink);margin-right:6px}
+.stamps{display:flex;flex-wrap:wrap;gap:6px}
+.stamp{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:3px 8px;border-radius:6px;border:1.5px solid currentColor;line-height:1.3;white-space:nowrap}
+.stamp b{font-family:var(--f-num);font-weight:600;letter-spacing:0;text-transform:none}
+.s-ok{color:var(--ok);background:var(--ok-soft)} .s-todo{color:var(--warn);background:var(--warn-soft)}
+.s-wait{color:var(--wait);background:var(--wait-soft)} .s-bad{color:var(--bad);background:var(--bad-soft)}
+.s-na{color:var(--muted);background:var(--sunken);border-style:dashed}
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:var(--r);padding:24px 16px;text-align:center;color:var(--muted)}
+.guidecard{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+.guidecard .gl{font-size:14px;min-width:0}
+.guidecard .gl b{display:block;font-size:15px;margin-bottom:2px}
+.guidecard .gl span{color:var(--muted);font-size:13px}
+.guidebar{position:sticky;top:0;z-index:2;background:var(--accent);color:var(--accent-ink);border-radius:14px;padding:10px 12px;margin-top:10px}
+.guidebar .gtop{font-size:13px;font-weight:600;opacity:.9}
+.guidebar .gtxt{font-size:14px;margin:4px 0 8px}
+.guidebar .btnrow{margin:0}
+.guidebar .btn{background:rgba(255,255,255,.15);color:inherit;border-color:rgba(255,255,255,.35)}
+.guidebar .btn.primary{background:#fff;color:var(--accent);border-color:#fff}
+.txtbox{margin-top:8px}
+.txtbox textarea{width:100%;box-sizing:border-box;margin-top:6px;font:inherit;font-size:13.5px;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--sunken);color:var(--ink);resize:vertical}
+#splash{position:fixed;inset:0;z-index:100;background:#163a6b;overflow:hidden;transition:opacity .35s ease}
+#splash img{width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(1.08);transition:opacity .35s ease,transform 1.2s ease-out}
+#splash.on img{opacity:1;transform:scale(1)}
+#splash.out{opacity:0}
+@media (prefers-reduced-motion: reduce){#splash img{transform:none;transition:opacity .2s}}
+.splashprev{width:96px;height:128px;object-fit:cover;border-radius:10px;border:1px solid var(--line);display:block;margin:6px 0}
+.grp{display:flex;align-items:center;gap:8px;width:100%;border:0;background:var(--sunken);color:var(--ink);font:inherit;font-size:13.5px;font-weight:600;text-align:left;padding:10px 12px;border-radius:12px;margin-top:4px}
+.grp .chev{width:14px;color:var(--muted);font-size:11px}
+.grp .gt{flex:1}
+.grp .gs{display:block;color:var(--muted);font-weight:500;font-size:12px;margin-top:1px}
+.grp .ga{font-weight:600}
+.year{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;margin-top:6px}
+.fab{position:fixed;right:max(18px,calc(env(safe-area-inset-right,0px) + 18px));bottom:calc(84px + env(safe-area-inset-bottom,0px));width:58px;height:58px;display:flex;align-items:center;justify-content:center;background:var(--accent);color:var(--accent-ink);border:0;border-radius:50%;padding:0;box-shadow:0 6px 20px rgba(0,0,0,.22);z-index:7}
+.fab svg{width:28px;height:28px}
+.bnav{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);
+  padding:4px max(4px,env(safe-area-inset-right,0px)) calc(4px + env(safe-area-inset-bottom,0px)) max(4px,env(safe-area-inset-left,0px))}
+.bnav button{position:relative;border:0;background:none;color:var(--ink);font:inherit;font-size:11.5px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px 4px;min-height:58px;border-radius:12px}
+.bnav button .ic{display:flex;align-items:center;justify-content:center;width:54px;height:30px;border-radius:999px}
+.bnav button svg{width:22px;height:22px}
+.bnav button[aria-current="true"]{color:var(--accent)}
+.bnav button[aria-current="true"] .ic{background:var(--sunken)}
+.bnav button.zero{color:var(--muted);opacity:.55}
+.bnav button.zero[aria-current="true"]{opacity:1;color:var(--accent)}
+.bnav .n{position:absolute;top:2px;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-family:var(--f-num);font-size:11px;font-weight:700;line-height:18px;text-align:center}
+.bnav button.zero .n{background:var(--sunken);color:var(--muted)}
+.hbtns{display:flex;gap:8px;align-items:center}
+.iconbtn.sq{padding:8px 10px;display:flex;align-items:center}
+.iconbtn.sq svg{width:20px;height:20px}
+.iconbtn.sq[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.scrim{position:fixed;inset:0;background:rgba(10,18,26,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--bg);width:100%;max-width:760px;max-height:94%;overflow-y:auto;border-radius:18px 18px 0 0;
+  padding:0 max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.sheet-head{position:sticky;top:0;background:var(--bg);display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 0 10px;z-index:2;border-bottom:1px solid var(--line)}
+.sheet-head{flex-wrap:wrap}
+.sheet-head h2{margin:0;font-size:18px;min-width:0;overflow-wrap:break-word;hyphens:auto}
+.sec{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.sec h3{margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.hero{display:flex;flex-direction:column;gap:6px}
+.hero .big{font-family:var(--f-num);font-size:28px;font-weight:600}
+.line{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.line .t{font-weight:600}
+.line .s{font-size:13.5px;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted);min-width:0}
+label.f.full{grid-column:1/-1}
+input,select{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 10px;width:100%;min-width:0}
+input.num{font-family:var(--f-num)}
+.calc{display:flex;justify-content:space-between;gap:8px;font-size:13.5px;background:var(--sunken);border-radius:9px;padding:8px 10px}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:9px;padding:9px 13px;font:inherit;font-size:14px}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+a.btn{text-decoration:none;display:inline-flex;align-items:center}
+.btn.done{background:#1f7a45;color:#fff;border-color:#1f7a45;font-weight:700}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.btn.link{border:0;background:none;color:var(--accent);font-weight:600;padding:6px 0}
+.btn[disabled]{opacity:.55}
+.thumb{width:100%;max-height:220px;object-fit:cover;object-position:top;border-radius:10px;border:1px solid var(--line);background:var(--sunken)}
+.status{font-size:13.5px;color:var(--muted)} .status.err{color:var(--bad)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;z-index:40;max-width:90%}
+.checkline{background:var(--warn-soft);color:var(--warn);border-radius:9px;padding:8px 10px;font-size:13.5px}
+#btnSettings{position:relative}
+.dot{position:absolute;top:-4px;right:-4px;width:12px;height:12px;border-radius:50%;background:var(--warn);border:2px solid var(--bg)}
+.sumbar{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px;font:inherit;color:inherit;text-align:left}
+.sumbar .vals{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px;min-width:0}
+.sumbar .vals b{font-family:var(--f-num);font-weight:600}
+.sumbar .pay b{color:var(--bad)} .sumbar .exp b{color:var(--wait)}
+.sumbar .chev{color:var(--muted);font-size:13px;white-space:nowrap}
+.summary-wrap{display:flex;flex-direction:column;gap:10px}
+.sub-actions{display:flex;gap:14px;flex-wrap:wrap;margin-top:-4px}
+.more summary{cursor:pointer;padding:2px 0}
+.morelist{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.morelist .btn{width:100%;text-align:left;justify-content:flex-start}
+.nextstep .line{padding:6px 0}
+.next{font-size:13.5px;font-weight:600}
+.next.s-geld{color:var(--wait)} .next.s-einreichen{color:var(--warn)} .next.s-warten{color:var(--wait)} .next.s-ueberweisen{color:var(--accent)} .next.s-nachweis{color:var(--bad)}
+.due{font-size:12.5px;color:var(--muted)} .due.warn{color:var(--warn);font-weight:600} .due.bad{color:var(--bad);font-weight:600}
+.listtools{justify-content:flex-end}
+.prooftools{flex-wrap:nowrap}.prooftools .btn{flex:1 1 0;min-width:0}
+.card.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.tick{flex:none;width:22px;height:22px;border-radius:6px;border:2px solid var(--accent);display:grid;place-items:center;color:var(--accent);font-weight:700;font-size:14px;margin-top:2px}
+.selbar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px;
+  padding:12px max(16px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.selinfo{font-size:13.5px;color:var(--muted)}
+.prow{display:grid;grid-template-columns:minmax(0,1fr) 120px;gap:10px;align-items:end;padding:10px 0;border-bottom:1px solid var(--line)}
+.prow:last-of-type{border-bottom:0}
+.pchk{display:flex;gap:10px;align-items:flex-start;min-width:0;font-size:14px}
+.pchk input{width:20px;height:20px;flex:none;margin-top:2px}
+.scanwrap{display:flex;justify-content:center;margin:12px 0}
+.scanwrap canvas{touch-action:none;border-radius:8px;max-width:100%;background:#000}
+.thumbs{display:flex;gap:10px;flex-wrap:wrap}
+.thumbs .pg{display:flex;flex-direction:column;align-items:center;gap:2px}
+.thumbs img{width:84px;height:118px;object-fit:cover;border:1px solid var(--line);border-radius:6px;background:#fff}
+.paygrid{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px 10px;align-items:center;font-size:14px}
+.paygrid .k{color:var(--muted);font-size:12.5px}
+.paygrid .v{overflow-wrap:anywhere;font-family:var(--f-num)}
+.inline{display:flex;gap:8px;align-items:end}
+.inline label{flex:1}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}}
+/* ---- v20: modernere Optik, Personenbilder ---- */
+:root{--r:16px;--shadow:0 1px 2px rgba(16,34,46,.06),0 4px 14px rgba(16,34,46,.06)}
+@media (prefers-color-scheme: dark){:root{--shadow:0 1px 2px rgba(0,0,0,.4)}}
+body{background:var(--bg)}
+header.top h1{font-size:26px;letter-spacing:-.02em}
+.card,.tile,.sumbar,.empty,.sec{border-color:transparent;box-shadow:var(--shadow)}
+.card{padding:14px 16px;border-radius:var(--r);transition:transform .12s ease}
+.card:active{transform:scale(.99)}
+.sumbar{background:linear-gradient(135deg,#163a6b,#0e2748);color:#fff;padding:16px 18px;border-radius:20px}
+@media (prefers-color-scheme: dark){.sumbar{background:linear-gradient(135deg,#0f4b55,#0a2f36)}}
+.sumbar .vals{flex-direction:column;gap:2px;font-size:13px;opacity:.95}
+.sumbar .vals>span{display:flex;align-items:baseline;gap:8px}
+.sumbar .pay b{color:#fff;font-size:26px} .sumbar .exp b{color:#cfe0f5;font-size:15px}
+.sumbar .chev{color:#cfe0f5}
+.search input{border-radius:14px;border-color:transparent;box-shadow:var(--shadow);padding:12px 40px 12px 14px}
+.chip{border-color:transparent;box-shadow:var(--shadow);padding:7px 14px}
+.people{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding:6px 4px 4px;justify-content:space-between}
+.people::-webkit-scrollbar{display:none}
+.pbtn{flex:none;border:0;background:none;padding:0;font:inherit;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:6px;width:58px}
+.pbtn .av{width:50px;height:50px;border-radius:50%;box-shadow:0 0 0 2px var(--bg),0 0 0 2px transparent;transition:box-shadow .15s}
+.pbtn[aria-pressed="true"] .av{box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--accent)}
+.pbtn span{font-size:12.5px;font-weight:600;max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pbtn[aria-pressed="true"] span{color:var(--accent)}
+.av{display:block;flex:none}
+.card .meta{display:flex;flex-wrap:wrap;align-items:center;gap:2px 0}
+.pchip{display:inline-flex;align-items:center;gap:5px;background:none;padding:0;font-size:12.5px;margin-right:8px;color:var(--ink)}
+.pchip .av{width:22px;height:22px;border-radius:50%}
+.avsel{display:flex;gap:8px;flex-wrap:wrap;grid-column:1/-1}
+.avsel label{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11.5px;color:var(--muted);cursor:pointer}
+.avsel input{position:absolute;opacity:0;pointer-events:none}
+.avsel .av{width:40px;height:40px;border-radius:50%;box-shadow:0 0 0 2px transparent}
+.avsel input:checked+.av{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--accent)}
+/* ---- Testversion 2 ---- */
+.teststrip{background:#9a5b00;color:#fff;font-size:12.5px;font-weight:600;text-align:center;padding:6px 10px;border-radius:10px}
+.bnav{grid-template-columns:repeat(3,1fr)}
+.area-h{display:flex;align-items:center;gap:8px;margin-top:8px}
+.area-h h2{font-size:17px;margin:0}
+.area-h .cnt{font-family:var(--f-num);font-size:12px;font-weight:700;background:var(--sunken);border-radius:999px;padding:1px 8px;color:var(--muted)}
+.area-h .btn.link{margin-left:auto}
+.hint{display:block;width:100%;text-align:left;font:inherit;font-size:13.5px;background:var(--wait-soft);color:var(--wait);border:0;border-radius:var(--r);padding:10px 14px}
+.bcard{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.bmain{border:0;background:none;padding:0;font:inherit;color:inherit;text-align:left;width:100%}
+.next.s-klaeren{color:var(--bad)} .next.s-bescheid,.next.s-geld{color:var(--wait)} .next.s-bezahlen{color:var(--accent)}
+.steps{display:flex;gap:6px;flex-wrap:wrap}
+.dot2{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--sunken);color:var(--muted)}
+.dot2.on{background:var(--ok-soft);color:var(--ok)}
+.task{padding:8px 0;border-bottom:1px solid var(--line)} .task:last-child{border-bottom:0}
+.task .t{font-weight:700;font-size:14px}
+.hrow{display:flex;gap:12px;padding:4px 0;border-bottom:1px solid var(--line)} .hrow .num{min-width:84px;color:var(--muted)}
+.btn.link.inl{padding:0;font-size:inherit;text-decoration:underline}
+#sumBar{cursor:default}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="teststrip">TESTVERSION 2 · eigene Kopie der Daten · die echte App bleibt unverändert</div>
+  <header class="top">
+    <div><h1>PKV &amp; Beihilfe</h1><p id="sub">Testversion 2</p></div>
+    <div class="hbtns"><button class="iconbtn sq" id="btnSearch" type="button" aria-label="Alle Rechnungen durchsuchen" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></button><button class="iconbtn sq" id="btnSettings" type="button" aria-label="Einstellungen" style="position:relative"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span class="dot" id="settingsDot" hidden></span></button></div>
+  </header>
+  <div id="banner" class="banner" hidden></div>
+  <div class="sumbar" id="sumBar"></div>
+  <div class="search" id="searchRow" role="search" hidden><input type="text" inputmode="search" id="q" placeholder="Suchen: Nummer, Betrag, Arzt, Person, Datum" aria-label="Rechnungen durchsuchen" autocomplete="off" enterkeyhint="search"><button type="button" id="qClear" aria-label="Suche leeren" hidden>×</button></div>
+  <nav class="people" id="people" aria-label="Personen"></nav>
+  <section class="list" id="list" aria-live="polite"><div class="empty">Wird geladen …</div></section>
+</div>
+<button class="fab" id="btnAdd" type="button" aria-label="Rechnung hinzufügen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+<nav class="bnav" id="bnav" aria-label="Bereiche"></nav>
+<div class="selbar" id="selBar" hidden></div>
+<input type="file" id="pick" accept="image/*,application/pdf" hidden>
+<input type="file" id="cam" accept="image/*" capture="environment" hidden>
+<input type="file" id="pickBackup" accept="application/json,.json" hidden>
+<div id="sheetHost"></div>
+<div id="toast" class="toast" hidden></div>
+<script>
+"use strict";
+/* =====================================================================
+   PKV & Beihilfe – Testversion 2
+   Aufbau nach dem echten Ablauf:
+   1 Brief kommt · 2 erfassen · 3 einreichen · 4 auf Bescheid warten · 5 Bescheid abgleichen
+   6 auf Geld warten · 7 Geld da kennzeichnen · 8 Arzt bezahlen · 9 erledigt
+   Oberfläche: Zu tun (meine Aufgaben) · Läuft (warten auf andere) · Archiv (fertig, zum Nachschlagen)
+   Eigene Daten: eigener Speicher auf dem Gerät, eigener Drive-Ordner. Die echte App bleibt unberührt.
+   ===================================================================== */
+const V2="v2_";
+const LS={get(k){try{return localStorage.getItem(V2+k)}catch{return null}},set(k,v){try{localStorage.setItem(V2+k,v)}catch{}},del(k){try{localStorage.removeItem(V2+k)}catch{}}};
+
+/* ================= Speicher (IndexedDB, eigene Datenbank der Testversion) ================= */
+const DB_NAME="pkv-beihilfe-v2",DB_VER=1;
+let _db;
+function idb(){
+  if(_db)return Promise.resolve(_db);
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open(DB_NAME,DB_VER);
+    r.onupgradeneeded=()=>{const d=r.result;for(const [n,k] of [["invoices","id"],["bescheide","id"],["files","id"],["meta","key"]])if(!d.objectStoreNames.contains(n))d.createObjectStore(n,{keyPath:k})};
+    r.onsuccess=()=>{_db=r.result;res(_db)};r.onerror=()=>rej(r.error);
+  });
+}
+async function tx(store,mode,fn){
+  const d=await idb();
+  return new Promise((res,rej)=>{const t=d.transaction(store,mode);const s=t.objectStore(store);let out;
+    const r=fn(s);if(r&&"onsuccess" in r)r.onsuccess=()=>out=r.result;
+    t.oncomplete=()=>res(out);t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error)});
+}
+const dbAll=s=>tx(s,"readonly",st=>st.getAll());
+const dbGet=(s,k)=>tx(s,"readonly",st=>st.get(k));
+const dbPut=(s,v)=>tx(s,"readwrite",st=>st.put(v));
+const dbDel=(s,k)=>tx(s,"readwrite",st=>st.delete(k));
+const dbClear=s=>tx(s,"readwrite",st=>st.clear());
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+
+/* ================= Zustand ================= */
+const DEFAULT_SETTINGS={
+  people:[{name:"Olgun",group:"A"},{name:"Pinar",group:"E"},{name:"Ikra",group:"K"},{name:"Hamza",group:"K"}],
+  rates:{A:{pkv:0.3,bh:0.7},E:{pkv:0.3,bh:0.7},K:{pkv:0.2,bh:0.8}},
+  payDays:30,warnDays:7
+};
+const GROUPS={A:"Antragsteller",E:"Ehepartner",K:"Kind"};
+const SIDES=[["pkv","AXA"],["bh","Beihilfe"]];
+const SN=k=>k==="pkv"?"AXA":"Beihilfe";
+const S={inv:[],besch:[],deleted:{},settings:structuredClone(DEFAULT_SETTINGS),loaded:false,area:"zutun",archiv:"rechnungen",person:"alle",
+  edit:null,select:null,q:"",searchOpen:false,open:new Set(),closed:new Set(),guide:null,idx:new Map()};
+
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const r2=n=>Math.round((+n||0)*100)/100;
+const eur=n=>(+n||0).toLocaleString("de-DE",{style:"currency",currency:"EUR"});
+const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+const dfmt=s=>{if(!s)return "";const [y,m,d]=String(s).slice(0,10).split("-");return d+"."+m+"."+y};
+const days=(a,b)=>Math.round((new Date(b)-new Date(a))/864e5);
+const addMonths=(iso,m)=>{const d=new Date(iso+"T12:00:00");d.setMonth(d.getMonth()+m);return d.toISOString().slice(0,10)};
+const numIn=x=>{x=String(x??"").trim();if(x==="")return "";return r2(x.includes(",")?x.replace(/\./g,"").replace(",","."):x)};
+const nowIso=()=>new Date().toISOString();
+const MONTHS=["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+const monthLabel=k=>k?`${MONTHS[+k.slice(5,7)-1]} ${k.slice(0,4)}`:"Ohne Datum";
+const isApo=inv=>inv.kind==="apotheke";
+const ASK_DAYS=28; // ohne Bescheid länger als 4 Wochen: nachfragen
+function toast(msg){const t=$("#toast");t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2800)}
+// Wer stellt die Rechnung, wer bekommt das Geld
+const payee=inv=>inv.billing||inv.doctor||"";
+const title=inv=>inv.doctor||inv.billing||"Ohne Arzt";
+
+/* ================= Bescheid-Index: welche Bescheide gehören zu welcher Rechnung ================= */
+function reindex(){
+  const m=new Map();
+  for(const b of S.besch)for(const it of b.items||[]){const e=m.get(it.invId)||{pkv:[],bh:[]};e[b.k].push({b,it});m.set(it.invId,e)}
+  for(const e of m.values())for(const k of ["pkv","bh"])e[k].sort((x,y)=>(x.b.date||"").localeCompare(y.b.date||"")||(x.b.createdAt||"").localeCompare(y.b.createdAt||""));
+  S.idx=m;
+}
+const itemsOf=(invId,k)=>S.idx.get(invId)?.[k]||[];
+
+/* ================= Berechnung: Stand je Seite ================= */
+function side(inv,k){
+  const s=inv[k]||{};const rate=+s.rate||0;const amount=+inv.amount||0;
+  const expected=rate>0?r2(amount*rate-(+s.deduction||0)):0;
+  const list=itemsOf(inv.id,k),last=list[list.length-1]||null;
+  const state=last?"done":rate<=0?"na":s.submitted?"wait":"todo";
+  const received=last?r2(last.it.refund):0;
+  const diff=last?r2(expected-received):0;
+  const b=last?.b||null;
+  const moneyOpen=!!(last&&received>0.004&&!b.moneyIn);
+  const objOpen=!!(s.obj&&!s.obj.result);
+  const cutOpen=!!(last&&diff>0.004&&!s.cutOk&&!s.obj);
+  const waitDays=state==="wait"?days(s.submitted,today()):0;
+  const askDue=state==="wait"&&waitDays>ASK_DAYS&&!(s.asked&&days(s.asked,today())<=ASK_DAYS);
+  return {k,rate,expected,state,received,diff,b,item:last?.it||null,list,moneyOpen,objOpen,cutOpen,waitDays,askDue,s};
+}
+// Fälligkeit: Datum von der Rechnung, sonst Rechnungsdatum + Zahlungsfrist
+function dueDate(inv){
+  if(inv.dueDate)return inv.dueDate;
+  const base=inv.invoiceDate||inv.receivedDate;if(!base)return null;
+  const d=new Date(base+"T12:00:00");d.setDate(d.getDate()+(+S.settings.payDays||30));
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+/* Ein Status je Rechnung. Schritte streng nacheinander:
+   einreichen -> bescheid (warten) -> geld (warten) -> bezahlen -> erledigt.
+   Daneben Aufgaben zum Klären (Kürzung, Fehlbuchung, Nachfragen …), die den Ablauf nicht blockieren. */
+const STEP_LABEL={einreichen:"Einreichen",bescheid:"Warten auf Bescheid",geld:"Warten auf Geld",bezahlen:"Arzt bezahlen",erledigt:"Erledigt"};
+const TASK_LABEL={einreichen:"Einreichen",bezahlen:"Arzt bezahlen",kuerzung:"Kürzung: akzeptieren oder Widerspruch",fehlbuchung:"AXA über Fehlbuchung informieren",
+  nachreichen:"Unterlagen nachreichen",original:"Originalrechnung anfordern",nachfrage:"Nachfragen",nachfragen:"Nachfragen: lange kein Bescheid",zahlung:"Zahlung klären",sonst:"Klären"};
+const KLAEREN=["kuerzung","fehlbuchung","nachreichen","original","nachfrage","nachfragen","zahlung","sonst"];
+function calc(inv){
+  const amount=r2(inv.amount),fee=r2(inv.fee);
+  const paid=isApo(inv)&&!(+inv.payment?.amount)?amount:r2(inv.payment?.amount);
+  const open=r2(amount+fee-paid),unpaid=open>0.004;
+  const pkv=side(inv,"pkv"),bh=side(inv,"bh");
+  const due=dueDate(inv),daysLeft=due?days(today(),due):null;
+  const overdue=unpaid&&daysLeft!==null&&daysLeft<0;
+  const dueSoon=unpaid&&daysLeft!==null&&daysLeft>=0&&daysLeft<=(+S.settings.warnDays||7);
+  const todo=pkv.state==="todo"||bh.state==="todo";
+  const wait=pkv.state==="wait"||bh.state==="wait";
+  // Geld abwarten nur, solange der Arzt noch nicht bezahlt ist (Regel: erst bezahlen, wenn die Erstattung da ist)
+  const money=unpaid&&(pkv.moneyOpen||bh.moneyOpen);
+  const step=todo?"einreichen":wait?"bescheid":money?"geld":unpaid?"bezahlen":"erledigt";
+  const over=open<-0.004&&!inv.refundDue;
+  const tasks=[];
+  if(step==="einreichen")tasks.push({t:"einreichen"});
+  if(step==="bezahlen")tasks.push({t:"bezahlen"});
+  for(const x of [pkv,bh]){if(x.cutOpen)tasks.push({t:"kuerzung",k:x.k});if(x.askDue)tasks.push({t:"nachfragen",k:x.k})}
+  if(over||inv.refundDue)tasks.push({t:"zahlung"});
+  for(const is of inv.issues||[])if(!is.done)tasks.push({t:KLAEREN.includes(is.kind)?is.kind:"sonst",issue:is.id});
+  tasks.sort((a,b)=>taskOrder(a)-taskOrder(b));
+  const objOpen=pkv.objOpen||bh.objOpen;
+  const running=step==="bescheid"||step==="geld"||objOpen;
+  const cut=r2((pkv.cutOpen?pkv.diff:0)+(bh.cutOpen?bh.diff:0));
+  return {amount,fee,paid,open,unpaid,over,due,daysLeft,overdue,dueSoon,pkv,bh,todo,wait,money,step,tasks,objOpen,running,cut,
+    klaeren:tasks.filter(x=>x.t!=="einreichen"&&x.t!=="bezahlen"),archived:step==="erledigt"&&!tasks.length&&!objOpen};
+}
+function taskOrder(x){const o=["einreichen","bezahlen",...KLAEREN];return o.indexOf(x.t)}
+const taskKey=x=>[x.t,x.k||"",x.issue||""].join(":");
+const hasTask=(c,key)=>c.tasks.some(x=>taskKey(x)===key);
+
+/* ================= Umwandlung: Daten der bisherigen App -> Testversion 2 ================= */
+const CHECK_RE=[[/fehlbuch/i,"fehlbuchung"],[/originalrechnung/i,"original"],[/formular|nachreich/i,"nachreichen"],[/nachfrag/i,"nachfrage"]];
+function migrateOld(data){
+  const del=data.deleted||{},inv=[],besch=new Map();
+  for(const o of data.invoices||[]){
+    if(del[o.id]&&del[o.id]>=(o.updatedAt||""))continue;
+    const kind=o.kind||(/apotheke/i.test(o.provider||"")?"apotheke":"arzt");
+    const v={id:o.id,patient:o.patient||"",kind,
+      doctor:(o.doctor||o.provider||"").trim(),billing:o.doctor?(o.provider||"").trim():"",
+      treatDate:o.treatDate||"",invoiceDate:o.invoiceDate||"",receivedDate:o.receivedDate||"",invoiceNo:o.invoiceNo||"",
+      amount:o.amount,iban:o.iban||"",reason:o.reason||"",note:o.note||"",dueDate:o.dueDate||"",fee:+o.fee||0,
+      payment:o.payment||{},refundDue:!!o.refundDue,
+      doc:o.docDriveId||o.docUrl?{driveId:o.docDriveId||null,url:o.docUrl||"",own:false}:{},
+      issues:[],createdAt:o.createdAt||o.updatedAt||nowIso(),updatedAt:nowIso(),origin:"kopie"};
+    if(o.check){const kk=(CHECK_RE.find(([re])=>re.test(o.check))||[])[1]||"sonst";v.issues.push({id:uid(),kind:kk,text:o.check,created:today(),done:null})}
+    for(const k of ["pkv","bh"]){const s=o[k]||{};
+      v[k]={rate:+s.rate||0,deduction:+s.deduction||0,submitted:s.submitted||(s.receivedDate?s.receivedDate:null),cutOk:!!s.cutOk,obj:s.obj||null,note:s.note||""};
+      if(!s.receivedDate)continue;
+      const date=s.proofDate||s.receivedDate;
+      const key=s.proofDriveId?`d:${k}:${s.proofDriveId}`:s.proofUrl?`u:${k}:${s.proofUrl}`:s.appId?`a:${k}:${s.appId}:${date}`:s.proofDate?`p:${k}:${s.proofDate}`:`m:${o.id}:${k}`;
+      let b=besch.get(key);
+      if(!b){b={id:uid(),k,date,appId:s.appId||null,total:null,manual:!s.proofDriveId&&!s.proofUrl,
+        file:s.proofDriveId||s.proofUrl?{driveId:s.proofDriveId||null,url:s.proofUrl||"",own:false}:{},
+        items:[],moneyIn:date,createdAt:date+"T12:00:00.000Z",updatedAt:nowIso(),origin:"kopie"};besch.set(key,b)}
+      if(s.moneyIn===false&&r2(s.received)>0)b.moneyIn=null;
+      else if(typeof s.moneyIn==="string"&&b.moneyIn&&s.moneyIn>b.moneyIn)b.moneyIn=s.moneyIn;
+      const it={invId:o.id,refund:r2(s.received)};
+      if(s.eligible!=null){it.eligible=s.eligible;if(s.cutNote)it.note=s.cutNote}
+      b.items.push(it);
+    }
+    inv.push(v);
+  }
+  const people=data.settings?.people?.length?data.settings.people:DEFAULT_SETTINGS.people;
+  const rates=data.settings?.rates||DEFAULT_SETTINGS.rates;
+  return {invoices:inv,bescheide:[...besch.values()],settings:{people,rates,payDays:data.settings?.payDays||30,warnDays:data.settings?.warnDays??7}};
+}
+/* ================= Personenbilder (gezeichnet, keine Fotos) ================= */
+const AV_LABELS={papa:"Papa",mama:"Mama",tochter:"Mädchen",sohn:"Junge",initiale:"Initiale"};
+const AV_DEFAULT={olgun:"papa",pinar:"mama","pınar":"mama",ikra:"tochter",hamza:"sohn"};
+function avatarKey(p){if(p?.avatar&&AV_LABELS[p.avatar])return p.avatar;const k=(p?.name||"").trim().toLowerCase();return AV_DEFAULT[k]||"initiale"}
+function avatarFor(name){const p=S.settings.people.find(x=>x.name===name)||{name};return avatarSvg(avatarKey(p),name)}
+function avatarSvg(kind,name=""){
+  const SK="#E9B993",HR="#3A2A22",EY="#2A211C",CH="#F2A3A0";
+  const bg={papa:"#CFE2F6",mama:"#F6D6E2",tochter:"#FBE6C2",sohn:"#D2EFDC",initiale:"#E3E8EE",alle:"#163a6b"}[kind]||"#E3E8EE";
+  const shirt={papa:"#3E6FA8",mama:"#C2577E",tochter:"#E8913A",sohn:"#3E9A62"}[kind]||"#7C8A96";
+  const open=`<svg class="av" viewBox="0 0 64 64" aria-hidden="true"><defs><clipPath id="avc"><circle cx="32" cy="32" r="32"/></clipPath></defs><g clip-path="url(#avc)"><rect width="64" height="64" fill="${bg}"/>`;
+  if(kind==="alle")return open+`<circle cx="22" cy="27" r="7" fill="#fff" opacity=".95"/><circle cx="42" cy="27" r="7" fill="#fff" opacity=".95"/><circle cx="25" cy="42" r="5" fill="#fff" opacity=".8"/><circle cx="39" cy="42" r="5" fill="#fff" opacity=".8"/><path d="M8 64c2-9 7-13 14-13s12 4 14 13zM28 64c2-9 7-13 14-13s12 4 14 13z" fill="#fff" opacity=".35"/></g></svg>`;
+  if(kind==="initiale"||!AV_LABELS[kind]){const ini=esc((name||"?").trim().charAt(0).toUpperCase()||"?");return open+`<text x="32" y="41" text-anchor="middle" font-size="26" font-weight="700" fill="#4b5a67" font-family="system-ui,sans-serif">${ini}</text></g></svg>`}
+  const kid=kind==="tochter"||kind==="sohn";
+  const face=`<rect x="28" y="36" width="8" height="9" rx="3" fill="${SK}"/><ellipse cx="32" cy="28" rx="11" ry="12" fill="${SK}"/><circle cx="27.8" cy="28.5" r="1.5" fill="${EY}"/><circle cx="36.2" cy="28.5" r="1.5" fill="${EY}"/><path d="M28.6 33.2q3.4 2.8 6.8 0" stroke="${EY}" stroke-width="1.5" fill="none" stroke-linecap="round"/>`+(kid?`<circle cx="25" cy="32" r="2" fill="${CH}" opacity=".7"/><circle cx="39" cy="32" r="2" fill="${CH}" opacity=".7"/>`:"");
+  const body=`<path d="M11 66c0-13 9-21 21-21s21 8 21 21z" fill="${shirt}"/>`;
+  let back="",front="";
+  if(kind==="papa")front=`<path d="M20.6 27c-1-11 6-15.5 11.6-15.5 7.4 0 12.6 4.4 11.2 15.5-1.6-5.6-5.6-8.2-11.4-8.2-5.6 0-9.6 2.6-11.4 8.2z" fill="${HR}"/><path d="M21.5 31c1 7 5 10.5 10.5 10.5S41.5 38 42.5 31c-1.6 3.6-3.8 5.4-6 5.9-1.4-1.4-2.8-1.8-4.5-1.8s-3.1.4-4.5 1.8c-2.2-.5-4.4-2.3-6-5.9z" fill="${HR}" opacity=".85"/>`;
+  if(kind==="mama"){back=`<path d="M18 31c-1.5-15 6.5-21 14-21s15.5 6 14 21l1.5 17c-6 3-25 3-31 0z" fill="${HR}"/>`;front=`<path d="M21 27c.5-9 6-13 12-13 6.5 0 11 4 11 12-4.5-4.6-11-6.2-15.4-4.8-3 1-5.6 2.8-7.6 5.8z" fill="${HR}"/>`}
+  if(kind==="tochter"){back=`<circle cx="17.5" cy="31" r="6.5" fill="${HR}"/><circle cx="46.5" cy="31" r="6.5" fill="${HR}"/><circle cx="20" cy="25.5" r="2.4" fill="#E8913A"/><circle cx="44" cy="25.5" r="2.4" fill="#E8913A"/>`;front=`<path d="M21 28c-.5-10 5.5-14 11-14s11.5 4 11 14c-2.6-4.4-6.6-6.6-11-6.6s-8.4 2.2-11 6.6z" fill="${HR}"/>`}
+  if(kind==="sohn")front=`<path d="M21.2 27.5c-.8-10 5.2-13.8 10.8-13.8 6 0 11.6 3.8 10.8 13.8-1.8-4.6-5.4-7.2-10.8-7.2s-9 2.6-10.8 7.2z" fill="${HR}"/><path d="M29 15l3-5 3.4 5z" fill="${HR}"/>`;
+  const head=back+body+face+front;
+  const g=kid?`<g transform="translate(32 64) scale(.9) translate(-32 -64)">${head}</g>`:head;
+  return open+g+`</g></svg>`;
+}
+
+/* ================= Suche ================= */
+function matchQ(i,q){
+  const words=q.toLowerCase().split(/\s+/).filter(Boolean);if(!words.length)return true;
+  const amt=+i.amount||0;const amtTxt=[amt.toFixed(2).replace(".",","),amt.toFixed(2),eur(amt).toLowerCase(),String(amt)].join(" ");
+  const ids=SIDES.flatMap(([k])=>itemsOf(i.id,k).map(x=>x.b.appId||"")).join(" ");
+  const hay=[i.doctor,i.billing,i.treatDate,i.invoiceNo,(i.invoiceNo||"").replace(/[^0-9a-z]/gi,""),i.patient,i.reason,i.note,dfmt(i.invoiceDate),dfmt(i.receivedDate),i.invoiceDate,amtTxt,ids].join(" ").toLowerCase();
+  return words.every(w=>{
+    if(/^\d+([.,]\d{1,2})?$/.test(w)&&/[.,]/.test(w)){const n=+w.replace(",",".");if(Math.abs(n-amt)<0.005)return true}
+    return hay.includes(w)||hay.includes(w.replace(/[^0-9a-z]/gi,""))&&w.replace(/[^0-9a-z]/gi,"").length>=3;
+  });
+}
+
+/* ================= Hauptseite: drei Bereiche ================= */
+const AREAS=[{id:"zutun",label:"Zu tun"},{id:"laeuft",label:"Läuft"},{id:"archiv",label:"Archiv"}];
+const AREA_ICON={
+  zutun:'<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  laeuft:'<path d="M7 3h10M7 21h10"/><path d="M8 3c0 5 8 6 8 9s-8 4-8 9M16 3c0 5-8 6-8 9s8 4 8 9"/>',
+  archiv:'<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/>'
+};
+function rowsFor(){const rows=S.inv.map(i=>({i,c:calc(i)}));return S.person==="alle"?rows:rows.filter(r=>r.i.patient===S.person)}
+function bescheidMine(b){return S.person==="alle"||b.items.some(it=>S.inv.find(x=>x.id===it.invId)?.patient===S.person)}
+function counts(rows){
+  return {zutun:rows.reduce((a,r)=>a+r.c.tasks.length,0),
+    laeuft:rows.filter(r=>r.c.step==="bescheid"||r.c.objOpen).length+S.besch.filter(b=>bescheidMine(b)&&geldOffen(b)).length};
+}
+// Bescheid wartet auf Geld: Betrag > 0, noch nicht als eingegangen markiert
+function geldOffen(b){return !b.moneyIn&&b.items.some(it=>r2(it.refund)>0.004&&isLatest(b,it))}
+function isLatest(b,it){const l=itemsOf(it.invId,b.k);return l.length&&l[l.length-1].b===b}
+function render(){
+  const rows=rowsFor();
+  renderSummary(rows);renderBanner();
+  const n=counts(rows);
+  $("#bnav").innerHTML=AREAS.map(a=>{const c=a.id==="archiv"?0:n[a.id],on=!S.searchOpen&&a.id===S.area;
+    return `<button type="button" data-area="${a.id}" class="${c||a.id==="archiv"?"":"zero"}" aria-current="${on}" aria-label="${esc(a.label)}${a.id==="archiv"?"":": "+c}"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${AREA_ICON[a.id]}</svg></span>${c?`<span class="n">${c}</span>`:""}<span>${esc(a.label)}</span></button>`}).join("");
+  const names=["alle",...S.settings.people.map(p=>p.name)];
+  $("#people").innerHTML=names.map(p=>`<button type="button" class="pbtn" data-p="${esc(p)}" aria-pressed="${p===S.person}">${p==="alle"?avatarSvg("alle"):avatarFor(p)}<span>${p==="alle"?"Alle":esc(p)}</span></button>`).join("");
+  renderSelectBar();
+  const L=$("#list");
+  if(!S.loaded){L.innerHTML=`<div class="empty">Wird geladen …</div>`;return}
+  if(!S.inv.length){L.innerHTML=welcomeHtml();return}
+  if(S.searchOpen){L.innerHTML=searchHtml(rows);return}
+  L.innerHTML=S.area==="zutun"?zutunHtml(rows):S.area==="laeuft"?laeuftHtml(rows):archivHtml(rows);
+}
+function welcomeHtml(){
+  return `<div class="empty" style="text-align:left"><b>Testversion 2 ist noch leer.</b><br>
+    Hol dir eine Kopie deiner echten Daten. Die echte App und ihre Daten bleiben dabei unverändert.
+    <div class="btnrow" style="margin-top:12px"><button type="button" class="btn primary" data-act="importstart">Kopie der echten Daten holen</button></div></div>`;
+}
+function searchHtml(rows){
+  const q=S.q.trim();const list=(q?rows.filter(r=>matchQ(r.i,q)):rows).sort((a,b)=>(b.i.invoiceDate||"").localeCompare(a.i.invoiceDate||""));
+  let h=`<div class="searchinfo">${q?`${list.length} Treffer für „${esc(q)}“`:`Alle ${list.length} Rechnungen`}${S.person!=="alle"?" von "+esc(S.person):""}.</div>`;
+  if(!list.length)return h+`<div class="empty">Keine Treffer.</div>`;
+  for(const r of list)h+=cardHtml(r,{q,step:true});return h;
+}
+// Gruppe mit Kopfzeile, ein- und ausklappbar
+function grp(key,label,sub,right,inner,defOpen=true){
+  const open=defOpen?!S.closed.has(key):S.open.has(key);
+  return `<button type="button" class="grp" data-grp="${esc(key)}" data-def="${defOpen?1:0}" aria-expanded="${open}"><span class="chev">${open?"▼":"▶"}</span><span class="gt">${label}${sub?`<span class="gs">${sub}</span>`:""}</span>${right?`<span class="ga num">${right}</span>`:""}</button>${open?inner:""}`;
+}
+function sectionHead(t,n,extra=""){return `<div class="area-h"><h2>${esc(t)}</h2>${n!=null?`<span class="cnt">${n}</span>`:""}${extra}</div>`}
+
+/* ---- Zu tun: was ich selbst machen muss ---- */
+function zutunHtml(rows){
+  const t=guideTasks(rows);
+  let h="";
+  if(t.length)h+=`<div class="guidecard"><div class="gl"><b>${t.length} Aufgabe${t.length===1?"":"n"}</b><span>${esc(guideSummary(t))}</span></div><button type="button" class="btn primary" data-act="guidestart">Los geht's</button></div>`;
+  const gm=S.besch.filter(b=>bescheidMine(b)&&geldOffen(b)).length;
+  if(gm)h+=`<button type="button" class="hint" data-area="laeuft">${gm} Bescheid${gm===1?"":"e"} warte${gm===1?"t":"n"} auf das Geld. Ist es da? Unter <b>Läuft</b> bestätigen, danach kannst du bezahlen.</button>`;
+  const ein=rows.filter(r=>r.c.step==="einreichen").sort((a,b)=>(a.i.invoiceDate||"").localeCompare(b.i.invoiceDate||""));
+  const bez=rows.filter(r=>r.c.step==="bezahlen").sort((a,b)=>(a.c.due||"9").localeCompare(b.c.due||"9"));
+  const kl=rows.flatMap(r=>r.c.klaeren.map(x=>({...r,task:x}))).sort((a,b)=>taskOrder(a.task)-taskOrder(b.task)||(a.i.invoiceDate||"").localeCompare(b.i.invoiceDate||""));
+  if(!ein.length&&!bez.length&&!kl.length)return h+`<div class="empty">Nichts zu tun. Alles wartet auf andere oder ist erledigt.</div>`;
+  if(ein.length){
+    h+=sectionHead("Einreichen",ein.length,ein.length>1?`<button type="button" class="btn link" data-act="${S.select?"selnone":"selstart"}">${S.select?"Auswahl beenden":"Mehrere auswählen"}</button>`:"");
+    if(S.select)h+=`<div class="btnrow"><button type="button" class="btn" data-act="selall">Alle auswählen</button></div>`;
+    for(const r of ein)h+=cardHtml(r,{sel:true});
+  }
+  if(bez.length){h+=sectionHead("Arzt bezahlen",bez.length);for(const r of bez)h+=cardHtml(r,{})}
+  if(kl.length){h+=sectionHead("Klären",kl.length);
+    let last=null;for(const r of kl){if(r.task.t!==last){h+=`<div class="year">${esc(TASK_LABEL[r.task.t])}</div>`;last=r.task.t}h+=cardHtml(r,{task:r.task})}}
+  return h;
+}
+/* ---- Läuft: wartet auf AXA, Beihilfe oder Kasse ---- */
+function laeuftHtml(rows){
+  let h=sectionHead("Warten auf Bescheid",rows.filter(r=>r.c.step==="bescheid").length);
+  h+=`<div class="btnrow prooftools"><button type="button" class="btn primary" data-act="proofstart" data-k="pkv">Bescheid AXA</button><button type="button" class="btn primary" data-act="proofstart" data-k="bh">Bescheid Beihilfe</button></div>`;
+  const w=rows.filter(r=>r.c.step==="bescheid");
+  if(!w.length)h+=`<div class="empty">Keine Einreichung wartet auf einen Bescheid.</div>`;
+  else{const g=new Map();for(const r of w){const d=[r.c.pkv,r.c.bh].filter(x=>x.state==="wait").map(x=>x.s.submitted).sort()[0]||"";if(!g.has(d))g.set(d,[]);g.get(d).push(r)}
+    for(const d of [...g.keys()].sort((a,b)=>b.localeCompare(a))){const list=g.get(d),ago=d?days(d,today()):null;
+      const sum=list.reduce((a,{c})=>a+(c.pkv.state==="wait"?c.pkv.expected:0)+(c.bh.state==="wait"?c.bh.expected:0),0);
+      h+=grp("w:"+d,d?"Eingereicht am "+dfmt(d):"Ohne Datum",`${ago!==null?(ago===0?"heute":`vor ${ago} Tag${ago===1?"":"en"}`)+" · ":""}${list.length} Rechnung${list.length===1?"":"en"}`,eur(sum),list.map(r=>cardHtml(r,{})).join(""))}}
+  const gb=S.besch.filter(b=>bescheidMine(b)&&geldOffen(b)).sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+  h+=sectionHead("Warten auf Geld",gb.length);
+  if(!gb.length)h+=`<div class="empty">Kein Bescheid wartet auf den Geldeingang.</div>`;
+  for(const b of gb)h+=bcardHtml(b,true);
+  const ob=rows.filter(r=>r.c.objOpen);
+  if(ob.length){h+=sectionHead("Widerspruch läuft",ob.length);for(const r of ob)h+=cardHtml(r,{})}
+  return h;
+}
+// Ein Bescheid als Karte: Datum, Summe, Rechnungen, Geld-Knopf
+function bescheidSum(b){return r2(b.items.reduce((a,it)=>a+(+it.refund||0),0))}
+function bcardHtml(b,withMoney){
+  const inv=b.items.map(it=>S.inv.find(x=>x.id===it.invId)).filter(Boolean);
+  const names=[...new Set(inv.map(i=>i.patient))].join(", ");
+  return `<div class="bcard"><button type="button" class="bmain" data-bid="${esc(b.id)}">
+    <div class="row1"><div class="who"><div class="prov">${SN(b.k)} · Bescheid vom ${dfmt(b.date)}</div>
+    <div class="meta">${inv.length} Rechnung${inv.length===1?"":"en"}${names?" · "+esc(names):""}${b.appId?" · Antrag "+esc(b.appId):""}${b.manual?" · ohne Dokument":""}</div></div>
+    <div class="amt">${eur(bescheidSum(b))}</div></div></button>
+    ${withMoney?`<div class="btnrow"><button type="button" class="btn primary" data-act="bmoney" data-bid="${esc(b.id)}">Geld ist da</button></div>`:""}</div>`;
+}
+/* ---- Archiv: erledigte Rechnungen und alle Bescheide ---- */
+function archivHtml(rows){
+  let h=`<nav class="chips" aria-label="Archiv"><button type="button" class="chip" data-arch="rechnungen" aria-pressed="${S.archiv==="rechnungen"}">Rechnungen</button><button type="button" class="chip" data-arch="bescheide" aria-pressed="${S.archiv==="bescheide"}">Bescheide</button></nav>`;
+  if(S.archiv==="bescheide"){
+    const bs=S.besch.filter(bescheidMine).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+    if(!bs.length)return h+`<div class="empty">Noch keine Bescheide.</div>`;
+    const g=new Map();for(const b of bs){const k=(b.date||"").slice(0,7);if(!g.has(k))g.set(k,[]);g.get(k).push(b)}
+    const keys=[...g.keys()];
+    keys.forEach((k,i)=>{const list=g.get(k);h+=grp("bm:"+k,monthLabel(k),`${list.length} Bescheid${list.length===1?"":"e"}`,eur(list.reduce((a,b)=>a+bescheidSum(b),0)),list.map(b=>bcardHtml(b,false)).join(""),i===0)});
+    return h;
+  }
+  const done=rows.filter(r=>r.c.archived).sort((a,b)=>(b.i.invoiceDate||"").localeCompare(a.i.invoiceDate||""));
+  if(!done.length)return h+`<div class="empty">Noch nichts erledigt.</div>`;
+  const g=new Map();for(const r of done){const k=(r.i.invoiceDate||"").slice(0,7);if(!g.has(k))g.set(k,[]);g.get(k).push(r)}
+  [...g.keys()].forEach((k,i)=>{const list=g.get(k);const back=list.reduce((a,{c})=>a+c.pkv.received+c.bh.received,0);
+    h+=grp("rm:"+k,monthLabel(k),`${list.length} Rechnung${list.length===1?"":"en"} · erstattet ${eur(back)}`,eur(list.reduce((a,{c})=>a+c.amount,0)),list.map(r=>cardHtml(r,{})).join(""),i===0)});
+  return h;
+}
+/* ---- Karte einer Rechnung ---- */
+function lineText(i,c,task){
+  if(task)return taskLine(i,c,task);
+  if(c.step==="einreichen"){const w=[c.pkv.state==="todo"&&"AXA",c.bh.state==="todo"&&"Beihilfe"].filter(Boolean);return `Einreichen bei ${w.join(" und ")}`}
+  if(c.step==="bescheid"){const w=[c.pkv,c.bh].filter(x=>x.state==="wait").map(x=>`${SN(x.k)} ${eur(x.expected)}`);return `Warten auf Bescheid: ${w.join(" und ")}`}
+  if(c.step==="geld"){const w=[c.pkv,c.bh].filter(x=>x.moneyOpen).map(x=>`${SN(x.k)} ${eur(x.received)}`);return `Warten auf Geld: ${w.join(" und ")}`}
+  if(c.step==="bezahlen")return `Jetzt ${eur(c.open)} an ${payee(i)||"den Arzt"} überweisen`;
+  if(c.objOpen)return "Widerspruch eingelegt, Ergebnis offen";
+  return "";
+}
+function taskLine(i,c,x){
+  if(x.t==="kuerzung"){const s=c[x.k];return `${SN(x.k)} hat ${eur(s.diff)} weniger erstattet`}
+  if(x.t==="nachfragen"){const s=c[x.k];return `${SN(x.k)}: seit ${s.waitDays} Tagen kein Bescheid`}
+  if(x.t==="zahlung")return i.refundDue?`${eur(-c.open)} zu viel bezahlt: zurückfordern`:`${eur(-c.open)} mehr überwiesen als die Rechnung`;
+  const is=(i.issues||[]).find(z=>z.id===x.issue);return is?.text||TASK_LABEL[x.t];
+}
+function dueText(c){
+  if(!c.unpaid||!c.due)return "";
+  if(c.overdue)return `<span class="due bad">Fällig seit ${dfmt(c.due)} (${-c.daysLeft} Tg. überfällig)</span>`;
+  if(c.dueSoon)return `<span class="due warn">Fällig am ${dfmt(c.due)} (${c.daysLeft===0?"heute":"in "+c.daysLeft+" Tg."})</span>`;
+  return `<span class="due">Fällig am ${dfmt(c.due)}</span>`;
+}
+function cardHtml({i,c},o={}){
+  const sel=o.sel&&S.select?S.select.has(i.id):null;
+  const nx=lineText(i,c,o.task);
+  const tk=o.task?taskKey(o.task):"";
+  return `<button type="button" class="card${sel?" selected":""}" data-id="${esc(i.id)}"${tk?` data-task="${esc(tk)}"`:""}${o.sel&&S.select?` data-sel="1" aria-pressed="${!!sel}"`:""}>
+    <div class="row1">${o.sel&&S.select?`<span class="tick" aria-hidden="true">${sel?"✓":""}</span>`:""}<div class="who"><div class="prov">${esc(title(i))}</div>${i.billing?`<div class="via">über ${esc(i.billing)}${i.treatDate?" · Behandlung "+esc(i.treatDate):""}</div>`:""}
+    <div class="meta"><span class="pchip">${avatarFor(i.patient)}${esc(i.patient||"?")}</span>${dfmt(i.invoiceDate)}${o.q&&i.invoiceNo?" · Nr. "+esc(i.invoiceNo):""}</div></div>
+    <div class="amt">${eur(c.amount)}</div></div>
+    ${o.step?`<div class="next">${esc(STEP_LABEL[c.step])}${c.tasks.length?` · ${c.tasks.length} Aufgabe${c.tasks.length===1?"":"n"}`:""}</div>`:nx?`<div class="next ${o.task&&o.task.t!=="einreichen"&&o.task.t!=="bezahlen"?"s-klaeren":"s-"+c.step}">${esc(nx)}</div>`:""}
+    ${c.step==="bezahlen"&&!o.task?dueText(c):""}
+  </button>`;
+}
+function renderSummary(rows){
+  let pay=0,exp=0;for(const {c} of rows){if(c.unpaid)pay+=c.open;for(const x of [c.pkv,c.bh])if(x.state==="wait")exp+=x.expected;else if(x.moneyOpen)exp+=x.received}
+  $("#sumBar").innerHTML=`<span class="vals"><span class="pay">Offen beim Arzt <b>${eur(pay)}</b></span><span class="exp">Erstattung erwartet <b>${eur(exp)}</b></span></span>`;
+  $("#sub").textContent=`${S.inv.length} Rechnungen · ${S.besch.length} Bescheide`;
+}
+function renderBanner(){
+  const b=$("#banner");const st=driveStatus();
+  if(S.loaded&&S.inv.length&&!S.settings.driveLinked){b.innerHTML=`<span>Nicht mit Drive verbunden. Änderungen bleiben nur auf diesem Gerät.</span><button type="button" class="btn" data-act="settings">Einstellungen</button>`;b.hidden=false;return}
+  if(st.pending&&!tokenValid()&&S.settings.driveLinked){b.innerHTML=`<span>Drive-Anmeldung abgelaufen. Änderungen sind noch nicht in Drive.</span><button type="button" class="btn" data-act="settings">Anmelden</button>`;b.hidden=false;return}
+  b.hidden=true;
+}
+
+/* ================= Geführter Durchlauf über alle Aufgaben ================= */
+function guideTasks(rows=rowsFor()){
+  return rows.flatMap(r=>r.c.tasks.map(x=>({id:r.i.id,key:taskKey(x),t:x.t,i:r.i,c:r.c})))
+    .sort((a,b)=>taskOrder(a)-taskOrder(b)||(a.t==="bezahlen"?(a.c.due||"9").localeCompare(b.c.due||"9"):(a.i.invoiceDate||"").localeCompare(b.i.invoiceDate||"")));
+}
+function guideSummary(t){const n={};for(const x of t){const g=x.t==="einreichen"||x.t==="bezahlen"?x.t:"klaeren";n[g]=(n[g]||0)+1}
+  return [n.einreichen&&`${n.einreichen} × einreichen`,n.bezahlen&&`${n.bezahlen} × bezahlen`,n.klaeren&&`${n.klaeren} × klären`].filter(Boolean).join(" · ")}
+function guideStart(){
+  const t=guideTasks();if(!t.length){toast("Gerade nichts zu tun");return}
+  S.guide={items:t.map(x=>({id:x.id,key:x.key,t:x.t})),i:0};openView(S.guide.items[0].id,S.guide.items[0].key);
+}
+function guideOpen(it){const inv=S.inv.find(x=>x.id===it.id);return !!inv&&hasTask(calc(inv),it.key)}
+function guideNext(){
+  const g=S.guide;if(!g)return;g.i++;
+  while(g.i<g.items.length&&!guideOpen(g.items[g.i]))g.i++;
+  if(g.i>=g.items.length){S.guide=null;closeSheet();render();toast("Fertig. Alle Aufgaben durchgegangen.");return}
+  openView(g.items[g.i].id,g.items[g.i].key);
+}
+function guideStop(){S.guide=null;closeSheet();render()}
+const GUIDE_HOW={
+  einreichen:"PDF an die Beihilfe-App senden und in der AXA-App hochladen, danach jeweils abhaken.",
+  bezahlen:"Die Erstattung ist da. QR-Code an die Sparkassen-App senden, überweisen, dann „Heute bezahlt“ tippen.",
+  kuerzung:"Kleine Beträge meist akzeptieren. Bei größeren Beträgen den Text als Widerspruch senden.",
+  fehlbuchung:"Text kopieren und über die AXA-App als Nachricht senden. Danach „Erledigt“ tippen.",
+  nachreichen:"Fehlende Unterlagen in der jeweiligen App nachreichen. Danach „Erledigt“ tippen.",
+  original:"Text kopieren und an den Rechnungssteller senden. Danach „Erledigt“ tippen.",
+  nachfrage:"Text kopieren und senden. Danach „Erledigt“ tippen.",
+  nachfragen:"Seit über 4 Wochen kein Bescheid. Text kopieren und nachfragen, dann „Nachgefragt“ tippen.",
+  zahlung:"Klären, ob eine Mahngebühr enthalten war oder ob zu viel überwiesen wurde.",
+  sonst:"Den Punkt erledigen, danach „Erledigt“ tippen."
+};
+function guideBar(inv,c){
+  const g=S.guide;if(!g||g.items[g.i]?.id!==inv.id)return "";
+  const it=g.items[g.i],done=!hasTask(c,it.key),last=g.i===g.items.length-1;
+  return `<div class="guidebar"><div class="gtop">Aufgabe ${g.i+1} von ${g.items.length} · ${esc(TASK_LABEL[it.t])}</div>
+    <div class="gtxt">${done?"Erledigt. Weiter zur nächsten Aufgabe.":GUIDE_HOW[it.t]}</div>
+    <div class="btnrow"><button type="button" class="btn${done?" primary":""}" data-act="gnext">${last?"Fertig":done?"Weiter":"Überspringen"}</button><button type="button" class="btn" data-act="gstop">Beenden</button></div></div>`;
+}
+
+/* ================= Mehrere auf einmal als eingereicht markieren ================= */
+function renderSelectBar(){
+  const bar=$("#selBar");
+  if(!S.select){bar.hidden=true;$("#btnAdd").hidden=false;$("#bnav").hidden=false;return}
+  const n=S.select.size;bar.hidden=false;$("#btnAdd").hidden=true;$("#bnav").hidden=true;
+  bar.innerHTML=`<div class="selinfo">${n} ausgewählt · heute eingereicht bei:</div>
+    <div class="btnrow"><button type="button" class="btn" data-act="bulk" data-k="pkv" ${n?"":"disabled"}>AXA</button>
+    <button type="button" class="btn" data-act="bulk" data-k="bh" ${n?"":"disabled"}>Beihilfe</button>
+    <button type="button" class="btn primary" data-act="bulk" data-k="both" ${n?"":"disabled"}>Beiden</button>
+    <button type="button" class="btn" data-act="selnone">Abbrechen</button></div>`;
+}
+async function bulkSubmit(which){
+  const keys=which==="both"?["pkv","bh"]:[which];let n=0;
+  for(const id of S.select){const inv=structuredClone(S.inv.find(x=>x.id===id));if(!inv)continue;let ch=false;
+    for(const k of keys)if(side(inv,k).state==="todo"){inv[k].submitted=today();ch=true}
+    if(ch){await saveInvoice(inv,true);n++}}
+  S.select=null;render();scheduleSync();toast(`${n} Rechnung${n===1?"":"en"} als eingereicht markiert`);
+}
+
+/* ================= Ereignisse auf der Hauptseite ================= */
+document.addEventListener("click",e=>{
+  if(e.target.closest(".sheet"))return;
+  const ar=e.target.closest("[data-area]");if(ar){S.area=ar.dataset.area;S.select=null;closeSearch();render();window.scrollTo({top:0});return}
+  const ach=e.target.closest("[data-arch]");if(ach){S.archiv=ach.dataset.arch;render();return}
+  const p=e.target.closest("[data-p]");if(p){S.person=p.dataset.p;render();return}
+  const g=e.target.closest("[data-grp]");if(g){const k=g.dataset.grp;if(g.dataset.def==="1"){S.closed.has(k)?S.closed.delete(k):S.closed.add(k)}else{S.open.has(k)?S.open.delete(k):S.open.add(k)}render();return}
+  const a=e.target.closest("[data-act]");
+  if(a){const act=a.dataset.act;
+    if(act==="selstart"){S.select=new Set();return render()}
+    if(act==="selnone"){S.select=null;return render()}
+    if(act==="selall"){S.select=new Set([...document.querySelectorAll(".card[data-sel]")].map(x=>x.dataset.id));return render()}
+    if(act==="bulk")return bulkSubmit(a.dataset.k);
+    if(act==="proofstart")return startProof(a.dataset.k);
+    if(act==="guidestart")return guideStart();
+    if(act==="bmoney")return moneyIn(a.dataset.bid);
+    if(act==="settings")return openSettings();
+    if(act==="importstart")return openSettings("import");
+  }
+  const bm=e.target.closest("[data-bid]");if(bm){openBescheid(bm.dataset.bid);return}
+  const c=e.target.closest(".card[data-id]");
+  if(c){const id=c.dataset.id;
+    if(S.select&&c.dataset.sel){S.select.has(id)?S.select.delete(id):S.select.add(id);return render()}
+    openView(id,c.dataset.task||null);}
+});
+$("#btnAdd").addEventListener("click",async()=>{const r=await scanDocument("Rechnung scannen");if(r)openNew(r)});
+$("#btnSettings").addEventListener("click",()=>openSettings());
+function closeSearch(){S.searchOpen=false;S.q="";$("#q").value="";$("#qClear").hidden=true;$("#searchRow").hidden=true;$("#btnSearch").setAttribute("aria-pressed","false")}
+$("#btnSearch").addEventListener("click",()=>{if(S.searchOpen)closeSearch();else{S.searchOpen=true;S.select=null;$("#searchRow").hidden=false;$("#btnSearch").setAttribute("aria-pressed","true");$("#q").focus()}render()});
+(()=>{const q=$("#q"),c=$("#qClear");let t;
+  q.addEventListener("input",()=>{c.hidden=!q.value;clearTimeout(t);t=setTimeout(()=>{S.q=q.value;render()},150)});
+  c.addEventListener("click",()=>{q.value="";c.hidden=true;S.q="";render();q.focus()});
+  q.addEventListener("keydown",e=>{if(e.key==="Escape"){closeSearch();render()}else if(e.key==="Enter")q.blur()});})();
+
+/* ================= Sheet-Hilfen ================= */
+function closeSheet(){if(S.edit?.urls)S.edit.urls.forEach(u=>URL.revokeObjectURL(u));S.edit=null;$("#sheetHost").innerHTML=""}
+function sheet(t,body,headBtns){
+  $("#sheetHost").innerHTML=`<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(t)}">
+   <div class="sheet-head"><h2>${esc(t)}</h2><div class="btnrow">${headBtns}</div></div>${body}</div></div>`;
+  $("#scrim").addEventListener("click",e=>{if(e.target.id==="scrim"){S.guide=null;closeSheet();render()}});
+}
+function setStatus(msg,err){const s=$("#edStatus");if(s){s.textContent=msg||"";s.className="status"+(err?" err":"")}}
+const P=t=>`<p class="status" style="margin:0 0 10px">${t}</p>`;
+function field(label,id,val,type="text",cls="",extra=""){
+  return `<label class="f ${cls}">${label}<input id="${id}" type="${type==="number"?"text":type}" value="${esc(type==="number"&&val!==""&&val!=null?String(val).replace(".",","):val??"")}" ${type==="number"?'inputmode="decimal" class="num"':""} ${extra}></label>`;
+}
+
+/* ================= Speichern ================= */
+function rateFor(name){const p=S.settings.people.find(x=>x.name===name);const g=p?.group||"A";return {group:g,...(S.settings.rates[g]||{pkv:0,bh:0})}}
+async function saveInvoice(inv,quiet){
+  inv.updatedAt=nowIso();if(!inv.id){inv.id=uid();inv.createdAt=inv.updatedAt}
+  await dbPut("invoices",inv);
+  const i=S.inv.findIndex(x=>x.id===inv.id);if(i>=0)S.inv[i]=inv;else S.inv.push(inv);
+  if(!quiet){render();scheduleSync()}
+}
+async function saveBescheid(b,quiet){
+  b.updatedAt=nowIso();if(!b.id){b.id=uid();b.createdAt=b.updatedAt}
+  await dbPut("bescheide",b);
+  const i=S.besch.findIndex(x=>x.id===b.id);if(i>=0)S.besch[i]=b;else S.besch.push(b);
+  reindex();if(!quiet){render();scheduleSync()}
+}
+async function deleteBescheid(b){
+  await dbDel("bescheide",b.id);S.deleted[b.id]=nowIso();await dbPut("meta",{key:"deleted",items:S.deleted});
+  if(b.file?.own&&b.file.driveId)await queueTrash([b.file.driveId]);
+  S.besch=S.besch.filter(x=>x.id!==b.id);reindex();render();scheduleSync();
+}
+async function storeFile(blob,name){const id=uid();await dbPut("files",{id,blob,name,type:blob.type});return id}
+async function fileUrl(id){const f=id&&await dbGet("files",id);return f?{url:URL.createObjectURL(f.blob),file:f}:null}
+async function shrink(file,max,q){
+  if(!file.type.startsWith("image/"))return file;
+  try{const bmp=await createImageBitmap(file);const sc=Math.min(1,max/Math.max(bmp.width,bmp.height));
+    const cv=document.createElement("canvas");cv.width=Math.round(bmp.width*sc);cv.height=Math.round(bmp.height*sc);
+    cv.getContext("2d").drawImage(bmp,0,0,cv.width,cv.height);
+    return await new Promise(res=>cv.toBlob(b=>res(b||file),"image/jpeg",q));}catch{return file}
+}
+// Datei eines Belegs holen: erst vom Gerät, sonst aus Drive (nur lesen)
+async function fileBlob(ref){
+  if(!ref)return null;
+  if(ref.fileId){const f=await dbGet("files",ref.fileId);if(f)return {blob:f.blob,name:f.name}}
+  if(ref.driveId&&tokenValid()){const b=await driveBlob(ref.driveId);if(b)return {blob:b,name:ref.name||"Dokument.pdf"}}
+  return null;
+}
+async function openRef(ref){
+  if(!ref)return;const f=await fileBlob(ref);
+  if(f){const u=URL.createObjectURL(f.blob);S.edit?.urls?.push(u);window.open(u,"_blank");return}
+  if(ref.url){window.open(ref.url,"_blank");return}
+  toast(ref.driveId?"In Drive anmelden, um das Dokument zu öffnen":"Dokument nicht vorhanden");
+}
+function fname(inv,blob){return `${inv.invoiceDate||today()}_${inv.patient}_${title(inv)}`.replace(/[^\wäöüÄÖÜß.-]+/g,"_")+(blob.type==="application/pdf"?".pdf":".jpg")}
+
+/* ================= Geld ist da: gilt für den ganzen Bescheid ================= */
+async function moneyIn(bid){
+  const b=S.besch.find(x=>x.id===bid);if(!b)return;
+  const nb=structuredClone(b);nb.moneyIn=today();await saveBescheid(nb);
+  const pay=b.items.map(it=>S.inv.find(x=>x.id===it.invId)).filter(i=>i&&calc(i).step==="bezahlen").length;
+  toast(pay?`Geld da. ${pay} Rechnung${pay===1?"":"en"} jetzt unter „Zu tun“ bezahlen.`:"Geld als eingegangen markiert");
+}
+
+/* ================= Ansicht einer Rechnung ================= */
+async function openView(id,focus){
+  const inv=S.inv.find(x=>x.id===id);if(!inv)return;
+  S.edit={mode:"view",id,urls:[],focus:focus||null};
+  drawView();
+  let thumb="";
+  try{
+    if(inv.thumbFileId){const r=await fileUrl(inv.thumbFileId);if(r){S.edit.urls.push(r.url);thumb=`<img class="thumb" src="${r.url}" alt="Rechnung">`}}
+    if(!thumb&&inv.doc?.fileId){const r=await fileUrl(inv.doc.fileId);if(r&&r.file.type.startsWith("image/")){S.edit.urls.push(r.url);thumb=`<img class="thumb" src="${r.url}" alt="Rechnung">`}}
+  }catch{}
+  if(thumb&&S.edit?.id===id)drawView(thumb);
+}
+function stampPay(c,inv){
+  if(!c.unpaid)return c.open<-0.004?`<span class="stamp s-bad">Überzahlt <b>${eur(-c.open)}</b></span>`:`<span class="stamp s-ok">${isApo(inv)&&!inv.payment?.date?"In der Apotheke bezahlt":"Bezahlt"}</span>`;
+  return `<span class="stamp ${c.overdue?"s-bad":"s-todo"}">Offen <b>${eur(c.open)}</b></span>`;
+}
+function stampSide(x){
+  const n=SN(x.k);
+  if(x.state==="na")return `<span class="stamp s-na">${n} –</span>`;
+  if(x.state==="todo")return `<span class="stamp s-todo">${n} einreichen</span>`;
+  if(x.state==="wait")return `<span class="stamp s-wait">${n} <b>${eur(x.expected)}</b> erwartet</span>`;
+  if(x.moneyOpen)return `<span class="stamp s-wait">${n} <b>${eur(x.received)}</b> Geld offen</span>`;
+  if(x.diff>0.004)return `<span class="stamp s-bad">${n} gekürzt <b>−${eur(x.diff)}</b></span>`;
+  return `<span class="stamp s-ok">${n} erstattet</span>`;
+}
+function drawView(thumb){
+  if(thumb!==undefined)S.edit.thumb=thumb;
+  const inv=S.inv.find(x=>x.id===S.edit.id);if(!inv)return closeSheet();const c=calc(inv);
+  sheet(title(inv),`
+    ${guideBar(inv,c)}
+    <div id="edStatus" class="status" style="margin-top:10px"></div>
+    <div class="sec hero">
+      <div class="big">${eur(c.amount)}</div>
+      <div class="meta"><span class="pchip">${avatarFor(inv.patient)}${esc(inv.patient)}</span>${dfmt(inv.invoiceDate)}${inv.invoiceNo?" · Nr. "+esc(inv.invoiceNo):""}</div>
+      ${inv.billing?`<div class="via">Rechnung über ${esc(inv.billing)}${inv.treatDate?" · Behandlung "+esc(inv.treatDate):""}</div>`:inv.treatDate?`<div class="via">Behandlung ${esc(inv.treatDate)}</div>`:""}
+      <div class="steps">${stepDots(c)}</div>
+      <div class="stamps">${stampPay(c,inv)}${stampSide(c.pkv)}${stampSide(c.bh)}</div>
+    </div>
+    <div class="sec nextstep"><h3>Nächster Schritt · ${esc(STEP_LABEL[c.step])}</h3>${nextHtml(inv,c)}</div>
+    ${klaerenHtml(inv,c)}
+    <div class="sec"><h3>Stand</h3>${statusLine(inv,c.pkv)}${statusLine(inv,c.bh)}${payLine(inv,c)}</div>
+    ${S.edit.thumb?`<div class="sec">${S.edit.thumb}</div>`:""}
+    ${historyHtml(inv,c)}
+    ${moreHtml(inv,c)}
+  `,`<button type="button" class="btn" data-act="close">Schließen</button>`);
+  $("#scrim").addEventListener("click",viewClick);
+  if(S.edit.focus){const el=document.querySelector(`[data-tk="${CSS.escape(S.edit.focus)}"]`);if(el)el.scrollIntoView({block:"start"});S.edit.focus=null}
+}
+// Fortschritt: Erfasst – Eingereicht – Bescheid – Geld – Bezahlt
+function stepDots(c){
+  const order=["einreichen","bescheid","geld","bezahlen","erledigt"],at=order.indexOf(c.step);
+  const L=["Eingereicht","Bescheid","Geld da","Bezahlt"];
+  return L.map((l,i)=>`<span class="dot2 ${i<at?"on":""}">${l}</span>`).join("");
+}
+/* ---- Genau ein nächster Schritt ---- */
+function nextHtml(inv,c){
+  const one=(act,label,k,cls="primary")=>`<button type="button" class="btn ${cls}" data-act="${act}"${k?` data-k="${k}"`:""}>${label}</button>`;
+  if(S.edit.ask){const k=S.edit.ask,x=side(inv,k);return P(`${SN(k)}: erhaltenen Betrag ohne Bescheid eintragen. Daraus wird ein Bescheid ohne Dokument.`)+`<div class="inline"><label class="f">Erhalten (€)<input id="askAmt" class="num" inputmode="decimal" value="${x.expected.toFixed(2).replace(".",",")}"></label></div>
+    <div class="btnrow">${one("got","Übernehmen",k)}${one("askno","Abbrechen","","")}</div>`}
+  if(S.edit.resub){const k=S.edit.resub;return P(`${SN(k)}: Einreichung zurücksetzen? Der Bescheid-Eintrag dieser Rechnung wird entfernt, die Rechnung steht wieder bei „Einreichen“.`)+`<div class="btnrow">${one("resubok","Ja, erneut einreichen",k)}${one("resubno","Abbrechen","","")}</div>`}
+  if(S.edit.feeAsk)return feeAskHtml(c);
+  if(c.step==="einreichen")return submitHtml(inv,c);
+  if(c.step==="bescheid"){const w=[c.pkv,c.bh].filter(x=>x.state==="wait");
+    return P(w.map(x=>`${SN(x.k)}: ${eur(x.expected)} erwartet · eingereicht ${dfmt(x.s.submitted)}`+(x.waitDays>ASK_DAYS?` · <b style="color:var(--warn)">seit ${x.waitDays} Tagen</b>`:"")).join("<br>")+"<br>Kommt ein Bescheid, hier oder unter „Läuft“ erfassen.")
+      +`<div class="btnrow">${w.map(x=>one("proofcap",`Bescheid ${SN(x.k)} erfassen`,x.k)).join("")}</div>`}
+  if(c.step==="geld"){const x=[c.pkv,c.bh].find(y=>y.moneyOpen);const b=x.b,n=b.items.length;
+    return P(`Ist die Erstattung von ${SN(x.k)} auf dem Konto?<br><b>${eur(bescheidSum(b))}</b> laut Bescheid vom ${dfmt(b.date)}${n>1?` (${n} Rechnungen, davon diese ${eur(x.received)})`:""}.<br>Erst wenn das Geld da ist, bezahlst du den Arzt.`)
+      +`<div class="btnrow"><button type="button" class="btn primary" data-act="bmoney" data-bid="${esc(b.id)}">Ja, Geld ist da</button></div>`}
+  if(c.step==="bezahlen"||S.edit.showPay)return paySection(inv,c);
+  if(c.klaeren.length)return P("Ablauf fertig. Offen ist nur noch der Punkt unter „Zu klären“.");
+  if(c.objOpen)return P("Widerspruch eingelegt. Das Ergebnis steht unter „Stand“.")+objHtml(inv,c.pkv.objOpen?c.pkv:c.bh);
+  return P("Alles erledigt. Hier ist nichts mehr zu tun.");
+}
+/* ---- Einreichen: erst Beihilfe, dann AXA ---- */
+async function loadSubmitFile(inv){
+  let f=null;try{f=await fileBlob(inv.doc)}catch{}
+  if(!S.edit||S.edit.id!==inv.id)return;
+  S.edit.subFile=f?new File([f.blob],f.name||fname(inv,f.blob),{type:f.blob.type||"application/pdf"}):false;drawView();
+}
+const AXA_APP="intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=de.axa.noa;S.browser_fallback_url="+encodeURIComponent("https://play.google.com/store/apps/details?id=de.axa.noa")+";end";
+function submitHtml(inv,c){
+  if(S.edit.subFile===undefined){S.edit.subFile=null;loadSubmitFile(inv)}
+  const f=S.edit.subFile;
+  const steps=[["bh","Beihilfe"],["pkv","AXA"]].filter(([k])=>c[k].state!=="na");
+  let open=false;
+  const rows=steps.map(([k,n],i)=>{const x=c[k];
+    if(x.state!=="todo")return `<div class="line"><div><div class="t">${i+1}. ${n}</div><div class="s" style="color:var(--ok)">Eingereicht am ${dfmt(x.s.submitted)}</div></div></div>`;
+    const active=!open;open=true;
+    const btn=k==="bh"?`<button type="button" class="btn primary" data-act="subshare" ${f?"":"disabled"}>① PDF an Beihilfe-App senden</button>`
+      :`<button type="button" class="btn primary" data-act="subsave" ${f?"":"disabled"}>① PDF aufs Handy speichern</button><a class="btn" href="${AXA_APP}">AXA-App öffnen</a>`;
+    return `<div class="line" style="${active?"":"opacity:.5"}"><div><div class="t">${i+1}. ${n}</div><div class="s">${k==="bh"?"Antragsart: Beihilfe":"In der AXA-App Person "+esc(inv.patient)+" wählen, Datei aus Downloads"}</div></div></div>
+      ${active?`<div class="btnrow">${btn}<button type="button" class="btn done" data-act="sub" data-k="${k}">② Erledigt – bei ${n} eingereicht</button></div>${k==="pkv"&&S.edit.subSaved?`<p class="status" style="margin:4px 0 0;color:var(--ok)">Im Ordner Downloads gespeichert.</p>`:""}`:""}`}).join("");
+  const note=f===null?"Beleg wird geladen …":f===false?(inv.doc?.driveId&&!tokenValid()?"Beleg liegt in Drive. Für das Senden bitte in den Einstellungen anmelden.":"Kein Beleg vorhanden. Unter „Weitere Aktionen“ hinzufügen."):"";
+  return `${S.settings.testMode!==false?`<p class="status" style="margin:0 0 8px;color:var(--warn)"><b>Testversion:</b> nur abhaken, nicht wirklich einreichen.</p>`:""}${rows}${note?`<p class="status" style="margin:6px 0 0">${note}</p>`:""}`;
+}
+/* ---- Bezahlen: Daten und GiroCode ---- */
+function payData(inv,c){
+  const purpose=(inv.invoiceNo?`Rechnung ${inv.invoiceNo}`:`Rechnung vom ${dfmt(inv.invoiceDate)}`)+` ${inv.patient||""}`.trimEnd()+(+inv.fee>0?" inkl. Mahngebuehr":"");
+  return {name:payee(inv).slice(0,70),iban:(inv.iban||"").replace(/\s+/g,"").toUpperCase(),amount:r2(c.open),purpose:purpose.slice(0,140)};
+}
+function paySection(inv,c){
+  const p=payData(inv,c),canQr=!!(p.iban&&p.name&&p.amount>0),sent=!!S.edit.giroSent;
+  const row=(k,label,val)=>`<span class="k">${label}</span><span class="v">${esc(val)||"–"}</span>${val?`<button type="button" class="btn" data-act="copy" data-k="${k}">Kopieren</button>`:"<span></span>"}`;
+  return P(`${eur(p.amount)} an ${esc(p.name||"den Arzt")} überweisen.${canQr?" Der QR-Code geht an die Banking-App, dort nur noch bestätigen.":""}`)
+    +(p.iban?"":P(`<span style="color:var(--bad)">Die IBAN fehlt. Unter „Weitere Aktionen › Bearbeiten“ eintragen.</span>`))
+    +`<div class="btnrow">${canQr?`<button type="button" class="btn ${sent?"":"primary"}" data-act="giroshare">QR-Code an Banking-App senden</button>`:""}
+      <button type="button" class="btn ${sent||!canQr?"primary":""}" data-act="paid">Heute bezahlt</button></div>
+    <details style="margin-top:10px"><summary>Daten zum Abtippen</summary><div class="paygrid" style="margin-top:8px">
+      ${row("name","Empfänger",p.name)}${row("iban","IBAN",p.iban)}${row("amount","Betrag",p.amount.toFixed(2).replace(".",","))}${row("purpose","Zweck",p.purpose)}</div></details>`;
+}
+function feeAskHtml(c){
+  return `<div class="inline"><label class="f">Mahngebühr (€)<input id="feeAmt" class="num" inputmode="decimal" value="${c.fee>0?c.fee.toFixed(2).replace(".",","):""}"></label></div><div class="btnrow"><button type="button" class="btn primary" data-act="feesave">Übernehmen</button><button type="button" class="btn" data-act="feeno">Abbrechen</button></div>`;
+}
+/* ---- Zu klären: jede Aufgabe mit Erklärung, Text und Knopf ---- */
+function klaerenHtml(inv,c){
+  if(!c.klaeren.length)return "";
+  S.edit.texts=[];
+  return `<div class="sec"><h3>Zu klären</h3>${c.klaeren.map(x=>`<div class="task" data-tk="${esc(taskKey(x))}"><div class="t">${esc(TASK_LABEL[x.t])}</div>${taskBody(inv,c,x)}</div>`).join("")}</div>`;
+}
+function textBox(t,x,warn){const n=S.edit.texts.push({t,x})-1;
+  return `<details class="txtbox"><summary><b>${esc(t)}</b></summary>${warn?`<p class="status" style="color:var(--warn);margin:6px 0">${esc(warn)}</p>`:""}<textarea readonly rows="9">${esc(x)}</textarea>
+    <div class="btnrow"><button type="button" class="btn" data-act="copytxt" data-n="${n}">Text kopieren</button></div><p class="status" style="margin:4px 0 0">Platzhalter in eckigen Klammern vor dem Senden ersetzen.</p></details>`}
+const SIG=["","Mit freundlichen Grüßen","Olgun Katrag"];
+function rechText(inv,c){
+  const extra=[inv.invoiceNo&&`Rechnungsnummer ${inv.invoiceNo}`,inv.billing&&inv.doctor&&`Behandlung bei ${inv.doctor}${inv.treatDate?" am "+inv.treatDate:""}`].filter(Boolean);
+  return `Rechnung von ${payee(inv)||"?"} vom ${dfmt(inv.invoiceDate)} über ${eur(c.amount)}${extra.length?` (${extra.join(", ")})`:""}`;
+}
+function taskBody(inv,c,x){
+  const rech=rechText(inv,c),L=a=>a.filter(v=>v!==null).join("\n");
+  if(x.t==="kuerzung"){const s=c[x.k],b=s.b,frist=x.k==="bh"&&b?.date?addMonths(b.date,1):null,late=!!(frist&&frist<today());
+    const ref=`${b?.date?` vom ${dfmt(b.date)}`:""}${b?.appId?` (${x.k==="pkv"?"Vorgang":"Antrag"} ${b.appId})`:""}`;
+    return `<p class="status" style="margin:2px 0 6px">${eur(s.received)} erhalten, ${eur(s.expected)} erwartet: <b style="color:var(--bad)">${eur(s.diff)} weniger</b>.${s.item?.note?`<br>Grund laut Bescheid: ${esc(s.item.note)}`:""}<br>${frist?(late?`Widerspruchsfrist am ${dfmt(frist)} abgelaufen.`:`<b style="color:var(--warn)">Widerspruch möglich bis ${dfmt(frist)}.</b>`):""}</p>`
+      +textBox(late?`Bitte um Überprüfung an ${SN(x.k)}`:`Widerspruch an ${SN(x.k)}`,L(["Sehr geehrte Damen und Herren,","",
+        late?`ich bitte um Überprüfung ${x.k==="pkv"?"der Abrechnung":"des Beihilfebescheids"}${ref}.`:`gegen ${x.k==="pkv"?"die Abrechnung":"den Beihilfebescheid"}${ref} lege ich Widerspruch ein.`,
+        `Betroffen ist die ${rech} für ${inv.patient}.`,`Erstattet wurden ${eur(s.received)}, erwartet hatte ich ${eur(s.expected)}. Die Differenz beträgt ${eur(s.diff)}.`,
+        "Bitte prüfen Sie die Kürzung erneut und teilen Sie mir die Gründe mit.",...SIG]),late?"Die Frist ist abgelaufen. Der Text bittet deshalb nur um Überprüfung.":"")
+      +`<div class="btnrow"><button type="button" class="btn primary" data-act="objset" data-k="${x.k}">Widerspruch eingelegt</button><button type="button" class="btn" data-act="cutok" data-k="${x.k}">Kürzung akzeptieren</button></div>`}
+  if(x.t==="nachfragen"){const s=c[x.k];
+    return `<p class="status" style="margin:2px 0 6px">Eingereicht am ${dfmt(s.s.submitted)}, seit ${s.waitDays} Tagen kein Bescheid.</p>`
+      +textBox(`Nachfrage an ${SN(x.k)}`,L(["Sehr geehrte Damen und Herren,","",`am ${dfmt(s.s.submitted)} habe ich die ${rech} für ${inv.patient} eingereicht.`,"Bisher habe ich dazu keinen Bescheid erhalten. Bitte teilen Sie mir den Bearbeitungsstand mit.",...SIG]))
+      +`<div class="btnrow"><button type="button" class="btn primary" data-act="asked" data-k="${x.k}">Nachgefragt</button></div>`}
+  if(x.t==="zahlung"){
+    if(inv.refundDue)return `<p class="status" style="margin:2px 0 6px"><b>${eur(-c.open)} zu viel bezahlt</b> – beim Arzt zurückfordern.</p><div class="btnrow"><button type="button" class="btn primary" data-act="refundok">Geld zurückerhalten</button></div>`;
+    return `<p class="status" style="margin:2px 0 6px">${eur(-c.open)} mehr überwiesen als die Rechnung. War das eine Mahngebühr?</p><div class="btnrow"><button type="button" class="btn primary" data-act="feeover">War eine Mahngebühr</button><button type="button" class="btn" data-act="refunddue">Wirklich zu viel bezahlt</button></div>`}
+  const is=(inv.issues||[]).find(z=>z.id===x.issue);if(!is)return "";
+  let txt="";
+  if(x.t==="fehlbuchung"){const m=(is.text||"").match(/auf (\S+) statt (\S+?)[\s).,]/i),falsch=m?m[1]:"[falsche Person]",richtig=m?m[2]:inv.patient;const s=c.pkv;
+    txt=textBox("Nachricht an AXA",L(["Sehr geehrte Damen und Herren,","",`die ${rech} betrifft ${richtig}.`,
+      `In Ihrer Abrechnung${s.b?.date?` vom ${dfmt(s.b.date)}`:""}${s.b?.appId?` (Vorgang ${s.b.appId})`:""} wurde sie bei ${falsch} gebucht.`,`Bitte korrigieren Sie die Zuordnung auf ${richtig}.`,...SIG]))}
+  if(x.t==="original")txt=textBox("Nachfrage an den Rechnungssteller",L(["Sehr geehrte Damen und Herren,","",`ich warte noch auf die Originalrechnung zur Behandlung von ${inv.patient}${inv.invoiceDate?` vom ${dfmt(inv.invoiceDate)}`:""} über ${eur(c.amount)}.`,"Bitte senden Sie mir die Rechnung zu, damit ich sie bei meiner Versicherung einreichen kann.",...SIG]));
+  if(x.t==="nachfrage")txt=textBox("Nachfrage an AXA und Beihilfe",L(["Sehr geehrte Damen und Herren,","",`ich habe die ${rech} für ${inv.patient} eingereicht.`,"Bisher habe ich dazu keinen Bescheid erhalten. Bitte teilen Sie mir den Bearbeitungsstand mit.",...SIG]));
+  return `<p class="status" style="margin:2px 0 6px">${esc(is.text)}</p>${txt}<div class="btnrow"><button type="button" class="btn primary" data-act="issuedone" data-iid="${esc(is.id)}">Erledigt</button></div>`;
+}
+function objHtml(inv,x){const o=x.s.obj;if(!o)return "";
+  if(!o.result)return P(`<b>Widerspruch bei ${SN(x.k)} eingelegt am ${dfmt(o.date)}</b> · Ergebnis offen`)+`<div class="btnrow"><button type="button" class="btn primary" data-act="objyes" data-k="${x.k}">Nachzahlung erhalten</button><button type="button" class="btn" data-act="objno" data-k="${x.k}">Widerspruch abgelehnt</button></div>`;
+  return "";
+}
+/* ---- Stand je Seite ---- */
+function statusLine(inv,x){
+  let info;const s=x.s;
+  if(x.state==="na")info="Kein Anspruch";
+  else if(x.state==="todo")info=`${eur(x.expected)} erwartet · noch nicht eingereicht`;
+  else if(x.state==="wait")info=`${eur(x.expected)} erwartet · eingereicht ${dfmt(s.submitted)}`;
+  else{const b=x.b;
+    info=`${eur(x.received)} laut <button type="button" class="btn link inl" data-bid="${esc(b.id)}">Bescheid vom ${dfmt(b.date)}</button>`
+      +(x.diff>0.004?` · <b style="color:var(--bad)">${eur(x.diff)} weniger als erwartet</b>`:x.diff<-0.004?` · ${eur(-x.diff)} mehr als erwartet`:"")
+      +(x.moneyOpen?` · <b style="color:var(--wait)">Geld noch nicht da</b>`:b.moneyIn?` · Geld da am ${dfmt(b.moneyIn)}`:"");
+    if(x.list.length>1)info+=`<br><span class="status">${x.list.length} Bescheide, der neueste gilt</span>`;
+    if(s.obj)info+=`<br>Widerspruch vom ${dfmt(s.obj.date)}: ${!s.obj.result?"Ergebnis offen":s.obj.result==="nachzahlung"?"Nachzahlung erhalten":"abgelehnt"}`+(!s.obj.result?objHtml(inv,x):"");
+    else if(s.cutOk&&x.diff>0.004)info+="<br>Kürzung akzeptiert";}
+  return `<div class="line"><div><div class="t">${SN(x.k)}</div><div class="s">${info}</div></div></div>`;
+}
+function payLine(inv,c){
+  const info=c.unpaid?`${eur(c.open)} offen`:(c.open<-0.004?`${eur(-c.open)} zu viel überwiesen`:isApo(inv)&&!inv.payment?.date?"In der Apotheke bezahlt":`Bezahlt am ${dfmt(inv.payment?.date)}`);
+  return `<div class="line"><div><div class="t">Zahlung an ${esc(payee(inv)||"Arzt")}</div><div class="s">${info}${c.fee>0?` · inkl. ${eur(c.fee)} Mahngebühr`:""}</div>${dueText(c)}</div></div>`;
+}
+/* ---- Verlauf ---- */
+function historyHtml(inv,c){
+  const ev=[];const add=(d,t)=>{if(d)ev.push([String(d).slice(0,10),t])};
+  add(inv.createdAt,inv.origin==="kopie"?"Erfasst (Kopie aus der echten App)":"Erfasst");
+  for(const x of [c.bh,c.pkv]){const n=SN(x.k),s=x.s;add(s.submitted,`Bei ${n} eingereicht`);
+    for(const {b,it} of x.list){add(b.date,`Bescheid ${n}: ${eur(it.refund)}${b.appId?` (Antrag ${esc(b.appId)})`:""}`);if(b.moneyIn)add(b.moneyIn,`Geld von ${n} da`)}
+    if(s.asked)add(s.asked,`Bei ${n} nachgefragt`);
+    if(s.obj){add(s.obj.date,`Widerspruch bei ${n} eingelegt`);if(s.obj.result)add(s.obj.resultDate,`Widerspruch ${n}: ${s.obj.result==="nachzahlung"?"Nachzahlung":"abgelehnt"}`)}}
+  if(inv.payment?.date)add(inv.payment.date,`${eur(inv.payment.amount)} an ${esc(payee(inv)||"Arzt")} überwiesen`);
+  for(const is of inv.issues||[]){add(is.created,`Zu klären: ${esc(is.text)}`);add(is.done,"Geklärt: "+esc(is.text))}
+  if(!ev.length)return "";
+  ev.sort((a,b)=>a[0].localeCompare(b[0]));
+  return `<div class="sec"><details><summary><b>Verlauf</b> · ${ev.length} Einträge</summary>
+    <div style="margin-top:8px">${ev.map(([d,t])=>`<div class="hrow"><span class="num">${dfmt(d)}</span><span>${t}</span></div>`).join("")}</div></details></div>`;
+}
+/* ---- Weitere Aktionen ---- */
+function moreHtml(inv,c){
+  const b=(act,label,k)=>`<button type="button" class="btn" data-act="${act}"${k?` data-k="${k}"`:""}>${label}</button>`,L=[];
+  if(inv.doc?.fileId||inv.doc?.driveId||inv.doc?.url)L.push(b("opendoc","Rechnung öffnen"));else L.push(b("adddoc","Beleg hinzufügen"));
+  for(const x of [c.pkv,c.bh]){if(x.state==="na")continue;
+    if(x.state==="wait")L.push(b("ask",`${SN(x.k)}: Betrag ohne Bescheid eintragen`,x.k));
+    if(x.state==="wait"||x.state==="done")L.push(b("resub",`${SN(x.k)}: erneut einreichen`,x.k));}
+  if(c.unpaid&&c.step!=="bezahlen"&&!S.edit.showPay)L.push(b("paysec","Schon jetzt überweisen"));
+  if(c.unpaid)L.push(b("feeask",c.fee>0?"Mahngebühr ändern":"Mahnung erhalten"));
+  L.push(b("issueadd","Punkt zum Klären hinzufügen"));
+  L.push(b("edit","Details bearbeiten"));
+  return `<details class="sec more"${S.edit.moreOpen?" open":""}><summary><b>Weitere Aktionen</b></summary>
+    ${S.edit.issueAsk?`<div class="sec" style="margin-top:10px"><label class="f">Art<select id="isKind">${["fehlbuchung","nachreichen","original","nachfrage","sonst"].map(k=>`<option value="${k}">${esc(TASK_LABEL[k])}</option>`).join("")}</select></label>
+      <label class="f">Was ist zu klären?<input id="isText" placeholder="z. B. AXA hat auf Olgun statt Ikra gebucht"></label>
+      <div class="btnrow"><button type="button" class="btn primary" data-act="issuesave">Hinzufügen</button><button type="button" class="btn" data-act="issueno">Abbrechen</button></div></div>`:""}
+    <div class="morelist">${L.join("")}</div></details>`;
+}
+async function viewClick(e){
+  const bb=e.target.closest("[data-bid]");if(bb&&!bb.dataset.act){openBescheid(bb.dataset.bid);return}
+  const b=e.target.closest("[data-act]");if(!b)return;
+  const inv=structuredClone(S.inv.find(x=>x.id===S.edit.id));const k=b.dataset.k;
+  const again=()=>drawView();
+  switch(b.dataset.act){
+    case "close":S.guide=null;closeSheet();return render();
+    case "gnext":return guideNext();
+    case "gstop":return guideStop();
+    case "copytxt":{const o=S.edit.texts?.[+b.dataset.n];if(!o)return;try{await navigator.clipboard.writeText(o.x);toast("Text kopiert")}catch{toast("Kopieren nicht möglich – Text markieren")}return}
+    case "edit":{const urls=S.edit.urls;S.edit.urls=[];urls.forEach(u=>URL.revokeObjectURL(u));return openEditor(inv)}
+    case "sub":{inv[k].submitted=today();await saveInvoice(inv);const c1=calc(inv);
+      toast(c1.step==="einreichen"?`${SN(k)}: eingereicht. Jetzt ${SN(k==="pkv"?"bh":"pkv")}.`:"Eingereicht. Die Rechnung wartet jetzt unter „Läuft“ auf den Bescheid.");return again()}
+    case "subsave":{const f=S.edit.subFile;if(!f)return;const u=URL.createObjectURL(f);const a=document.createElement("a");a.href=u;a.download=/\.pdf$/i.test(f.name)?f.name:f.name+".pdf";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),10000);
+      S.edit.subSaved=true;toast("PDF gespeichert. Jetzt die AXA-App öffnen.");return again()}
+    case "subshare":{const f=S.edit.subFile;if(!f)return;if(navigator.canShare?.({files:[f]})){try{await navigator.share({files:[f],title:f.name})}catch{}}else toast("Teilen wird hier nicht unterstützt");return}
+    case "proofcap":{const id=inv.id;closeSheet();const r=await scanDocument(`Bescheid ${SN(k)} scannen`);if(r)openProof(r,{k,id});else openView(id);return}
+    case "bmoney":await moneyIn(b.dataset.bid);return again();
+    case "ask":S.edit.ask=k;S.edit.moreOpen=false;again();$(".nextstep")?.scrollIntoView({block:"center"});return;
+    case "askno":S.edit.ask=null;return again();
+    case "got":{const v=numIn($("#askAmt").value)||0;S.edit.ask=null;
+      await saveBescheid({k,date:today(),appId:null,total:v,manual:true,file:{},items:[{invId:inv.id,refund:v}],moneyIn:today()});
+      toast("Eingetragen als Bescheid ohne Dokument, Geld als da markiert");return again()}
+    case "resub":S.edit.resub=k;S.edit.moreOpen=false;again();$(".nextstep")?.scrollIntoView({block:"center"});return;
+    case "resubno":S.edit.resub=null;return again();
+    case "resubok":{for(const {b:bs} of itemsOf(inv.id,k)){const nb=structuredClone(bs);nb.items=nb.items.filter(it=>it.invId!==inv.id);
+        if(nb.items.length)await saveBescheid(nb,true);else await deleteBescheid(nb)}
+      const was=`Erste Einreichung bei ${SN(k)} ${dfmt(inv[k].submitted)}`;inv.note=inv.note?`${inv.note} · ${was}`:was;
+      inv[k].submitted=null;delete inv[k].cutOk;delete inv[k].obj;delete inv[k].asked;S.edit.resub=null;await saveInvoice(inv);toast(`${SN(k)}: wieder bei „Einreichen“`);return again()}
+    case "asked":inv[k].asked=today();await saveInvoice(inv);toast("Nachfrage eingetragen. In 4 Wochen erinnert die App wieder.");return again();
+    case "objset":inv[k].obj={date:today(),result:null};await saveInvoice(inv);toast("Widerspruch eingetragen. Er steht jetzt unter „Läuft“.");return again();
+    case "objyes":inv[k].obj.result="nachzahlung";inv[k].obj.resultDate=today();inv[k].cutOk=true;await saveInvoice(inv);toast("Nachzahlung eingetragen. Den neuen Bescheid über „Bescheid erfassen“ übernehmen.");return again();
+    case "objno":inv[k].obj.result="abgelehnt";inv[k].obj.resultDate=today();inv[k].cutOk=true;await saveInvoice(inv);toast("Widerspruch abgelehnt – Kürzung bleibt");return again();
+    case "cutok":inv[k].cutOk=true;await saveInvoice(inv);toast("Kürzung akzeptiert");return again();
+    case "issuedone":{const is=(inv.issues||[]).find(z=>z.id===b.dataset.iid);if(is)is.done=today();await saveInvoice(inv);toast("Erledigt");return again()}
+    case "issueadd":S.edit.issueAsk=true;S.edit.moreOpen=true;return again();
+    case "issueno":S.edit.issueAsk=false;return again();
+    case "issuesave":{const t=$("#isText").value.trim();if(!t){toast("Bitte kurz beschreiben");return}
+      inv.issues=[...(inv.issues||[]),{id:uid(),kind:$("#isKind").value,text:t,created:today(),done:null}];S.edit.issueAsk=false;await saveInvoice(inv);toast("Punkt steht jetzt unter „Zu tun › Klären“");return again()}
+    case "feeask":S.edit.feeAsk=true;again();$(".nextstep")?.scrollIntoView({block:"center"});$("#feeAmt")?.focus();return;
+    case "feeno":S.edit.feeAsk=false;return again();
+    case "feesave":inv.fee=numIn($("#feeAmt").value||"0")||0;S.edit.feeAsk=false;await saveInvoice(inv);toast(inv.fee?`Mahngebühr ${eur(inv.fee)} eingetragen`:"Mahngebühr entfernt");return again();
+    case "feeover":{const c0=calc(inv);inv.fee=r2((+inv.fee||0)-c0.open);await saveInvoice(inv);toast(`Mahngebühr ${eur(inv.fee)} eingetragen`);return again()}
+    case "refunddue":inv.refundDue=true;await saveInvoice(inv);toast("Markiert: Geld beim Arzt zurückfordern");return again();
+    case "refundok":{const back=-calc(inv).open;inv.payment={...inv.payment,amount:r2((+inv.amount||0)+(+inv.fee||0))};inv.refundDue=false;
+      inv.note=(inv.note?inv.note+" · ":"")+`${eur(back)} vom Arzt zurück am ${dfmt(today())}`;await saveInvoice(inv);toast("Rückzahlung eingetragen");return again()}
+    case "giroshare":{const p=payData(inv,calc(inv));try{const bl=await QR.png(giroText(p),`${eur(p.amount)} an ${p.name}`);
+      const f=new File([bl],`Ueberweisung_${(p.name||"Arzt").replace(/[^A-Za-z0-9ÄÖÜäöüß]+/g,"_").slice(0,30)}_${p.amount.toFixed(2).replace(".",",")}.png`,{type:"image/png"});
+      if(navigator.canShare?.({files:[f]})){try{await navigator.share({files:[f],title:f.name});S.edit.giroSent=true}catch{}}
+      else{const u=URL.createObjectURL(bl);const a=document.createElement("a");a.href=u;a.download=f.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),5000);S.edit.giroSent=true}
+      }catch{toast("QR-Code konnte nicht erstellt werden")}return again()}
+    case "paid":inv.payment={date:today(),amount:r2((+inv.amount||0)+(+inv.fee||0))};S.edit.showPay=false;await saveInvoice(inv);toast("Als bezahlt markiert");return again();
+    case "paysec":S.edit.showPay=true;again();$(".nextstep")?.scrollIntoView({block:"start"});return;
+    case "copy":{const p=payData(inv,calc(inv));let v=p[k];if(k==="amount")v=p.amount.toFixed(2).replace(".",",");try{await navigator.clipboard.writeText(String(v));toast("Kopiert: "+v)}catch{toast(String(v))}return}
+    case "opendoc":return openRef(inv.doc);
+    case "adddoc":{closeSheet();const r=await scanDocument("Rechnung scannen");if(!r)return openView(inv.id);const f=r.pdf||r.file;const blob=f.type.startsWith("image/")?await shrink(f,2200,0.85):f;
+      inv.doc={fileId:await storeFile(blob,fname(inv,blob)),own:true};await saveInvoice(inv);return openView(inv.id)}
+  }
+}
+
+/* ================= Erfassen und Bearbeiten ================= */
+// Abrechnungsstellen erkennt die App am Namen: dann ist der Arzt ein eigenes Feld
+const BILLING_RE=/\b(pvs|mediserv|pas\b|dzr|abrechnungs|abrechnungsstelle|unimed|health ag|zahnärztliche abrechnung|ärztliche verrechnungsstelle|verrechnungsstelle)/i;
+function blankInvoice(){
+  const p=S.settings.people[0]?.name||"";const r=rateFor(p);
+  return {id:null,patient:p,kind:"arzt",doctor:"",billing:"",treatDate:"",invoiceDate:today(),receivedDate:today(),invoiceNo:"",reason:"",amount:"",iban:"",note:"",dueDate:"",fee:0,
+    doc:{},issues:[],pkv:{rate:r.pkv,deduction:0,submitted:null},bh:{rate:r.bh,deduction:0,submitted:null},payment:{}};
+}
+async function openNew(input){
+  const file=input.pdf||input.file;const inv=blankInvoice();S.edit={mode:"edit",inv,file,urls:[]};
+  const pic=input.images?.[0]||(file.type.startsWith("image/")?file:null);
+  if(pic){const u=URL.createObjectURL(pic);S.edit.urls.push(u);S.edit.preview=u;S.edit.thumb0=pic}
+  drawEditor();ocr(input);
+}
+function openEditor(inv){S.edit={mode:"edit",inv,file:null,urls:[]};drawEditor()}
+const known=f=>[...new Set(S.inv.map(i=>i[f]).filter(Boolean))].map(p=>`<option value="${esc(p)}">`).join("");
+function sideForm(k){
+  const s=S.edit.inv[k]||{};const x=side(S.edit.inv,k);
+  return `<div class="sec"><h3>${SN(k)}</h3><div class="grid2">
+      ${field("Anteil in %",`${k}_rate`,Math.round((+s.rate||0)*100),"number")}
+      ${field("Abzug (€)",`${k}_deduction`,s.deduction||"","number")}
+      ${field("Eingereicht am",`${k}_submitted`,s.submitted,"date","full")}</div>
+    <div class="calc"><span>Erwartet</span><span class="num" id="${k}_exp">${eur(x.expected)}</span></div>
+    <p class="status" style="margin:0">Erstattete Beträge kommen aus den Bescheiden.</p></div>`;
+}
+function drawEditor(){
+  const {inv,preview}=S.edit;const isNew=!inv.id;
+  const opts=S.settings.people.map(p=>`<option ${p.name===inv.patient?"selected":""}>${esc(p.name)}</option>`).join("");
+  sheet(isNew?"Neue Rechnung":"Bearbeiten",`
+    <div id="edStatus" class="status" style="margin-top:10px"></div>
+    <div id="dupBox"></div><div id="confBox"></div>
+    <div class="sec">
+      ${preview?`<img class="thumb" src="${preview}" alt="Rechnungsfoto">`:""}
+      <div class="grid2">
+        <label class="f">Person<select id="patient">${opts}</select></label>
+        ${field("Betrag (€)","amount",inv.amount,"number")}
+        ${field("Arzt / Praxis / Klinik","doctor",inv.doctor,"text","full",'autocomplete="off" list="docList"')}
+        ${field("Abrechnungsstelle (nur wenn vorhanden)","billing",inv.billing,"text","full",'autocomplete="off" list="billList" placeholder="z. B. PVS, Mediserv, DZR"')}
+        ${field("Behandlung am","treatDate",inv.treatDate,"text","",'placeholder="z. B. 13.05.2026"')}
+        ${field("Rechnungsdatum","invoiceDate",inv.invoiceDate,"date")}
+        ${field("Rechnungsnummer","invoiceNo",inv.invoiceNo)}
+        <label class="f">Art<select id="kind">${[["arzt","Arzt"],["apotheke","Apotheke (sofort bezahlt)"],["krankenhaus","Krankenhaus"],["sonstiges","Sonstiges"]].map(([k,l])=>`<option value="${k}" ${k===(inv.kind||"arzt")?"selected":""}>${l}</option>`).join("")}</select></label>
+      </div>
+      <datalist id="docList">${known("doctor")}</datalist><datalist id="billList">${known("billing")}</datalist>
+    </div>
+    <div class="btnrow" style="margin-top:12px"><button type="button" class="btn" id="btnMore" aria-expanded="false">Weitere Angaben anzeigen</button></div>
+    <div id="more" hidden>
+      <div class="sec"><h3>Rechnung</h3><div class="grid2">
+        ${field("Eingang am","receivedDate",inv.receivedDate,"date")}
+        ${field("Grund","reason",inv.reason,"text","",'autocomplete="off"')}
+        ${field("IBAN des Empfängers","iban",inv.iban,"text","full",'autocomplete="off"')}
+        ${field("Notiz","note",inv.note,"text","full")}
+      </div></div>
+      ${sideForm("pkv")}${sideForm("bh")}
+      <div class="sec"><h3>Zahlung</h3><div class="grid2">
+        ${field("Fällig am (leer = automatisch)","dueDate",inv.dueDate,"date","full")}
+        ${field("Bezahlt am","pay_date",inv.payment?.date,"date")}
+        ${field("Bezahlt (€)","pay_amount",inv.payment?.amount??"","number")}
+        ${field("Mahngebühr (€)","fee",inv.fee||"","number")}
+      </div></div>
+      ${isNew?"":`<div class="sec"><h3>Löschen</h3><div class="btnrow"><button type="button" class="btn danger" data-act="del">Rechnung löschen</button></div></div>`}
+    </div>
+  `,`<button type="button" class="btn" data-act="cancel">Abbrechen</button><button type="button" class="btn primary" data-act="save" id="btnSave">Speichern</button>`);
+  const sc=$("#scrim");
+  sc.addEventListener("input",refreshCalc);
+  $("#patient").addEventListener("change",()=>{S.edit.patientLocked=true;readForm();const r=rateFor(S.edit.inv.patient);
+    $("#pkv_rate").value=Math.round(r.pkv*100);$("#bh_rate").value=Math.round(r.bh*100);refreshCalc()});
+  $("#btnMore").addEventListener("click",e=>{const m=$("#more");m.hidden=!m.hidden;e.target.textContent=m.hidden?"Weitere Angaben anzeigen":"Weitere Angaben ausblenden";e.target.setAttribute("aria-expanded",String(!m.hidden))});
+  for(const id of ["doctor","billing"])$("#"+id).addEventListener("change",()=>{suggestFrom();setTimeout(checkKnownIban,0)});
+  $("#doctor").addEventListener("change",()=>{if(/apotheke/i.test($("#doctor").value))$("#kind").value="apotheke"});
+  for(const id of ["invoiceNo","amount","invoiceDate"])$("#"+id).addEventListener("change",()=>{readForm();showDup()});
+  sc.addEventListener("click",editClick);
+  showDup();
+  for(const k of Object.keys(CONF_LABEL))$("#"+k)?.addEventListener("change",()=>{const x=S.edit.conf?.[k];if(x){x.done=true;readForm();if(k==="iban")checkKnownIban();else drawConf()}});
+  drawConf();
+}
+// IBAN mit früheren Rechnungen desselben Empfängers abgleichen
+function checkKnownIban(){
+  if(!S.edit?.conf)return;readForm();const inv=S.edit.inv;const name=payee(inv).trim().toLowerCase();if(!name||!inv.iban)return drawConf();
+  const prev=[...new Set(S.inv.filter(x=>x.id!==inv.id&&payee(x).trim().toLowerCase()===name&&x.iban).map(x=>x.iban))];
+  const c=S.edit.conf.iban||(S.edit.conf.iban={lvl:"check"});
+  if(prev.includes(inv.iban)){if(c.lvl!=="ok"){c.lvl="ok";c.msg="Gleiche IBAN wie bei früheren Rechnungen."}}
+  else if(prev.length){c.lvl="warn";c.done=false;c.msg=`Weicht von früheren Rechnungen ab (bisher …${prev[0].slice(-6)}). Bitte genau prüfen.`}
+  drawConf();
+}
+// Vorschläge aus früheren Rechnungen desselben Arztes bzw. derselben Abrechnungsstelle
+function suggestFrom(){
+  readForm();const inv=S.edit.inv;const d=inv.doctor.trim().toLowerCase(),bl=inv.billing.trim().toLowerCase();if(!d&&!bl)return;
+  const same=x=>x.id!==inv.id&&(d&&(x.doctor||"").trim().toLowerCase()===d||bl&&(x.billing||"").trim().toLowerCase()===bl);
+  const prev=S.inv.filter(same).sort((a,b)=>(b.invoiceDate||"").localeCompare(a.invoiceDate||""));if(!prev.length)return;
+  const filled=[];const samePay=prev.filter(x=>payee(x).trim().toLowerCase()===payee(inv).trim().toLowerCase());
+  const ib=samePay.find(x=>x.iban)?.iban;if(ib&&!$("#iban").value){$("#iban").value=ib;filled.push("IBAN")}
+  const rs=prev.find(x=>x.reason)?.reason;if(rs&&!$("#reason").value){$("#reason").value=rs;filled.push("Grund")}
+  if(bl&&!d){const ds=[...new Set(prev.filter(x=>(x.billing||"").trim().toLowerCase()===bl).map(x=>x.doctor).filter(Boolean))];if(ds.length===1){$("#doctor").value=ds[0];filled.push("Arzt")}}
+  const pats=[...new Set(prev.map(x=>x.patient).filter(Boolean))];
+  if(!inv.id&&!S.edit.patientLocked&&pats.length===1&&S.settings.people.some(p=>p.name===pats[0])&&$("#patient").value!==pats[0]){
+    $("#patient").value=pats[0];const r=rateFor(pats[0]);$("#pkv_rate").value=Math.round(r.pkv*100);$("#bh_rate").value=Math.round(r.bh*100);filled.push("Person")}
+  readForm();refreshCalc();showDup();
+  if(filled.length)setStatus(`Von früheren Rechnungen übernommen: ${filled.join(", ")}.`);
+}
+const normNo=s=>String(s||"").replace(/[\s\/\-.]/g,"").toLowerCase();
+function findDuplicate(inv){
+  const no=normNo(inv.invoiceNo),pay=payee(inv).trim().toLowerCase();
+  return S.inv.find(x=>x.id!==inv.id&&((no.length>=3&&normNo(x.invoiceNo)===no)||
+    (pay&&inv.invoiceDate&&inv.amount!==""&&payee(x).trim().toLowerCase()===pay&&x.invoiceDate===inv.invoiceDate&&r2(x.amount)===r2(inv.amount))));
+}
+function showDup(){
+  const box=$("#dupBox");if(!box||!S.edit||S.edit.inv.id)return;
+  const d=findDuplicate(S.edit.inv);S.edit.dup=d||null;
+  box.innerHTML=d?`<div class="checkline" style="margin-top:10px">Diese Rechnung gibt es vermutlich schon: <b>${esc(title(d))}</b>, ${dfmt(d.invoiceDate)}, ${eur(d.amount)} (${esc(d.patient)}${d.invoiceNo?", Nr. "+esc(d.invoiceNo):""}).
+    <div class="btnrow" style="margin-top:8px"><button type="button" class="btn" data-act="dupopen">Vorhandene öffnen</button><button type="button" class="btn" data-act="dupsave">Trotzdem speichern</button></div></div>`:"";
+}
+function readForm(){
+  const inv=S.edit.inv;const v=id=>$("#"+id)?.value??"";
+  inv.patient=v("patient");inv.amount=numIn(v("amount"));
+  for(const k of ["invoiceDate","receivedDate","doctor","billing","treatDate","invoiceNo","reason","iban","note","dueDate"])inv[k]=v(k).trim();
+  inv.kind=v("kind")||inv.kind||"arzt";
+  inv.iban=inv.iban.replace(/\s+/g,"").toUpperCase();
+  for(const k of ["pkv","bh"]){const s=inv[k]=inv[k]||{};s.rate=r2((+numIn(v(k+"_rate"))||0)/100);s.deduction=numIn(v(k+"_deduction"))||0;s.submitted=v(k+"_submitted")||null}
+  inv.payment={...(inv.payment||{}),date:v("pay_date")||null,amount:numIn(v("pay_amount"))};
+  inv.fee=numIn(v("fee"))||0;
+}
+function refreshCalc(){readForm();for(const k of ["pkv","bh"]){const el=$("#"+k+"_exp");if(el)el.textContent=eur(side(S.edit.inv,k).expected)}}
+async function editClick(e){
+  const b=e.target.closest("[data-act]");if(!b)return;const act=b.dataset.act;
+  if(act==="cancel"){const id=S.edit.inv.id;closeSheet();if(id)openView(id);return}
+  if(act==="confok"){const x=S.edit.conf?.[b.dataset.f];if(x)x.done=true;return drawConf()}
+  if(act==="dupopen"){const id=S.edit.dup?.id;closeSheet();if(id)openView(id);return}
+  if(act==="dupsave"){S.edit.dupOk=true;$("#dupBox").innerHTML="";return editClick({target:$("#btnSave")})}
+  if(act==="save"){
+    readForm();const inv=S.edit.inv;
+    if(inv.amount===""||!inv.doctor){setStatus("Bitte mindestens Arzt und Betrag eintragen.",true);return}
+    const pend=confPending();if(pend.length){drawConf();$("#confBox").scrollIntoView({block:"start",behavior:"smooth"});setStatus(`Bitte zuerst prüfen und bestätigen: ${pend.map(k=>CONF_LABEL[k]).join(", ")}.`,true);return}
+    if(!inv.id&&!S.edit.dupOk&&findDuplicate(inv)){showDup();$("#dupBox").scrollIntoView({block:"center"});setStatus("Bitte prüfen: möglicherweise doppelt.",true);return}
+    b.disabled=true;
+    try{
+      if(S.edit.file){const blob=await shrink(S.edit.file,2200,0.85);inv.doc={fileId:await storeFile(blob,fname(inv,blob)),own:true};S.edit.file=null;
+        if(S.edit.thumb0)inv.thumbFileId=await storeFile(await shrink(S.edit.thumb0,900,0.7),"vorschau.jpg")}
+      await saveInvoice(inv);toast("Gespeichert");const id=inv.id;closeSheet();openView(id);
+    }catch(err){setStatus("Speichern fehlgeschlagen: "+(err?.message||err),true);b.disabled=false}
+    return;
+  }
+  if(act==="del"){
+    if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Wirklich löschen? Nochmal tippen";return}
+    const inv=S.edit.inv;
+    // Bescheid-Einträge dieser Rechnung entfernen
+    for(const k of ["pkv","bh"])for(const {b:bs} of itemsOf(inv.id,k)){const nb=structuredClone(bs);nb.items=nb.items.filter(it=>it.invId!==inv.id);if(nb.items.length)await saveBescheid(nb,true);else await deleteBescheid(nb)}
+    await dbDel("invoices",inv.id);if(inv.doc?.fileId)await dbDel("files",inv.doc.fileId).catch(()=>{});
+    S.deleted[inv.id]=nowIso();await dbPut("meta",{key:"deleted",items:S.deleted});
+    if(inv.doc?.own&&inv.doc.driveId)await queueTrash([inv.doc.driveId]);
+    S.inv=S.inv.filter(x=>x.id!==inv.id);reindex();render();closeSheet();toast("Rechnung gelöscht");scheduleSync();
+  }
+}
+/* ---- Texterkennung beim Erfassen ---- */
+async function ocr(input){
+  setStatus("Texterkennung startet … (beim ersten Mal etwas länger)");
+  const qr=await readInvoiceQr(input).catch(()=>null);
+  const isPdfText=!input.images&&(input.pdf||input.file)&&!(input.pdf||input.file).type?.startsWith("image/");
+  try{
+    S.ocrCap=[];let text;try{text=await readText(input)}finally{if(S.edit)S.edit.cap=S.ocrCap;S.ocrCap=null}
+    if(!S.edit||S.edit.mode!=="edit")return;
+    readForm();const names=[...new Set([...S.inv.map(i=>i.doctor),...S.inv.map(i=>i.billing)].filter(Boolean))];
+    const got=parseInvoiceText(text||"",S.settings.people.map(p=>p.name),names);
+    const inv=S.edit.inv;const filled=[];
+    if(got.amount!=null&&inv.amount===""){inv.amount=got.amount;filled.push("Betrag")}
+    if(got.date){inv.invoiceDate=got.date;filled.push("Datum")}
+    if(got.due&&!inv.dueDate){inv.dueDate=got.due;filled.push("Fälligkeit")}
+    if(got.invoiceNo&&!inv.invoiceNo){inv.invoiceNo=got.invoiceNo;filled.push("Rechnungsnummer")}
+    if(got.iban&&!inv.iban){inv.iban=got.iban;filled.push("IBAN")}
+    // Briefkopf: Abrechnungsstelle oder Arzt? Bei Abrechnungsstellen den behandelnden Arzt aus dem Text suchen
+    const head=got.provider||(qr?.name)||"";
+    if(head&&BILLING_RE.test(head)){if(!inv.billing){inv.billing=head;filled.push("Abrechnungsstelle")}
+      const m=(text||"").match(/(?:im\s+auftrag\s+von|rechnungserstellung\s+erfolgt\s+im\s+auftrag\s+von|behandelnde[rn]?\s+(?:arzt|ärztin)\s*:?)\s*([^\n,]{4,70})/i);
+      if(m&&!inv.doctor){inv.doctor=m[1].trim().replace(/[.:]+$/,"");filled.push("Arzt")}}
+    else if(head&&!inv.doctor){inv.doctor=head;filled.push("Arzt")}
+    if(got.patient){S.edit.patientLocked=true;inv.patient=got.patient;const r=rateFor(got.patient);inv.pkv.rate=r.pkv;inv.bh.rate=r.bh;filled.push("Person")}
+    const conf={};
+    if(qr){if(qr.amount!=null){inv.amount=qr.amount;conf.amount={lvl:"ok"}}if(qr.iban){inv.iban=qr.iban;conf.iban={lvl:"ok"}}filled.unshift("QR-Code")}
+    const pdfMsg=isPdfText?"Aus dem PDF-Text gelesen. Bitte kurz mit dem PDF vergleichen.":"";
+    for(const k of ["amount","invoiceDate","invoiceNo"])if(!conf[k]&&inv[k]!==""&&inv[k]!=null&&(k!=="invoiceDate"||got.date))
+      conf[k]={lvl:"check",msg:pdfMsg,crop:isPdfText?null:await cropFor(inv[k],k==="invoiceDate"?"date":k==="amount"?"amount":"no")};
+    if(inv.iban&&!conf.iban)conf.iban={lvl:"check",msg:"IBAN-Prüfziffer stimmt. Bitte trotzdem vergleichen.",crop:isPdfText?null:await cropFor(inv.iban,"iban")};
+    S.edit.conf=conf;drawEditor();
+    if(inv.doctor||inv.billing)suggestFrom();
+    checkKnownIban();
+    setStatus(filled.length?`Erkannt: ${filled.join(", ")}. Bitte prüfen.`:"Nichts sicher erkannt. Bitte Felder ausfüllen.");
+  }catch(err){setStatus("Texterkennung nicht verfügbar (offline?). Bitte Felder ausfüllen.")}
+}
+
+/* ================= Bescheid erfassen: ein Bescheid -> mehrere Rechnungen ================= */
+function matchInvoices(text,k){
+  const low=text.toLowerCase(),lines=text.split("\n");
+  const tw=new Set(provWords(text));
+  const amtRe=a=>{const f1=a.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2}).replace(/\./g,"\\.?");return new RegExp("(?<![\\d.,])"+f1+"(?![\\d])")};
+  const cands=[];
+  for(const inv of S.inv){const s=side(inv,k);if(s.state==="na")continue;
+    const a=r2(inv.amount);let score=0,refund=null,eligible=null,hints=[];
+    const re=a>0?amtRe(a):null;const li=re?lines.findIndex(l=>re.test(l)):-1;
+    if(li>=0){score+=2;
+      const l=lines[li],m=l.match(re),rest=l.slice(m.index+m[0].length);const nums=[...rest.matchAll(/(\d{1,3}(?:\.\d{3})*,\d{2})/g)].map(x=>r2(x[1].replace(/\./g,"").replace(",",".")));
+      if(k==="bh"&&nums.length>=2){eligible=nums[0];refund=nums[nums.length-1];
+        const all=[...rest.matchAll(/\d{1,3}(?:\.\d{3})*,\d{2}/g)];const last=all[all.length-1];hints=(rest.slice(last.index+last[0].length).match(/\b\d{1,2}\b/g)||[])}
+      else if(k==="pkv"&&nums.length>=2){refund=nums[nums.length-1];if(nums[0]>0.004&&nums[0]<=a)eligible=r2(a-nums[0])}
+      else if(nums.length)refund=Math.abs(nums[0]-a)<0.005?0:nums[nums.length-1];
+      else{for(let j=li+1;j<Math.min(lines.length,li+8);j++){const mm=lines[j].trim().match(new RegExp("^"+re.source+"\\s+(\\d{1,3}(?:\\.\\d{3})*,\\d{2})"));if(mm){refund=r2(mm[1].replace(/\./g,"").replace(",","."));break}}}}
+    if(inv.invoiceDate){const [y,m,d]=inv.invoiceDate.split("-");if(text.includes(`${d}.${m}.${y}`)||text.includes(`${d}.${m}.${y.slice(2)}`))score+=2}
+    const pw=[...provWords(inv.doctor),...provWords(inv.billing)];if(pw.some(w=>tw.has(w)))score+=1;
+    if(inv.patient&&low.includes(inv.patient.toLowerCase()))score+=0.5;
+    if(score>=2)cands.push({id:inv.id,score,refund,eligible,hints,amount:a,amt:li>=0,open:s.state!=="done"});
+  }
+  // Betrag allein reicht, wenn er nur einmal vorkommt (AXA nennt kein Rechnungsdatum).
+  // Gleicher Betrag bei mehreren: genau eine offen -> diese; sonst alle zur Auswahl ohne Haken.
+  const keep=c=>{
+    if(c.score>=3)return true;if(!c.amt)return false;
+    const g=cands.filter(o=>o.amt&&o.amount===c.amount);if(g.length===1)return true;
+    if(g.some(o=>o.score>=3))return false;
+    const op=g.filter(o=>o.open);if(op.length===1)return op[0]===c;
+    if(op.length>1&&!c.open)return false;
+    c.ambiguous=true;return true};
+  return cands.filter(keep).sort((a,b)=>b.score-a.score);
+}
+async function startProof(k){const r=await scanDocument(`Bescheid ${SN(k)} scannen`);if(r)openProof(r,{k})}
+async function openProof(input,pre){
+  const file=input.pdf||input.file||input;
+  S.edit={mode:"proof",file,urls:[],k:pre?.k||"bh",pre:pre||null,rows:[],date:today(),total:null,busy:true,msg:"Bescheid wird gelesen …"};
+  drawProof();
+  try{
+    const text=await readText(input);if(S.edit?.mode!=="proof")return;
+    const p=parseProofText(text);
+    S.edit.k=S.edit.pre?.k||p.side||"bh";S.edit.date=p.date||today();S.edit.total=p.total??null;S.edit.text=text;
+    if(!p.appId){const fm=String(file?.name||"").match(/Bescheid_\d+_(\d+)_\d+/i);if(fm)p.appId=fm[1]}
+    Object.assign(S.edit,{lines:p.lines||[],appId:p.appId||null,notes:p.notes||{},payout:p.payout??null,before:p.before??null,correction:!!p.correction});
+    fillProofRows();proofMsg();
+  }catch(e){S.edit.msg="Der Bescheid konnte nicht gelesen werden. Bitte die Rechnungen unten selbst zuordnen."}
+  S.edit.busy=false;drawProof();
+}
+function proofMsg(){
+  const e=S.edit,n=e.rows.length,old=e.rows.filter(r=>r.already).length,dup=dupBescheid();
+  e.msg=dup?`Diesen Bescheid gibt es vermutlich schon (${SN(dup.k)} vom ${dfmt(dup.date)}${dup.appId?", Antrag "+dup.appId:""}). Bitte prüfen, bevor du übernimmst.`
+    :!n?"Zu diesem Bescheid ist keine Rechnung in der App. Die Zeilen aus dem Bescheid stehen unten."
+    :old===n?`Alle ${n} Rechnung${n===1?"":"en"} haben schon einen Bescheid. Übernehmen legt diesen Bescheid zusätzlich ab, der neueste gilt.`
+    :e.rows.some(r=>r.ambiguous)?"Gleicher Betrag bei mehreren Rechnungen – bitte die richtige anhaken."
+    :`${n-old} offene Rechnung${n-old===1?"":"en"} gefunden. Bitte Beträge prüfen.`;
+}
+function dupBescheid(){const e=S.edit;return S.besch.find(b=>b.k===e.k&&((e.appId&&b.appId===e.appId&&b.date===e.date)||(e.total!=null&&b.total!=null&&r2(b.total)===r2(e.total)&&b.date===e.date)))||null}
+function fillProofRows(){const e=S.edit,k=e.k;
+  const ms=matchInvoices(e.text||"",k);
+  e.rows=ms.map(m=>{const inv=S.inv.find(x=>x.id===m.id);const s=side(inv,k);
+    const note=(m.hints||[]).map(h=>e.notes?.[h]).filter(Boolean).join(" ");
+    return {id:m.id,already:s.state==="done"&&!e.correction,on:m.refund!==0&&!m.ambiguous,ambiguous:!!m.ambiguous,rejected:m.refund===0,eligible:m.eligible,note,
+      amount:m.refund!=null?m.refund:s.state==="done"?s.received:s.expected}});
+  // Schon erledigte nur anhaken, wenn der Bescheid nur erledigte betrifft (Nachtrag); sonst nur anzeigen und mitzählen
+  if(e.rows.some(r=>!r.already))e.rows.forEach(r=>{if(r.already)r.on=false});
+  const pid=e.pre?.id;if(pid&&!e.rows.some(r=>r.id===pid)){const inv=S.inv.find(x=>x.id===pid);if(inv){const s=side(inv,k);e.rows.unshift({id:pid,on:true,amount:s.state==="done"?s.received:s.expected})}}
+}
+function drawProof(){
+  const e=S.edit,k=e.k;
+  const rows=e.rows.map((r,i)=>{const inv=S.inv.find(x=>x.id===r.id);if(!inv)return "";const s=side(inv,k);
+    return `<div class="prow"><label class="pchk"><input type="checkbox" data-row="${i}" ${r.on?"checked":""}><span><b>${esc(title(inv))}</b><br><span class="status">${esc(inv.patient)} · ${dfmt(inv.invoiceDate)} · ${eur(inv.amount)} · erwartet ${eur(s.expected)}</span>${r.rejected?`<br><span style="color:var(--bad);font-size:12.5px">Im Bescheid abgelehnt (0 €) – nur auswählen, wenn das endgültig ist</span>`:""}${r.ambiguous?`<br><span style="color:var(--warn);font-size:12.5px">Gleicher Betrag wie eine andere Rechnung – bitte selbst auswählen</span>`:""}${r.already?`<br><span class="status" style="font-size:12.5px">Hat schon einen Bescheid (${eur(s.received)} vom ${dfmt(s.b?.date)})</span>`:""}${r.eligible!=null&&r.eligible<r2(inv.amount)-0.004?`<br><span style="color:var(--warn);font-size:12.5px"><b>Gekürzt:</b> ${eur(r2(inv.amount-r.eligible))}${r.note?" · "+esc(r.note):""}</span>`:""}</span></label>
+      <label class="f">Erstattet (€)<input class="num" inputmode="decimal" data-amt="${i}" value="${String((+r.amount||0).toFixed(2)).replace(".",",")}"></label></div>`}).join("");
+  const used=new Set(e.rows.map(r=>r.id));
+  const isOpen=x=>["todo","wait"].includes(side(x,k).state);
+  const others=S.inv.filter(x=>!used.has(x.id)&&side(x,k).state!=="na").sort((a,b)=>(isOpen(b)-isOpen(a))||(b.invoiceDate||"").localeCompare(a.invoiceDate||""));
+  const sum=r2(e.rows.filter(r=>r.on).reduce((a,r)=>a+(+r.amount||0),0));
+  const prev=r2(e.rows.filter(r=>r.already&&!r.on).reduce((a,r)=>a+(+r.amount||0),0));
+  const cmp=e.total==null?"":(Math.abs(sum+prev-e.total)<0.01?`<span style="color:var(--ok);font-weight:600">passt zum Bescheid</span>`:`<span style="color:var(--warn);font-weight:600">Bescheid: ${eur(e.total)}, Differenz ${eur(r2(e.total-sum-prev))}</span>`);
+  sheet(`Bescheid ${SN(k)}`,`
+    <div id="edStatus" class="status" style="margin-top:10px">${esc(e.msg||"")}</div>
+    ${e.appId||e.correction?`<div class="status" style="margin-top:6px">${e.appId?`Antrag ${esc(e.appId)}`:""}${e.correction?`${e.appId?" · ":""}<b>Korrektur-Bescheid:</b> ausgezahlt ${eur(e.payout)}${e.before!=null?`, ${eur(e.before)} kamen schon früher`:""}.`:""}</div>`:""}
+    <div class="sec">
+      <div class="btnrow"><button type="button" class="btn ${k==="pkv"?"primary":""}" data-act="pside" data-k="pkv">AXA</button><button type="button" class="btn ${k==="bh"?"primary":""}" data-act="pside" data-k="bh">Beihilfe</button></div>
+      ${field("Datum des Bescheids","pdate",e.date,"date")}
+    </div>
+    ${e.busy?"":`<div class="sec"><h3>Zugeordnete Rechnungen</h3>${rows||`<p class="status" style="margin:0">Noch keine Rechnung zugeordnet.</p>${e.lines?.length?`<p class="status" style="margin:6px 0 0">Im Bescheid stehen:<br>${e.lines.map(l=>`${esc(l.person)} · ${esc(l.date)} · ${eur(l.amount)} → ${eur(l.refund)}`).join("<br>")}</p>`:""}`}
+      ${others.length?`<label class="f">Weitere Rechnung zuordnen<select id="addRow"><option value="">– auswählen –</option>${others.map(x=>`<option value="${esc(x.id)}">${esc(title(x))} · ${esc(x.patient)} · ${dfmt(x.invoiceDate)} · ${eur(x.amount)}</option>`).join("")}</select></label>`:""}
+      <div class="calc"><span>Summe</span><span><span class="num">${eur(sum)}</span>${prev>0.004?` <span class="status">+ ${eur(prev)} bereits erledigt</span>`:""} ${cmp}</span></div></div>`}
+  `,`<button type="button" class="btn" data-act="pcancel">Abbrechen</button><button type="button" class="btn primary" data-act="papply" ${e.busy?"disabled":""}>Übernehmen</button>`);
+  const sc=$("#scrim");
+  sc.addEventListener("change",ev=>{const t=ev.target;
+    if(t.dataset.row!==undefined){S.edit.rows[+t.dataset.row].on=t.checked;drawProof()}
+    if(t.dataset.amt!==undefined){S.edit.rows[+t.dataset.amt].amount=numIn(t.value)||0;drawProof()}
+    if(t.id==="pdate"){S.edit.date=t.value||today();proofMsg();drawProof()}
+    if(t.id==="addRow"&&t.value){const inv=S.inv.find(x=>x.id===t.value);const s=side(inv,S.edit.k);S.edit.rows.push({id:t.value,on:true,already:s.state==="done",amount:s.expected});drawProof()}});
+  sc.addEventListener("click",async ev=>{const b=ev.target.closest("[data-act]");if(!b)return;
+    if(b.dataset.act==="pcancel")return closeSheet();
+    if(b.dataset.act==="pside"){S.edit.k=b.dataset.k;fillProofRows();proofMsg();return drawProof()}
+    if(b.dataset.act==="papply")return applyProof(b)});
+}
+async function applyProof(btn){
+  const e=S.edit,k=e.k,sel=e.rows.filter(r=>r.on);
+  if(!sel.length){setStatus("Bitte mindestens eine Rechnung auswählen.",true);return}
+  btn.disabled=true;
+  const blob=e.file.type?.startsWith("image/")?await shrink(e.file,2200,0.85):e.file;
+  const fileId=await storeFile(blob,`${e.date}_${SN(k)}_Bescheid${blob.type==="application/pdf"?".pdf":".jpg"}`);
+  // Bescheid ohne Dokument (von Hand eingetragen) wird durch den echten ersetzt
+  for(const r of sel)for(const {b} of itemsOf(r.id,k))if(b.manual){const nb=structuredClone(b);nb.items=nb.items.filter(it=>it.invId!==r.id);if(nb.items.length)await saveBescheid(nb,true);else{await dbDel("bescheide",nb.id);S.deleted[nb.id]=nowIso();S.besch=S.besch.filter(x=>x.id!==nb.id)}}
+  const onlyOld=sel.every(r=>r.already);
+  const b={k,date:e.date,appId:e.appId||null,total:e.total,payout:e.payout,correction:!!e.correction,manual:false,file:{fileId,own:true},
+    items:sel.map(r=>{const inv=S.inv.find(x=>x.id===r.id);const it={invId:r.id,refund:r2(r.amount)};if(r.eligible!=null&&r.eligible<r2(inv.amount)-0.004){it.eligible=r.eligible;if(r.note)it.note=r.note}return it}),
+    moneyIn:onlyOld||sel.every(r=>r2(r.amount)<=0)?e.date:null};
+  await saveBescheid(b,true);
+  for(const r of sel){const inv=S.inv.find(x=>x.id===r.id);if(inv&&!inv[k]?.submitted){const c=structuredClone(inv);c[k].submitted=e.date;await saveInvoice(c,true)}}
+  await dbPut("meta",{key:"deleted",items:S.deleted});
+  closeSheet();render();scheduleSync();
+  toast(b.moneyIn?`Bescheid mit ${sel.length} Rechnung${sel.length===1?"":"en"} abgelegt`:`Bescheid übernommen. Er wartet jetzt unter „Läuft“ auf das Geld.`);
+}
+/* ================= Ansicht eines Bescheids ================= */
+function openBescheid(id){
+  const b=S.besch.find(x=>x.id===id);if(!b)return;
+  const back=S.edit?.mode==="view"?S.edit.id:null;
+  S.edit={mode:"bescheid",bid:id,urls:[],back};drawBescheid();
+}
+function drawBescheid(){
+  const b=S.besch.find(x=>x.id===S.edit.bid);if(!b)return closeSheet();
+  const sum=bescheidSum(b);
+  const rows=b.items.map(it=>{const inv=S.inv.find(x=>x.id===it.invId);if(!inv)return `<div class="line"><div class="s">Rechnung gelöscht · ${eur(it.refund)}</div></div>`;const s=side(inv,b.k);
+    const latest=isLatest(b,it);
+    return `<button type="button" class="card" data-id="${esc(inv.id)}"><div class="row1"><div class="who"><div class="prov">${esc(title(inv))}</div><div class="meta"><span class="pchip">${avatarFor(inv.patient)}${esc(inv.patient)}</span>${dfmt(inv.invoiceDate)} · ${eur(inv.amount)}</div></div><div class="amt">${eur(it.refund)}</div></div>
+      ${it.eligible!=null?`<div class="next s-klaeren">Gekürzt um ${eur(r2(inv.amount-it.eligible))}${it.note?" · "+esc(it.note):""}</div>`:r2(s.expected-it.refund)>0.004?`<div class="next s-klaeren">${eur(r2(s.expected-it.refund))} weniger als erwartet</div>`:""}
+      ${latest?"":`<div class="due">Ersetzt durch einen neueren Bescheid</div>`}</button>`}).join("");
+  sheet(`${SN(b.k)} · Bescheid vom ${dfmt(b.date)}`,`
+    <div id="edStatus" class="status" style="margin-top:10px"></div>
+    <div class="sec hero"><div class="big">${eur(sum)}</div>
+      <div class="meta">${b.items.length} Rechnung${b.items.length===1?"":"en"}${b.appId?` · Antrag ${esc(b.appId)}`:""}${b.manual?" · ohne Dokument eingetragen":""}${b.correction?" · Korrektur-Bescheid":""}</div>
+      ${b.total!=null&&Math.abs(b.total-sum)>0.01?`<div class="status" style="color:var(--warn)">Summe laut Bescheid ${eur(b.total)} (Differenz ${eur(r2(b.total-sum))}, z. B. Rechnungen, die nicht in der App sind)</div>`:""}
+      <div class="stamps">${b.moneyIn?`<span class="stamp s-ok">Geld da am ${dfmt(b.moneyIn)}</span>`:geldOffen(b)?`<span class="stamp s-wait">Geld noch nicht da</span>`:""}</div></div>
+    ${geldOffen(b)?`<div class="sec"><h3>Geld</h3>${P(`Ist ${eur(sum)} von ${SN(b.k)} auf dem Konto? Gilt für alle Rechnungen dieses Bescheids.`)}<div class="btnrow"><button type="button" class="btn primary" data-act="bmoney">Ja, Geld ist da</button></div></div>`:""}
+    <div class="sec"><h3>Rechnungen</h3><div class="list">${rows}</div></div>
+    <div class="sec"><div class="morelist">
+      ${b.file?.fileId||b.file?.driveId||b.file?.url?`<button type="button" class="btn" data-act="bopen">Dokument öffnen</button>`:""}
+      ${b.moneyIn?`<button type="button" class="btn" data-act="bmoneyundo">Geld doch noch nicht da</button>`:""}
+      <button type="button" class="btn danger" data-act="bdel">Bescheid löschen (Zuordnung aufheben)</button></div></div>
+  `,`<button type="button" class="btn" data-act="bclose">${S.edit.back?"Zurück":"Schließen"}</button>`);
+  $("#scrim").addEventListener("click",async e=>{
+    const c=e.target.closest(".card[data-id]");if(c){const id=c.dataset.id;closeSheet();return openView(id)}
+    const x=e.target.closest("[data-act]");if(!x)return;const bb=S.besch.find(y=>y.id===S.edit.bid);
+    switch(x.dataset.act){
+      case "bclose":{const back=S.edit.back;closeSheet();render();if(back)openView(back);return}
+      case "bmoney":await moneyIn(bb.id);return drawBescheid();
+      case "bmoneyundo":{const nb=structuredClone(bb);nb.moneyIn=null;await saveBescheid(nb);toast("Geld wieder als offen markiert");return drawBescheid()}
+      case "bopen":return openRef(bb.file);
+      case "bdel":if(x.dataset.confirm!=="1"){x.dataset.confirm="1";x.textContent="Wirklich löschen? Nochmal tippen";return}
+        await deleteBescheid(bb);closeSheet();toast("Bescheid gelöscht. Die Rechnungen warten wieder auf einen Bescheid.");return;
+    }
+  });
+}
+/* ================= Texterkennung auf dem Handy ================= */
+const TESS="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+let tessWorker=null;
+function loadScript(src){return new Promise((res,rej)=>{if(window.Tesseract)return res();const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=()=>rej(new Error("load"));document.head.appendChild(s)})}
+async function ensureTess(){
+  await loadScript(TESS);
+  if(!tessWorker)tessWorker=await Tesseract.createWorker("deu",1,{logger:m=>{if(m.status==="recognizing text")setStatus(`Wird gelesen … ${Math.round(m.progress*100)} %`)}});
+}
+function loadLib(src,test){return new Promise((res,rej)=>{if(test())return res();const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=()=>rej(new Error("load"));document.head.appendChild(s)})}
+/* ---- GiroCode auf der Rechnung lesen (Chrome: BarcodeDetector) ---- */
+async function readInvoiceQr(input){
+  if(!("BarcodeDetector" in window))return null;
+  let det;try{det=new BarcodeDetector({formats:["qr_code"]})}catch{return null}
+  const srcs=[];
+  try{
+    if(input.images)for(const im of input.images)srcs.push(await createImageBitmap(im));
+    const f=input.pdf||input.file;
+    if(f&&f.type?.startsWith("image/"))srcs.push(await createImageBitmap(f));
+    else if(f&&(f.type==="application/pdf"||/\.pdf$/i.test(f.name||""))&&!input.images){
+      await loadLib(PDFJS,()=>!!window.pdfjsLib);pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+      const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await f.arrayBuffer())}).promise;
+      for(let p=1;p<=Math.min(pdf.numPages,2);p++){const page=await pdf.getPage(p);const vp=page.getViewport({scale:2.5});const cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;
+        await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise;srcs.push(cv)}}
+  }catch{}
+  for(const src of srcs){try{for(const c of await det.detect(src)){const g=parseGiro(c.rawValue||"");if(g)return g}}catch{}}
+  return null;
+}
+function parseGiro(raw){
+  const l=raw.replace(/\r/g,"").split("\n");if(l[0]?.trim()!=="BCD"||l[3]?.trim()!=="SCT")return null;
+  const iban=(l[6]||"").replace(/\s+/g,"").toUpperCase();const am=(l[7]||"").match(/^EUR(\d+(?:\.\d{1,2})?)$/);
+  return {name:(l[5]||"").trim(),iban:ibanOk(iban)?iban:null,amount:am?r2(+am[1]):null,purpose:((l[10]||"")||(l[9]||"")).trim()};
+}
+/* ---- Ampel: Ausschnitt aus dem Foto für einen erkannten Wert ---- */
+async function cropFor(value,kind){
+  const caps=S.edit?.cap||[];if(!caps.length||value==null||value==="")return null;
+  const digits=x=>String(x).replace(/[^0-9]/g,"");
+  let want;
+  if(kind==="amount")want=digits(Number(value).toFixed(2));
+  else if(kind==="date"){const [y,m,d]=String(value).split("-");want=[d+m+y,d+m+y.slice(2)]}
+  else if(kind==="iban")want=String(value).slice(0,4).toLowerCase();
+  else want=String(value).toLowerCase().replace(/[^0-9a-z]/g,"");
+  for(const cap of caps){
+    const hit=cap.words.find(w=>{const t=w.text.toLowerCase();
+      if(kind==="amount")return digits(t)===want&&/[.,]\d{2}/.test(t);
+      if(kind==="date")return want.includes(digits(t))&&digits(t).length>=6;
+      if(kind==="iban")return t.replace(/[^0-9a-z]/g,"").startsWith(want);
+      return want.length>=3&&t.replace(/[^0-9a-z]/g,"").includes(want)});
+    if(!hit?.b)continue;
+    const h=hit.b.y1-hit.b.y0,cy=(hit.b.y0+hit.b.y1)/2;
+    const line=cap.words.filter(w=>w.b&&Math.abs((w.b.y0+w.b.y1)/2-cy)<h*0.7);
+    const x0=Math.min(...line.map(w=>w.b.x0)),x1=Math.max(...line.map(w=>w.b.x1)),y0=Math.min(...line.map(w=>w.b.y0)),y1=Math.max(...line.map(w=>w.b.y1));
+    try{const bmp=await createImageBitmap(cap.img);const pad=Math.round(h*0.8);
+      const sx=Math.max(0,x0-pad),sy=Math.max(0,y0-pad),sw=Math.min(bmp.width,x1+pad)-sx,sh=Math.min(bmp.height,y1+pad)-sy;
+      const sc=Math.min(1,900/sw);const cv=document.createElement("canvas");cv.width=Math.round(sw*sc);cv.height=Math.round(sh*sc);
+      cv.getContext("2d").drawImage(bmp,sx,sy,sw,sh,0,0,cv.width,cv.height);
+      const bl=await new Promise(r=>cv.toBlob(r,"image/jpeg",0.85));const u=URL.createObjectURL(bl);S.edit.urls.push(u);return u}catch{return null}
+  }
+  return null;
+}
+const CONF_LABEL={amount:"Betrag",iban:"IBAN",invoiceDate:"Rechnungsdatum",invoiceNo:"Rechnungsnummer"};
+function confPending(){const c=S.edit?.conf;if(!c)return [];return Object.entries(c).filter(([,x])=>x.lvl!=="ok"&&!x.done).map(([k])=>k)}
+function drawConf(){
+  const c=S.edit?.conf;if(!c)return;
+  for(const [k,x] of Object.entries(c)){const el=$("#"+k);if(!el)continue;
+    el.style.borderColor=x.lvl==="ok"||x.done?"var(--ok)":x.lvl==="warn"?"var(--bad)":"var(--warn)";el.style.borderWidth="2px"}
+  const box=$("#confBox");if(!box)return;const pend=confPending();
+  box.innerHTML=pend.length?`<div class="sec"><h3>Bitte prüfen</h3>${pend.map(k=>{const x=c[k];return `<div style="padding:8px 0;border-bottom:1px solid var(--line)">
+    <div><b>${CONF_LABEL[k]}:</b> <span class="num">${esc(k==="amount"?eur(S.edit.inv.amount):k==="invoiceDate"?dfmt(S.edit.inv.invoiceDate):k==="iban"?(S.edit.inv.iban||"").replace(/(.{4})/g,"$1 ").trim():S.edit.inv[k]||"–")}</span></div>
+    ${x.msg?`<div class="status" style="color:${x.lvl==="warn"?"var(--bad)":"var(--warn)"};margin:2px 0 0">${esc(x.msg)}</div>`:""}
+    ${x.crop?`<img src="${x.crop}" alt="Ausschnitt aus der Rechnung" style="display:block;max-width:100%;margin:6px 0;border:1px solid var(--line);border-radius:8px">`:`<div class="status" style="margin:2px 0 0">Mit der Rechnung vergleichen.</div>`}
+    <div class="btnrow"><button type="button" class="btn" data-act="confok" data-f="${k}">Stimmt</button></div></div>`}).join("")}</div>`:"";
+}
+/* Foto für die Texterkennung vorbereiten: Graustufen, Schatten ausgleichen (Bild durch weichgezeichneten Hintergrund teilen) */
+async function prepareForOcr(file){
+  try{
+    const bmp=await createImageBitmap(file);const sc=Math.min(1,2600/Math.max(bmp.width,bmp.height));
+    const w=Math.round(bmp.width*sc),h=Math.round(bmp.height*sc);
+    const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d",{willReadFrequently:true});
+    ctx.drawImage(bmp,0,0,w,h);
+    const bg=document.createElement("canvas");bg.width=w;bg.height=h;const bx=bg.getContext("2d",{willReadFrequently:true});
+    bx.filter=`blur(${Math.round(Math.max(w,h)/80)}px)`;bx.drawImage(cv,0,0);
+    const a=ctx.getImageData(0,0,w,h),b=bx.getImageData(0,0,w,h),d=a.data,e=b.data;
+    if(e[0]===d[0]&&e[1]===d[1]&&e[w*4*Math.floor(h/2)]===d[w*4*Math.floor(h/2)]){} // Weichzeichnen evtl. nicht unterstützt
+    for(let i=0;i<d.length;i+=4){
+      const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2],bgv=Math.max(1,0.299*e[i]+0.587*e[i+1]+0.114*e[i+2]);
+      const v=Math.min(255,g/bgv*255);d[i]=d[i+1]=d[i+2]=v;
+    }
+    ctx.putImageData(a,0,0);
+    return await new Promise(r=>cv.toBlob(x=>r(x||file),"image/png"));
+  }catch{return shrink(file,2000,0.9)}
+}
+// IBAN prüfen (Prüfziffer nach ISO 13616), typische Lesefehler korrigieren
+function ibanOk(s){if(!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(s))return false;
+  const r=(s.slice(4)+s.slice(0,4)).replace(/[A-Z]/g,c=>c.charCodeAt(0)-55);let m=0;for(const ch of r)m=(m*10+ +ch)%97;return m===1}
+function findIban(t){
+  const fix=s=>s.replace(/[Oo]/g,"0").replace(/[Il|!]/g,"1").replace(/S/g,"5").replace(/B/g,"8").replace(/Z/g,"2");
+  const cands=[];
+  for(const m of t.matchAll(/IBAN[\s:.]*([A-Z]{2}[0-9OoIl|SBZ ]{18,34})/gi))cands.push(m[1]);
+  for(const m of t.matchAll(/\b(DE[0-9OoIl| ]{20,30})/g))cands.push(m[1]);
+  for(const c of cands){const raw=c.replace(/\s+/g,"");const cc=raw.slice(0,2).toUpperCase();
+    for(let len=22;len<=Math.min(34,raw.length);len++){const iban=cc+fix(raw.slice(2,len));if(cc==="DE"&&len!==22)break;if(ibanOk(iban))return iban}}
+  return null;
+}
+function parseInvoiceText(text,people,providers){
+  const out={};const t=text.replace(/\r/g,"");
+  const lines=t.split("\n").map(l=>l.trim()).filter(Boolean);
+  const num=s=>r2(s.replace(/\s/g,"").replace(/\./g,"").replace(",","."));
+  const amtRe=/(\d{1,3}(?:[.\s]\d{3})*,\d{2})/g;
+  const keys=/(rechnungsbetrag|gesamtbetrag|endbetrag|zu zahlen|zahlbetrag|gesamtsumme|summe|gesamt|betrag)/i;
+  let best=null;
+  for(const l of lines){if(keys.test(l)){const m=[...l.matchAll(amtRe)];if(m.length){const v=num(m[m.length-1][1]);if(v>0&&(best===null||/zu zahlen|rechnungsbetrag|endbetrag|zahlbetrag/i.test(l)||v>best))best=v}}}
+  if(best===null){const all=[...t.matchAll(amtRe)].map(m=>num(m[1])).filter(v=>v>0&&v<100000);if(all.length)best=Math.max(...all)}
+  if(best!==null)out.amount=best;
+  const dRe=/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/,dReG=/(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2}(?!\d))/g;
+  const iso=m=>{let y=+m[3];if(y<100)y+=2000;const d=`${y}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`;return isNaN(new Date(d))||+m[2]>12||+m[1]>31?null:d};
+  // Fälligkeit: "bis zum 28.11.2026", "zahlbar bis", "fällig am"
+  const dueM=t.match(/(?:bis\s+(?:zum|spätestens)?|zahlbar\s+bis|fällig\s+(?:am|bis)?|zahlungsziel:?)\s*(\d{1,2}\.\d{1,2}\.\d{2,4})/i);
+  if(dueM){const m=dueM[1].match(dRe);const d=m&&iso(m);if(d)out.due=d}
+  // Rechnungsdatum: Bezeichnung in derselben oder der nächsten Zeile, sonst das späteste plausible Datum
+  let date=null;
+  for(let i=0;i<lines.length&&!date;i++){
+    if(/(rechnungs|r\.?-|re\.?-)\s*datum|datum\s*der\s*rechnung|^datum\b/i.test(lines[i])){
+      for(const l of [lines[i],lines[i+1]||""]){const ms=[...l.matchAll(dReG)].map(iso).filter(Boolean);if(ms.length){date=ms[ms.length-1];break}}
+    }
+  }
+  if(!date){const now=today(),min=String(+now.slice(0,4)-2)+now.slice(4);
+    const all=[...t.matchAll(dReG)].map(iso).filter(d=>d&&d<=now&&d>=min&&d!==out.due).sort();if(all.length)date=all[all.length-1]}
+  if(date)out.date=date;
+  // Rechnungsnummer: viele Schreibweisen, Wert in derselben oder der nächsten Zeile
+  const label=/(rechnungs[\s-]*(?:nr|nummer|no)|r[\s.-]*(?:nr|nummer)|rg[\s.-]*nr|re[\s.-]*nr|beleg[\s-]*(?:nr|nummer))\.?/i;
+  for(let i=0;i<lines.length&&!out.invoiceNo;i++){
+    const l=lines[i],m=l.match(label);if(!m)continue;
+    const after=l.slice(m.index+m[0].length).replace(/^[\s:./-]*/,"");
+    const same=after.match(/^([A-Z0-9][A-Z0-9\/\-]{3,})/i);
+    if(same&&/\d{3,}/.test(same[1])){out.invoiceNo=same[1].replace(/[\/-]$/,"");break}
+    const next=(lines[i+1]||"").match(/([A-Z0-9][A-Z0-9\-]{3,})/gi)?.find(x=>/\d{4,}/.test(x));
+    if(next&&!/^\d{1,2}\.\d{1,2}\./.test(next))out.invoiceNo=next;
+  }
+  const ib=findIban(t);if(ib)out.iban=ib;
+  const low=t.toLowerCase();
+  // Patient: zuerst eine Zeile mit "Patient", sonst ein anderer Name als der Empfänger (Antragsteller steht meist in der Anschrift)
+  const has=(s,n)=>new RegExp("\\b"+n.toLowerCase()+"\\b").test(s.toLowerCase());
+  const pl=lines.find(l=>/patient|behandelt|leistungsempf|^name\b/i.test(l)&&people.some(n=>has(l,n)));
+  const found=people.filter(n=>has(low,n));
+  const p=pl?people.find(n=>has(pl,n)):(found.find(n=>n!==people[0])||found[0]);
+  if(p)out.patient=p;
+  // Rechnungssteller: nur über unterscheidende Wörter erkennen (nicht über "Dr.", "med.", "GmbH" usw.)
+  const STOP=new Set(["dr","med","prof","dipl","gmbh","ggmbh","mbh","mvz","co","kg","ag","ug","und","u","der","die","das","fuer","für","praxis","gemeinschaftspraxis","zentrum","ohg","gbr","e","v"]);
+  const words=s=>s.toLowerCase().replace(/[^a-zäöüß0-9]+/g," ").split(" ").filter(w=>w.length>=4&&!STOP.has(w));
+  const textWords=new Set(words(t));
+  const hit=w=>textWords.has(w)||[...textWords].some(x=>x.length>w.length&&x.startsWith(w));
+  let bestProv=null,bestScore=0;
+  for(const pr of providers){const ws=[...new Set(words(pr))];if(!ws.length)continue;
+    const n=ws.filter(hit).length;if(n<Math.min(2,ws.length))continue;
+    const score=n/ws.length+n*0.01;if(score>bestScore){bestScore=score;bestProv=pr}}
+  if(bestProv)out.provider=bestProv;
+  else{ // unbekannter Rechnungssteller: Briefkopf in den ersten Zeilen
+    const head=lines.slice(0,10).find(l=>/(gmbh|praxis|mvz|klinik|apotheke|labor|pvs|zahnarzt|dr\.\s*med)/i.test(l)&&!/herr|frau|str\.|straße|\d{5}/i.test(l));
+    if(head)out.provider=head.replace(/[•·|].*$/,"").trim().slice(0,60);
+  }
+  return out;
+}
+
+/* ================= Scanner: Foto -> Ränder finden -> entzerren -> Schatten weg -> PDF ================= */
+// Liefert {pdf, images:[Blob], file?} oder null (abgebrochen). Datei-Auswahl (z. B. PDF) wird unverändert durchgereicht.
+function scanDocument(title){
+  return new Promise(resolve=>{
+    const SC={title,pages:[],cur:null,resolve,done:false};
+    S.scan=SC;drawScanStart();
+  });
+}
+function scanFinish(result){const SC=S.scan;if(!SC||SC.done)return;SC.done=true;S.scan=null;$("#sheetHost").innerHTML="";SC.resolve(result)}
+function drawScanStart(){
+  const SC=S.scan;const n=SC.pages.length;
+  $("#sheetHost").innerHTML=`<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="Scannen">
+    <div class="sheet-head"><h2>${esc(SC.title)}</h2><div class="btnrow"><button type="button" class="btn" data-act="scancancel">Abbrechen</button>${n?`<button type="button" class="btn primary" data-act="scandone">Fertig (${n} Seite${n===1?"":"n"})</button>`:""}</div></div>
+    ${n?`<div class="sec"><h3>Gescannte Seiten</h3><div class="thumbs">${SC.pages.map((p,i)=>`<div class="pg"><img src="${p.url}" alt="Seite ${i+1}"><button type="button" class="btn link" data-act="scandel" data-i="${i}">Entfernen</button></div>`).join("")}</div></div>`:""}
+    <div class="sec">
+      <div class="btnrow"><button type="button" class="btn primary" data-act="scancam">${n?"Weitere Seite fotografieren":"Foto aufnehmen"}</button>
+      ${n?"":`<button type="button" class="btn" data-act="scanfile">Datei oder PDF wählen</button>`}</div>
+      <p class="status" style="margin:0">Leg das Blatt auf eine dunkle Unterlage. Die App findet die Ränder, richtet das Blatt gerade aus und entfernt Schatten.</p>
+    </div></div></div>`;
+  $("#scrim").addEventListener("click",async e=>{
+    const b=e.target.closest("[data-act]");if(!b)return;const act=b.dataset.act;
+    if(act==="scancancel"){S.scan.pages.forEach(p=>URL.revokeObjectURL(p.url));return scanFinish(null)}
+    if(act==="scandone")return finishScanPdf();
+    if(act==="scandel"){const p=S.scan.pages.splice(+b.dataset.i,1)[0];URL.revokeObjectURL(p.url);return drawScanStart()}
+    if(act==="scanfile"){const p=$("#pick");p.value="";p.onchange=()=>{const f=p.files[0];if(f)scanFinish({file:f})};p.click();return}
+    if(act==="scancam"){const c=$("#cam");c.value="";c.onchange=()=>{const f=c.files[0];if(f)scanLoad(f)};c.click()}
+  });
+}
+async function scanLoad(file){
+  let bmp;try{bmp=await createImageBitmap(file)}catch{toast("Foto konnte nicht geöffnet werden");return}
+  const sc=Math.min(1,4000/Math.max(bmp.width,bmp.height));const w=Math.round(bmp.width*sc),h=Math.round(bmp.height*sc);
+  const src=document.createElement("canvas");src.width=w;src.height=h;src.getContext("2d").drawImage(bmp,0,0,w,h);
+  S.scan.cur={src,w,h,quad:detectQuad(src)};drawScanEdit();
+}
+// Blatt finden: hellste zusammenhängende Fläche (Otsu-Schwelle), Ecken über Extrempunkte
+function detectQuad(src){
+  const W=360,sc=W/Math.max(src.width,src.height),w=Math.max(1,Math.round(src.width*sc)),h=Math.max(1,Math.round(src.height*sc));
+  const c=document.createElement("canvas");c.width=w;c.height=h;const x=c.getContext("2d",{willReadFrequently:true});x.filter="blur(2px)";x.drawImage(src,0,0,w,h);
+  const d=x.getImageData(0,0,w,h).data,g=new Uint8Array(w*h),hist=new Array(256).fill(0);
+  for(let i=0;i<w*h;i++){const v=(d[i*4]*0.299+d[i*4+1]*0.587+d[i*4+2]*0.114)|0;g[i]=v;hist[v]++}
+  let sum=0;for(let i=0;i<256;i++)sum+=i*hist[i];let sB=0,wB=0,best=0,th=128;
+  for(let t=0;t<256;t++){wB+=hist[t];if(!wB)continue;const wF=w*h-wB;if(!wF)break;sB+=t*hist[t];const mB=sB/wB,mF=(sum-sB)/wF,v=wB*wF*(mB-mF)**2;if(v>best){best=v;th=t}}
+  const lab=new Int32Array(w*h);let bestLab=0,bestSize=0,cur=0;const st=[];
+  for(let i=0;i<w*h;i++){if(g[i]<=th||lab[i])continue;cur++;let size=0;st.push(i);lab[i]=cur;
+    while(st.length){const p=st.pop();size++;const px=p%w,py=(p/w)|0;
+      for(const q of [px>0?p-1:-1,px<w-1?p+1:-1,py>0?p-w:-1,py<h-1?p+w:-1])if(q>=0&&!lab[q]&&g[q]>th){lab[q]=cur;st.push(q)}}
+    if(size>bestSize){bestSize=size;bestLab=cur}}
+  const full=[[0.03,0.03],[0.97,0.03],[0.97,0.97],[0.03,0.97]].map(([a,b])=>[a*src.width,b*src.height]);
+  if(bestSize<w*h*0.15)return full;
+  let tl=[0,0,1e9],tr=[0,0,-1e9],br=[0,0,-1e9],bl=[0,0,1e9];
+  for(let i=0;i<w*h;i++){if(lab[i]!==bestLab)continue;const px=i%w,py=(i/w)|0;
+    if(px+py<tl[2])tl=[px,py,px+py];if(px+py>br[2])br=[px,py,px+py];if(px-py>tr[2])tr=[px,py,px-py];if(px-py<bl[2])bl=[px,py,px-py]}
+  return [tl,tr,br,bl].map(([px,py])=>[px/sc,py/sc]);
+}
+function drawScanEdit(){
+  const SC=S.scan,cur=SC.cur;
+  $("#sheetHost").innerHTML=`<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="Ränder anpassen">
+    <div class="sheet-head"><h2>Ränder prüfen</h2><div class="btnrow"><button type="button" class="btn" data-act="scanback">Zurück</button><button type="button" class="btn primary" data-act="scanok">Übernehmen</button></div></div>
+    <p class="status" style="margin:10px 0 0">Zieh die Ecken auf die Ecken des Blatts.</p>
+    <div class="scanwrap"><canvas id="scanCv"></canvas></div>
+    <div class="btnrow"><button type="button" class="btn" data-act="scanfull">Ganzes Foto verwenden</button><button type="button" class="btn" data-act="scanauto">Ränder neu suchen</button></div>
+  </div></div>`;
+  const cv=$("#scanCv"),maxW=Math.min(window.innerWidth-40,700),maxH=window.innerHeight*0.6;
+  const k=Math.min(maxW/cur.w,maxH/cur.h);cv.width=Math.round(cur.w*k);cv.height=Math.round(cur.h*k);cur.k=k;
+  const ctx=cv.getContext("2d");
+  const paint=()=>{ctx.drawImage(cur.src,0,0,cv.width,cv.height);const q=cur.quad.map(([x,y])=>[x*k,y*k]);
+    ctx.fillStyle="rgba(22,58,107,.18)";ctx.strokeStyle="#7fb2e8";ctx.lineWidth=3;ctx.beginPath();q.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fill();ctx.stroke();
+    for(const [x,y] of q){ctx.beginPath();ctx.arc(x,y,13,0,7);ctx.fillStyle="rgba(255,255,255,.9)";ctx.fill();ctx.lineWidth=3;ctx.stroke()}};
+  paint();
+  let drag=-1;
+  const pos=e=>{const r=cv.getBoundingClientRect();return [(e.clientX-r.left)*cv.width/r.width,(e.clientY-r.top)*cv.height/r.height]};
+  cv.addEventListener("pointerdown",e=>{const [x,y]=pos(e);let bd=40;cur.quad.forEach(([qx,qy],i)=>{const dd=Math.hypot(qx*k-x,qy*k-y);if(dd<bd){bd=dd;drag=i}});if(drag>=0){cv.setPointerCapture(e.pointerId);e.preventDefault()}});
+  cv.addEventListener("pointermove",e=>{if(drag<0)return;const [x,y]=pos(e);cur.quad[drag]=[Math.max(0,Math.min(cur.w,x/k)),Math.max(0,Math.min(cur.h,y/k))];paint()});
+  const up=()=>{drag=-1};cv.addEventListener("pointerup",up);cv.addEventListener("pointercancel",up);
+  $("#scrim").addEventListener("click",async e=>{
+    const b=e.target.closest("[data-act]");if(!b)return;const act=b.dataset.act;
+    if(act==="scanback"){SC.cur=null;return drawScanStart()}
+    if(act==="scanfull"){cur.quad=[[0,0],[cur.w,0],[cur.w,cur.h],[0,cur.h]];return paint()}
+    if(act==="scanauto"){cur.quad=detectQuad(cur.src);return paint()}
+    if(act==="scanok"){b.disabled=true;b.textContent="Wird aufbereitet …";await new Promise(r=>setTimeout(r,30));
+      const out=enhanceScan(warpQuad(cur.src,cur.quad));
+      // volle Auflösung für die Texterkennung, verkleinert für die PDF
+      const ocrBlob=await new Promise(r=>out.toBlob(r,"image/jpeg",0.9));
+      const ps=Math.min(1,2200/Math.max(out.width,out.height)),pw=Math.round(out.width*ps),ph=Math.round(out.height*ps);
+      const small=document.createElement("canvas");small.width=pw;small.height=ph;small.getContext("2d").drawImage(out,0,0,pw,ph);
+      const blob=await new Promise(r=>small.toBlob(r,"image/jpeg",0.82));
+      SC.pages.push({blob,ocrBlob,w:pw,h:ph,url:URL.createObjectURL(blob)});SC.cur=null;drawScanStart()}
+  });
+}
+// Perspektive entzerren (Quadrat -> Viereck, Heckbert), bilinear abtasten
+function warpQuad(src,quad){
+  const [[x0,y0],[x1,y1],[x2,y2],[x3,y3]]=quad;
+  let W=Math.max(Math.hypot(x1-x0,y1-y0),Math.hypot(x2-x3,y2-y3)),H=Math.max(Math.hypot(x3-x0,y3-y0),Math.hypot(x2-x1,y2-y1));
+  const sc=Math.min(1,3200/Math.max(W,H));W=Math.max(10,Math.round(W*sc));H=Math.max(10,Math.round(H*sc));
+  const sx=x0-x1+x2-x3,sy=y0-y1+y2-y3;let a,b,c,d,e,f,g=0,h=0;
+  if(Math.abs(sx)<1e-6&&Math.abs(sy)<1e-6){a=x1-x0;b=x3-x0;c=x0;d=y1-y0;e=y3-y0;f=y0}
+  else{const dx1=x1-x2,dx2=x3-x2,dy1=y1-y2,dy2=y3-y2,den=dx1*dy2-dx2*dy1;g=(sx*dy2-dx2*sy)/den;h=(dx1*sy-sx*dy1)/den;
+    a=x1-x0+g*x1;b=x3-x0+h*x3;c=x0;d=y1-y0+g*y1;e=y3-y0+h*y3;f=y0}
+  const sw=src.width,shh=src.height,sd=src.getContext("2d",{willReadFrequently:true}).getImageData(0,0,sw,shh).data;
+  const out=document.createElement("canvas");out.width=W;out.height=H;const oc=out.getContext("2d");const od=oc.createImageData(W,H),o=od.data;
+  for(let j=0;j<H;j++){const v=j/(H-1);for(let i=0;i<W;i++){const u=i/(W-1),den=g*u+h*v+1;
+    let X=(a*u+b*v+c)/den,Y=(d*u+e*v+f)/den;if(X<0)X=0;if(Y<0)Y=0;if(X>sw-1.001)X=sw-1.001;if(Y>shh-1.001)Y=shh-1.001;
+    const xi=X|0,yi=Y|0,fx=X-xi,fy=Y-yi,p=(yi*sw+xi)*4,q=p+sw*4,t=(j*W+i)*4;
+    for(let ch=0;ch<3;ch++){o[t+ch]=(sd[p+ch]*(1-fx)+sd[p+4+ch]*fx)*(1-fy)+(sd[q+ch]*(1-fx)+sd[q+4+ch]*fx)*fy}o[t+3]=255}}
+  oc.putImageData(od,0,0);return out;
+}
+// Scan-Look: Graustufen, Licht ausgleichen, Papier weiß, Schrift kräftig
+function enhanceScan(cv){
+  const w=cv.width,h=cv.height,ctx=cv.getContext("2d",{willReadFrequently:true});
+  const bg=document.createElement("canvas");bg.width=w;bg.height=h;const bx=bg.getContext("2d",{willReadFrequently:true});
+  bx.filter=`blur(${Math.round(Math.max(w,h)/60)}px)`;bx.drawImage(cv,0,0);
+  const a=ctx.getImageData(0,0,w,h),d=a.data,e=bx.getImageData(0,0,w,h).data;
+  for(let i=0;i<d.length;i+=4){
+    const gv=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2],bv=Math.max(1,0.299*e[i]+0.587*e[i+1]+0.114*e[i+2]);
+    let v=gv/bv*255;v=v>=245?255:v*0.98;d[i]=d[i+1]=d[i+2]=v>255?255:v;
+  }
+  ctx.putImageData(a,0,0);return cv;
+}
+async function finishScanPdf(){
+  const SC=S.scan;const pages=[];
+  for(const p of SC.pages)pages.push({jpg:new Uint8Array(await p.blob.arrayBuffer()),w:p.w,h:p.h});
+  const pdf=jpegsToPdf(pages);const images=SC.pages.map(p=>p.ocrBlob||p.blob);
+  SC.pages.forEach(p=>URL.revokeObjectURL(p.url));
+  scanFinish({pdf,images});
+}
+// Texterkennung für Scan-Ergebnis (Bilder sind schon aufbereitet) oder Datei
+async function readText(input){
+  if(input.images){await ensureTess();let t="";for(const im of input.images)t+=(await tessRec(im))+"\n";return t}
+  return docText(input.file||input);
+}
+
+/* ================= PDF-Text und Bescheid-Text lesen ================= */
+const PDFJS="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
+// Texterkennung eines Bildes; Wörter mit Position werden für Ausschnitte (Ampel) gesammelt
+async function tessRec(img){
+  let res;try{res=await tessWorker.recognize(img,{},{text:true,blocks:true})}catch{res=await tessWorker.recognize(img)}
+  const d=res?.data||{};
+  if(S.ocrCap){let words=d.words;if(!words?.length&&d.blocks)words=d.blocks.flatMap(b=>(b.paragraphs||[]).flatMap(p=>(p.lines||[]).flatMap(l=>l.words||[])));
+    S.ocrCap.push({img,words:(words||[]).map(w=>({text:w.text||"",b:w.bbox}))})}
+  return d.text||"";
+}
+async function docText(file){
+  if(file.type==="application/pdf"||/\.pdf$/i.test(file.name||"")){
+    await loadLib(PDFJS,()=>!!window.pdfjsLib);
+    pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+    const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+    let text="";const pages=Math.min(pdf.numPages,6);
+    for(let p=1;p<=pages;p++){
+      const page=await pdf.getPage(p);const tc=await page.getTextContent();
+      // Textstücke zu Zeilen zusammensetzen (gleiche Höhe)
+      const rows=new Map();for(const it of tc.items){const y=Math.round(it.transform[5]);const r=rows.get(y)||[];r.push([it.transform[4],it.str]);rows.set(y,r)}
+      let pt=[...rows.entries()].sort((a,b)=>b[0]-a[0]).map(([,r])=>r.sort((a,b)=>a[0]-b[0]).map(x=>x[1]).join(" ")).join("\n");
+      if(pt.replace(/\s/g,"").length<40){ // gescanntes PDF: Seite als Bild lesen
+        const vp=page.getViewport({scale:2.2});const cv=document.createElement("canvas");cv.width=vp.width;cv.height=vp.height;
+        await page.render({canvasContext:cv.getContext("2d"),viewport:vp}).promise;
+        await ensureTess();const bl=await prepareForOcr(await new Promise(r=>cv.toBlob(r,"image/png")));pt=await tessRec(bl);
+      }
+      text+=pt+"\n";
+    }
+    return text;
+  }
+  await ensureTess();return await tessRec(await prepareForOcr(file));
+}
+const PSTOP=new Set(["dr","med","prof","dipl","gmbh","ggmbh","mbh","mvz","co","kg","ag","ug","und","der","die","das","fuer","für","praxis","gemeinschaftspraxis","zentrum","ohg","gbr"]);
+const provWords=s=>String(s||"").toLowerCase().replace(/[^a-zäöüß0-9]+/g," ").split(" ").filter(w=>w.length>=4&&!PSTOP.has(w));
+function parseProofText(text){
+  const t=text.replace(/\r/g,""),out={};
+  const nb=(t.match(/beihilfe/gi)||[]).length,np=(t.match(/\baxa\b|krankenversicherung|leistungsabrechnung|tarif/gi)||[]).length;
+  out.side=nb>np?"bh":np>0?"pkv":null;
+  const dm=t.match(/(?:bescheid\s+vom|abrechnung\s+vom|datum|vom)\s*:?\s*(\d{1,2})\.(\d{1,2})\.(\d{4})/i);
+  const iso=(d,m,y)=>`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  const MON={januar:1,februar:2,"märz":3,maerz:3,april:4,mai:5,juni:6,juli:7,august:8,september:9,oktober:10,november:11,dezember:12};
+  const dn=/beihilfebescheid|beihilfenummer/i.test(t)&&t.match(/^\s*(\d{1,2})\.\s*(Januar|Februar|März|Maerz|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s+(\d{4})\s*$/im);
+  if(dn)out.date=iso(dn[1],MON[dn[2].toLowerCase()],dn[3]);
+  else if(dm)out.date=iso(dm[1],dm[2],dm[3]);
+  else{const all=[...t.matchAll(/(\d{1,2})\.(\d{1,2})\.(\d{4})/g)].map(m=>iso(m[1],m[2],m[3])).filter(d=>d<=today()).sort();if(all.length)out.date=all[all.length-1]}
+  for(const re of [/auszahlungsbetrag(?:\s+gesamt)?:?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i,/erstattungsbetrag\s+gesamt\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i,
+    /(?:gesamterstattung|erstattung\s+gesamt|überweisungsbetrag|festgesetzte\s+beihilfe|beihilfe\s+gesamt|summe\s+beihilfe|gesamtbetrag\s+der\s+beihilfe|erstattungsbetrag|auszahlung)[^\d]{0,40}(\d{1,3}(?:\.\d{3})*,\d{2})/i]){
+    const m=t.match(re);if(m){out.total=r2(m[1].replace(/\./g,"").replace(",","."));break}}
+  const num=x=>r2(x.replace(/\./g,"").replace(",","."));
+  const ai=t.match(/AppID:?\s*(\d{5,})/i);if(ai)out.appId=ai[1];
+  // Beihilfebescheid: Summe festgesetzte Beihilfe = Summe der Zeilen (auch bei Korrektur-Bescheiden, dort ist die Auszahlung kleiner)
+  const fs=t.match(/summe\s+festgesetzte\s+beihilfe:?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i);
+  if(fs){out.total=num(fs[1]);const ap=t.match(/auszahlungsbetrag:?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i);if(ap)out.payout=num(ap[1]);
+    const pre=t.match(/bereits\s+festgesetzte\s+beihilfe:?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i);if(pre)out.before=num(pre[1]);
+    out.correction=/korrektur/i.test(t)||!!pre}
+  // Zeilen der Festsetzung: Person, Datum, Rechnungsbetrag, Beihilfe
+  out.lines=[...t.matchAll(/^\s*([A-Za-zÄÖÜäöüß-]+)[^\n]*?(\d{2}\.\d{2}\.\d{4})\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+\d{1,3}\s+(\d{1,3}(?:\.\d{3})*,\d{2})/gm)]
+    .map(m=>({person:m[1],date:m[2],amount:num(m[3]),refund:num(m[5])}));
+  // Nummerierte Hinweise (Gründe für Kürzungen)
+  out.notes={};const ls=t.split("\n");const hi=ls.findIndex(l=>/^\s*Hinweise\s*$/.test(l));
+  if(hi>=0){let cur=null;for(const l of ls.slice(hi+1)){if(/^\s*(Seite \d|Servicezeit|De-Mail|Antragshinweise)/i.test(l))break;
+    const m=l.match(/^\s*(\d{1,2})(?:\s+(.*))?$/);if(m){cur=m[1];out.notes[cur]=(m[2]||"").trim()}else if(cur)out.notes[cur]=(out.notes[cur]+" "+l.trim()).trim()}}
+  return out;
+}
+/* Foto -> PDF (eine A4-Seite), damit Beihilfe- und AXA-App die Datei auswählen können */
+async function toPdf(blob){
+  if(blob.type==="application/pdf")return blob;
+  const bmp=await createImageBitmap(blob);const sc=Math.min(1,2000/Math.max(bmp.width,bmp.height));
+  const w=Math.round(bmp.width*sc),h=Math.round(bmp.height*sc);
+  const cv=document.createElement("canvas");cv.width=w;cv.height=h;const ctx=cv.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,w,h);ctx.drawImage(bmp,0,0,w,h);
+  const jpg=new Uint8Array(await (await new Promise(r=>cv.toBlob(r,"image/jpeg",0.85))).arrayBuffer());
+  return jpegToPdf(jpg,w,h);
+}
+function jpegToPdf(jpg,w,h){return jpegsToPdf([{jpg,w,h}])}
+function jpegsToPdf(pages){
+  const enc=new TextEncoder(),parts=[],off=[];let pos=0;
+  const push=x=>{const b=typeof x==="string"?enc.encode(x):x;parts.push(b);pos+=b.length};
+  const pw=595.28,ph=841.89,n=pages.length;
+  push(new Uint8Array([37,80,68,70,45,49,46,52,10,37,226,227,207,211,10]));
+  const obj=(i,body)=>{off[i]=pos;push(`${i} 0 obj\n${body}\nendobj\n`)};
+  obj(1,"<< /Type /Catalog /Pages 2 0 R >>");
+  obj(2,`<< /Type /Pages /Kids [${pages.map((_,i)=>`${3+i*3} 0 R`).join(" ")}] /Count ${n} >>`);
+  pages.forEach((p,i)=>{
+    const po=3+i*3,io=po+1,co=po+2;
+    const s=Math.min(pw/p.w,ph/p.h),dw=+(p.w*s).toFixed(2),dh=+(p.h*s).toFixed(2),x=+((pw-dw)/2).toFixed(2),y=+((ph-dh)/2).toFixed(2);
+    const content=`q ${dw} 0 0 ${dh} ${x} ${y} cm /Im0 Do Q`;
+    obj(po,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 ${io} 0 R >> >> /Contents ${co} 0 R >>`);
+    off[io]=pos;push(`${io} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${p.w} /Height ${p.h} /ColorSpace /${p.gray?"DeviceGray":"DeviceRGB"} /BitsPerComponent 8 /Filter /DCTDecode /Length ${p.jpg.length} >>\nstream\n`);push(p.jpg);push("\nendstream\nendobj\n");
+    obj(co,`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  });
+  const total=3+n*3,xref=pos;let t=`xref\n0 ${total}\n0000000000 65535 f \n`;for(let i=1;i<total;i++)t+=String(off[i]).padStart(10,"0")+" 00000 n \n";
+  push(t+`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts,{type:"application/pdf"});
+}
+async function uploadMultipart(meta,blob,fileId){
+  const b="b"+uid();
+  const body=new Blob([`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${b}\r\nContent-Type: ${blob.type||"application/octet-stream"}\r\n\r\n`,blob,`\r\n--${b}--`]);
+  const url=fileId?`${UPLOAD}/${fileId}?uploadType=multipart&fields=id,webViewLink`:`${UPLOAD}?uploadType=multipart&fields=id,webViewLink`;
+  return (await gfetch(url,{method:fileId?"PATCH":"POST",headers:{"Content-Type":`multipart/related; boundary=${b}`},body})).json();
+}
+/* ================= QR-Code (Byte-Modus, Fehlerkorrektur M, Version 1–13) für GiroCode ================= */
+const QR=(()=>{
+  const ECC=[-1,10,16,26,18,24,16,18,22,22,26,30,22,22],NB=[-1,1,1,1,2,2,4,4,4,5,5,5,8,9];
+  const mul=(x,y)=>{let z=0;for(let i=7;i>=0;i--){z=(z<<1)^((z>>>7)*0x11D);z^=((y>>>i)&1)*x}return z&0xFF};
+  const rawModules=v=>{let r=(16*v+128)*v+64;if(v>=2){const n=Math.floor(v/7)+2;r-=(25*n-10)*n-55;if(v>=7)r-=36}return r};
+  const dataCw=v=>Math.floor(rawModules(v)/8)-ECC[v]*NB[v];
+  const rsDiv=d=>{const r=new Array(d).fill(0);r[d-1]=1;let root=1;for(let i=0;i<d;i++){for(let j=0;j<d;j++){r[j]=mul(r[j],root);if(j+1<d)r[j]^=r[j+1]}root=mul(root,2)}return r};
+  const rsRem=(data,div)=>{const r=div.map(()=>0);for(const b of data){const f=b^r.shift();r.push(0);div.forEach((c,i)=>r[i]^=mul(c,f))}return r};
+  const bit=(x,i)=>((x>>>i)&1)!==0;
+  function encode(text){
+    const bytes=[...new TextEncoder().encode(text)];
+    let v=1;for(;v<=13;v++)if(4+(v<10?8:16)+bytes.length*8<=dataCw(v)*8)break;
+    if(v>13)throw new Error("Text zu lang für QR-Code");
+    const bits=[];const app=(val,len)=>{for(let i=len-1;i>=0;i--)bits.push((val>>>i)&1)};
+    app(4,4);app(bytes.length,v<10?8:16);bytes.forEach(b=>app(b,8));
+    const cap=dataCw(v)*8;app(0,Math.min(4,cap-bits.length));app(0,(8-bits.length%8)%8);
+    for(let p=0xEC;bits.length<cap;p^=0xEC^0x11)app(p,8);
+    const data=[];for(let i=0;i<bits.length;i+=8)data.push(parseInt(bits.slice(i,i+8).join(""),2));
+    // Fehlerkorrektur und Verschränkung
+    const nb=NB[v],el=ECC[v],raw=Math.floor(rawModules(v)/8),nShort=nb-raw%nb,shortLen=Math.floor(raw/nb),div=rsDiv(el);
+    const blocks=[];for(let i=0,k=0;i<nb;i++){const dat=data.slice(k,k+shortLen-el+(i<nShort?0:1));k+=dat.length;const ecc=rsRem(dat,div);if(i<nShort)dat.push(0);blocks.push(dat.concat(ecc))}
+    const all=[];for(let i=0;i<blocks[0].length;i++)blocks.forEach((b,j)=>{if(i!==shortLen-el||j>=nShort)all.push(b[i])});
+    // Matrix
+    const n=v*4+17,M=[...Array(n)].map(()=>Array(n).fill(false)),F=[...Array(n)].map(()=>Array(n).fill(false));
+    const set=(x,y,d)=>{M[y][x]=d;F[y][x]=true};
+    for(let i=0;i<n;i++){set(6,i,i%2===0);set(i,6,i%2===0)}
+    for(const [cx,cy] of [[3,3],[n-4,3],[3,n-4]])for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){const d=Math.max(Math.abs(dx),Math.abs(dy)),x=cx+dx,y=cy+dy;if(x>=0&&x<n&&y>=0&&y<n)set(x,y,d!==2&&d!==4)}
+    if(v>1){const na=Math.floor(v/7)+2,step=Math.floor((v*8+na*3+5)/(na*4-4))*2,pos=[6];for(let p=n-7;pos.length<na;p-=step)pos.splice(1,0,p);
+      const l=pos.length-1;pos.forEach((a,i)=>pos.forEach((b,j)=>{if((i===0&&j===0)||(i===0&&j===l)||(i===l&&j===0))return;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++)set(a+dx,b+dy,Math.max(Math.abs(dx),Math.abs(dy))!==1)}))}
+    const fmt=mask=>{const d=(0<<3)|mask;let r=d;for(let i=0;i<10;i++)r=(r<<1)^((r>>>9)*0x537);const b=((d<<10)|r)^0x5412;
+      for(let i=0;i<=5;i++)set(8,i,bit(b,i));set(8,7,bit(b,6));set(8,8,bit(b,7));set(7,8,bit(b,8));for(let i=9;i<15;i++)set(14-i,8,bit(b,i));
+      for(let i=0;i<8;i++)set(n-1-i,8,bit(b,i));for(let i=8;i<15;i++)set(8,n-15+i,bit(b,i));set(8,n-8,true)};
+    fmt(0);
+    if(v>=7){let r=v;for(let i=0;i<12;i++)r=(r<<1)^((r>>>11)*0x1F25);const b=(v<<12)|r;for(let i=0;i<18;i++){const a=n-11+i%3,c=Math.floor(i/3);set(a,c,bit(b,i));set(c,a,bit(b,i))}}
+    let i=0;for(let right=n-1;right>=1;right-=2){if(right===6)right=5;for(let vert=0;vert<n;vert++)for(let j=0;j<2;j++){const x=right-j,up=((right+1)&2)===0,y=up?n-1-vert:vert;
+      if(!F[y][x]&&i<all.length*8){M[y][x]=bit(all[i>>>3],7-(i&7));i++}}}
+    const MASKS=[(x,y)=>(x+y)%2===0,(x,y)=>y%2===0,(x,y)=>x%3===0,(x,y)=>(x+y)%3===0,(x,y)=>(Math.floor(x/3)+Math.floor(y/2))%2===0,
+      (x,y)=>x*y%2+x*y%3===0,(x,y)=>(x*y%2+x*y%3)%2===0,(x,y)=>((x+y)%2+x*y%3)%2===0];
+    const applyMask=m=>{for(let y=0;y<n;y++)for(let x=0;x<n;x++)if(!F[y][x]&&MASKS[m](x,y))M[y][x]=!M[y][x]};
+    const penalty=()=>{let p=0;
+      for(let y=0;y<n;y++){let run=1;for(let x=1;x<=n;x++){if(x<n&&M[y][x]===M[y][x-1])run++;else{if(run>=5)p+=run-2;run=1}}}
+      for(let x=0;x<n;x++){let run=1;for(let y=1;y<=n;y++){if(y<n&&M[y][x]===M[y-1][x])run++;else{if(run>=5)p+=run-2;run=1}}}
+      for(let y=0;y<n-1;y++)for(let x=0;x<n-1;x++){const c=M[y][x];if(c===M[y][x+1]&&c===M[y+1][x]&&c===M[y+1][x+1])p+=3}
+      let dark=0;M.forEach(r=>r.forEach(c=>{if(c)dark++}));p+=Math.floor(Math.abs(dark*20-n*n*10)/(n*n))*10;return p};
+    let best=0,bestP=Infinity;for(let m=0;m<8;m++){applyMask(m);fmt(m);const p=penalty();if(p<bestP){bestP=p;best=m}applyMask(m)}
+    applyMask(best);fmt(best);return M;
+  }
+  // Als PNG-Datei (mit Ruhezone und Beschriftung)
+  async function png(text,caption){
+    const M=encode(text),n=M.length,s=Math.max(6,Math.floor(560/(n+8))),q=4*s,w=n*s+2*q,capH=caption?60:0;
+    const cv=document.createElement("canvas");cv.width=w;cv.height=w+capH;const g=cv.getContext("2d");
+    g.fillStyle="#fff";g.fillRect(0,0,cv.width,cv.height);g.fillStyle="#000";
+    M.forEach((r,y)=>r.forEach((d,x)=>{if(d)g.fillRect(q+x*s,q+y*s,s,s)}));
+    if(caption){g.font="bold 22px system-ui,sans-serif";g.textAlign="center";g.fillText(caption.slice(0,48),w/2,w+36)}
+    return await new Promise(r=>cv.toBlob(r,"image/png"));
+  }
+  return {encode,png};
+})();
+// GiroCode (EPC-QR, Version 002): Empfänger, IBAN, Betrag, Verwendungszweck
+function giroText(p){return ["BCD","002","1","SCT","",p.name.slice(0,70),p.iban,"EUR"+p.amount.toFixed(2),"","",p.purpose.slice(0,140)].join("\n")}
+
+/* ================= Einstellungen ================= */
+async function saveSettings(){S.settings.updatedAt=nowIso();await dbPut("meta",{key:"settings",...S.settings});scheduleSync()}
+function openSettings(focus){
+  const s=S.settings;S.edit={mode:"settings",urls:[]};
+  const rows=s.people.map((p,i)=>`<div class="grid2">
+    <label class="f">Name<input id="pn${i}" value="${esc(p.name)}"></label>
+    <label class="f">Gruppe<select id="pg${i}">${Object.entries(GROUPS).map(([k,v])=>`<option value="${k}" ${k===p.group?"selected":""}>${v}</option>`).join("")}</select></label></div>`).join("");
+  const rates=Object.entries(GROUPS).map(([g,v])=>`<div class="grid2">${field(v+" · AXA %","rp"+g,Math.round((s.rates[g]?.pkv||0)*100),"number")}${field(v+" · Beihilfe %","rb"+g,Math.round((s.rates[g]?.bh||0)*100),"number")}</div>`).join("");
+  const tok=tokenSource();
+  sheet("Einstellungen",`
+    <div id="edStatus" class="status" style="margin-top:10px"></div>
+    <div class="sec"><h3>Testversion 2</h3>
+      <p class="status" style="margin:0">Diese Version hat eigene Daten: einen eigenen Speicher auf dem Gerät und einen eigenen Drive-Ordner „${FOLDER_NAME}“. Die echte App und der Ordner „Arztrechnungen“ werden nicht verändert. Belege der echten App werden nur gelesen.</p></div>
+    <div class="sec" id="secImport"><h3>Kopie der echten Daten</h3>
+      <p class="status" style="margin:0">${s.importedAt?`Letzte Kopie: ${dfmt(s.importedAt)} um ${new Date(s.importedAt).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})} Uhr. `:""}Eine neue Kopie ersetzt alle Daten dieser Testversion.</p>
+      <div class="btnrow"><button type="button" class="btn primary" data-act="import" ${tokenValid()?"":"disabled"}>Kopie aus Drive holen</button><button type="button" class="btn" data-act="importfile">Aus Sicherungsdatei</button></div>
+      ${tokenValid()?"":`<p class="status" style="margin:0">Für die Kopie aus Drive erst unten anmelden. Oder eine Sicherungsdatei wählen (Drive › Arztrechnungen › _App-Daten › Sicherungen).</p>`}
+      <div id="importBox"></div></div>
+    <div class="sec"><h3>Google Drive</h3>
+      <p class="status" id="driveStatus" style="margin:0;font-weight:600"></p>
+      <p class="status" style="margin:0">${tok==="eigen"?"Angemeldet in der Testversion.":tok==="app"?"Angemeldet über die normale App (gleiches Google-Konto, gilt ca. 1 Stunde).":"Nicht angemeldet."}</p>
+      <div class="btnrow">${s.driveLinked&&tokenValid()?`<button type="button" class="btn primary" data-act="sync">Jetzt abgleichen</button>`:""}
+        <a class="btn ${tokenValid()?"":"primary"}" href="../" target="_blank" rel="noopener">Normale App öffnen</a>
+        <button type="button" class="btn" data-act="tokcheck">Anmeldung übernehmen</button></div>
+      <p class="status" style="margin:0">So geht die Anmeldung: normale App öffnen, dort ist man bei Google angemeldet. Zurück hierher wechseln und „Anmeldung übernehmen“ tippen.</p>
+      <details><summary class="status">Direkt anmelden</summary><p class="status" style="margin:6px 0">Klappt nur, wenn die Adresse dieser Testversion in der Google Cloud Console eingetragen ist (Anmeldedaten › OAuth-Client › Autorisierte Weiterleitungs-URIs: <span class="num">${esc(REDIRECT_URI)}</span>).</p>
+        <div class="btnrow"><button type="button" class="btn" data-act="link">Direkt bei Google anmelden</button></div></details>
+      <details><summary class="status">Verlauf anzeigen</summary><pre class="status" style="white-space:pre-wrap;margin:6px 0 0;font-size:12px">${esc((()=>{try{return JSON.parse(LS.get("glog")||"[]").join("\n")}catch{return ""}})()||"Noch keine Einträge.")}</pre></details></div>
+    <div class="sec"><h3>Anteile</h3>${rates}<p class="status" style="margin:0">Gilt für neue Rechnungen.</p></div>
+    <div class="sec"><h3>Personen</h3>${rows}</div>
+    <div class="sec"><h3>Regeln</h3><div class="grid2">${field("Zahlungsfrist (Tage)","payD",s.payDays,"number")}${field("Warnen vor Fälligkeit (Tage)","warnD",s.warnDays??7,"number")}</div></div>
+    <div class="sec"><h3>Testdaten</h3><p class="status" style="margin:0">Löscht alle Daten dieser Testversion auf dem Gerät und in ihrem Drive-Ordner. Die echte App bleibt unberührt.</p>
+      <div class="btnrow"><button type="button" class="btn danger" data-act="wipe">Alle Testdaten löschen</button></div></div>
+  `,`<button type="button" class="btn" data-act="close">Abbrechen</button><button type="button" class="btn primary" data-act="save">Speichern</button>`);
+  updateChip();
+  if(focus==="import")$("#secImport")?.scrollIntoView({block:"start"});
+  $("#scrim").addEventListener("click",async e=>{
+    const b=e.target.closest("[data-act]");if(!b)return;
+    const n=id=>+String($("#"+id).value).replace(",",".")||0;
+    switch(b.dataset.act){
+      case "close":return closeSheet();
+      case "link":closeSheet();return connectDrive();
+      case "tokcheck":{pickToken();if(tokenValid()){if(!S.settings.driveLinked){S.settings.driveLinked=true;await dbPut("meta",{key:"settings",...S.settings})}toast("Anmeldung übernommen");closeSheet();render();syncNow();openSettings()}
+        else toast("Keine gültige Anmeldung gefunden. Erst die normale App öffnen.");return}
+      case "sync":closeSheet();return syncNow();
+      case "import":return importFromDrive();
+      case "importfile":{const p=$("#pickBackup");p.value="";p.onchange=async()=>{const f=p.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!Array.isArray(d.invoices))throw 0;importPreview(d,"Sicherungsdatei "+f.name)}catch{setStatus("Datei nicht lesbar. Bitte eine Sicherung der App wählen.",true)}};p.click();return}
+      case "importok":return importApply();
+      case "importno":S.edit.imp=null;$("#importBox").innerHTML="";return;
+      case "wipe":if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Wirklich alles löschen? Nochmal tippen";return}
+        await replaceAll({invoices:[],bescheide:[],settings:{}});S.settings.importedAt=null;await saveSettings();closeSheet();render();toast("Testdaten gelöscht");return;
+      case "save":
+        S.settings={...S.settings,people:S.settings.people.map((p,i)=>({...p,name:($("#pn"+i)?.value??p.name).trim(),group:$("#pg"+i)?.value??p.group})).filter(p=>p.name),
+          rates:Object.fromEntries(Object.keys(GROUPS).map(g=>[g,{pkv:r2(n("rp"+g)/100),bh:r2(n("rb"+g)/100)}])),payDays:n("payD")||30,warnDays:n("warnD")};
+        await saveSettings();toast("Einstellungen gespeichert");closeSheet();render();
+    }
+  });
+}
+/* ---- Kopie der echten Daten: nur lesen, umwandeln, in die Testversion schreiben ---- */
+async function importFromDrive(){
+  setStatus("Suche die Datendatei der echten App …");
+  try{
+    const r=await (await gfetch(`${API}?q=${q(`name='${REAL_DATA}' and trashed=false`)}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&spaces=drive`)).json();
+    const f=r.files?.[0];if(!f){setStatus("Datendatei der echten App nicht gefunden.",true);return}
+    const d=await (await gfetch(`${API}/${f.id}?alt=media`)).json();
+    importPreview(d,`Drive, Stand ${new Date(f.modifiedTime).toLocaleString("de-DE",{dateStyle:"short",timeStyle:"short"})}`);
+  }catch(e){setStatus(e.code==="auth"?"Anmeldung abgelaufen. Bitte neu anmelden.":"Lesen fehlgeschlagen.",true)}
+}
+function importPreview(raw,src){
+  const m=migrateOld(raw);S.edit.imp=m;
+  const nb=m.bescheide.length,nm=m.bescheide.filter(b=>b.manual).length;
+  setStatus("");
+  $("#importBox").innerHTML=`<div class="checkline" style="margin-top:8px"><b>Gefunden (${esc(src)}):</b><br>${m.invoices.length} Rechnungen, ${nb} Bescheide${nm?` (davon ${nm} ohne Dokument)`:""}, ${m.invoices.reduce((a,i)=>a+(i.issues.length),0)} offene Punkte.<br>Übernehmen ersetzt alle Daten der Testversion.
+    <div class="btnrow" style="margin-top:8px"><button type="button" class="btn primary" data-act="importok">Übernehmen</button><button type="button" class="btn" data-act="importno">Abbrechen</button></div></div>`;
+}
+async function importApply(){
+  const m=S.edit?.imp;if(!m)return;
+  await replaceAll(m);
+  S.settings.importedAt=nowIso();await saveSettings();
+  closeSheet();S.area="zutun";render();toast(`${m.invoices.length} Rechnungen und ${m.bescheide.length} Bescheide übernommen`);
+}
+async function replaceAll(m){
+  await dbClear("invoices");await dbClear("bescheide");
+  for(const i of m.invoices)await dbPut("invoices",i);for(const b of m.bescheide)await dbPut("bescheide",b);
+  S.inv=m.invoices;S.besch=m.bescheide;S.deleted={};await dbPut("meta",{key:"deleted",items:{}});
+  if(m.settings?.people)S.settings={...S.settings,...m.settings};
+  S.settings.overwriteRemote=true; // nächster Abgleich ersetzt die Drive-Datei der Testversion, statt alte Stände zurückzuholen
+  await dbPut("meta",{key:"settings",...S.settings});reindex();scheduleSync();
+}
+
+/* ================= Google Drive (eigener Ordner der Testversion) ================= */
+const GOOGLE_CLIENT_ID="592336920931-5s1klnrs64841o02016jk7mknm248rdf.apps.googleusercontent.com";
+const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.file";
+const API="https://www.googleapis.com/drive/v3/files",UPLOAD="https://www.googleapis.com/upload/drive/v3/files";
+const FOLDER_NAME="PKV-Beihilfe Testversion 2",DATA_NAME="pkv-beihilfe-v2-daten.json",REAL_DATA="arztrechnungen-daten.json";
+const G={token:null,exp:0,src:null,busy:false,dirty:false,last:null,err:null,timer:null};
+const LOCAL_KEYS=["driveLinked","driveFolderId","driveDataId","driveAppId","driveSnapId","driveFolderMap","lastSnapshot","importedAt","overwriteRemote"];
+// Anmeldung: eigene (Testversion) oder die der normalen App (gleiche Seite, gleiches Google-Konto)
+function pickToken(){
+  const read=k=>{try{const t=JSON.parse(localStorage.getItem(k)||"null");return t&&t.exp>Date.now()+60000?t:null}catch{return null}};
+  const own=read(V2+"gtok"),app=read("gtok");
+  const t=own&&(!app||own.exp>=app.exp)?own:app;
+  if(t){G.token=t.token;G.exp=t.exp;G.src=t===own?"eigen":"app"}else{G.token=null;G.exp=0;G.src=null}
+}
+const tokenValid=()=>{if(!(G.token&&Date.now()<G.exp-60000))pickToken();return !!G.token&&Date.now()<G.exp-60000};
+const tokenSource=()=>tokenValid()?G.src:null;
+const REDIRECT_URI=new URL("./",location.href).href;
+function glog(msg){try{const l=JSON.parse(LS.get("glog")||"[]");l.push(new Date().toLocaleTimeString("de-DE")+" "+msg);LS.set("glog",JSON.stringify(l.slice(-15)))}catch{}}
+function connectDrive(){
+  const state=uid();LS.set("gstate",state);
+  const p=new URLSearchParams({client_id:GOOGLE_CLIENT_ID,redirect_uri:REDIRECT_URI,response_type:"token",scope:DRIVE_SCOPE,include_granted_scopes:"true",state});
+  location.href="https://accounts.google.com/o/oauth2/v2/auth?"+p.toString();
+}
+function readAuthRedirect(){
+  if(!location.hash||!/access_token=|error=/.test(location.hash))return null;
+  const h=new URLSearchParams(location.hash.slice(1));history.replaceState(null,"",location.pathname+location.search);
+  const saved=LS.get("gstate");LS.del("gstate");
+  if(h.get("error"))return {error:h.get("error")};
+  if(saved&&h.get("state")!==saved)return {error:"state"};
+  return {token:h.get("access_token"),expires:+h.get("expires_in")||3600};
+}
+const AUTH=readAuthRedirect();
+if(AUTH?.token)LS.set("gtok",JSON.stringify({token:AUTH.token,exp:Date.now()+AUTH.expires*1000}));
+pickToken();
+async function gfetch(url,opts={}){
+  const r=await fetch(url,{...opts,headers:{...(opts.headers||{}),Authorization:"Bearer "+G.token}});
+  if(r.status===401){if(G.src==="eigen")LS.del("gtok");G.token=null;G.exp=0;const e=new Error("auth");e.code="auth";throw e}
+  if(!r.ok){let t="";try{t=(await r.text()).replace(/\s+/g," ").slice(0,160)}catch{}glog("Drive-Fehler "+r.status+": "+t);const e=new Error("drive "+r.status);e.code="fail";throw e}
+  return r;
+}
+const q=s=>encodeURIComponent(s);
+async function findOrCreateFolder(name,parent){
+  let query=`name='${name.replace(/'/g,"\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;if(parent)query+=` and '${parent}' in parents`;
+  const r=await (await gfetch(`${API}?q=${q(query)}&fields=files(id)&spaces=drive`)).json();
+  if(r.files?.length)return r.files[0].id;
+  const c=await (await gfetch(`${API}?fields=id`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,mimeType:"application/vnd.google-apps.folder",...(parent?{parents:[parent]}:{})})})).json();
+  return c.id;
+}
+async function findFile(name,parent){
+  const r=await (await gfetch(`${API}?q=${q(`name='${name}' and '${parent}' in parents and trashed=false`)}&fields=files(id)`)).json();
+  return r.files?.[0]?.id||null;
+}
+async function trashOwn(id){
+  try{await gfetch(`${API}/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({trashed:true})});glog("In den Papierkorb: "+id.slice(0,6)+"…")}
+  catch(e){if(e.code==="auth")throw e}
+}
+// Nur Dateien, die die Testversion selbst hochgeladen hat
+async function queueTrash(ids){S.trash=[...new Set([...(S.trash||[]),...ids.filter(Boolean)])];await dbPut("meta",{key:"trash",items:S.trash})}
+async function ensureFolders(){
+  const s=S.settings;let ch=false;
+  if(!s.driveFolderId){s.driveFolderId=await findOrCreateFolder(FOLDER_NAME);ch=true}
+  if(!s.driveAppId){s.driveAppId=await findOrCreateFolder("_App-Daten",s.driveFolderId);ch=true}
+  if(!s.driveDataId){const id=await findFile(DATA_NAME,s.driveAppId);if(id){s.driveDataId=id;ch=true}}
+  if(ch)await dbPut("meta",{key:"settings",...s});
+}
+async function ensurePath(parts){
+  const s=S.settings;s.driveFolderMap=s.driveFolderMap||{};let parent=s.driveFolderId,key="";
+  for(const p of parts){key+="/"+p;if(!s.driveFolderMap[key]){s.driveFolderMap[key]=await findOrCreateFolder(p,parent);await dbPut("meta",{key:"settings",...s})}parent=s.driveFolderMap[key]}
+  return parent;
+}
+const cleanName=s=>String(s||"").replace(/[\\/:*?"<>|#%]+/g," ").replace(/\s+/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,"").slice(0,60);
+const ym=d=>{d=d||today();const m=+d.slice(5,7)||1;return [d.slice(0,4),String(m).padStart(2,"0")+" "+MONTHS[m-1]]};
+function scheduleSync(){if(!S.settings.driveLinked)return;G.dirty=true;updateChip();clearTimeout(G.timer);G.timer=setTimeout(syncNow,1500)}
+// Zusammenführen nach Änderungszeit; Löschungen gewinnen, wenn sie neuer sind
+function mergeList(local,remote,deleted){
+  const map=new Map(local.map(x=>[x.id,x]));
+  for(const r of remote||[]){const l=map.get(r.id);
+    if(!l||(r.updatedAt||"")>(l.updatedAt||"")){const m=structuredClone(r);
+      if(l){if(l.doc?.fileId&&m.doc&&(!m.doc.driveId||m.doc.driveId===l.doc.driveId))m.doc.fileId=l.doc.fileId;
+        if(l.file?.fileId&&m.file&&(!m.file.driveId||m.file.driveId===l.file.driveId))m.file.fileId=l.file.fileId;
+        if(l.thumbFileId)m.thumbFileId=l.thumbFileId}
+      map.set(r.id,m)}}
+  for(const [id,t] of Object.entries(deleted)){const i=map.get(id);if(i&&t>=(i.updatedAt||""))map.delete(id)}
+  return map;
+}
+async function uploadRef(ref,parts,name){
+  const f=await dbGet("files",ref.fileId);if(!f)return false;
+  const target=await ensurePath(parts);
+  const up=await uploadMultipart({name,parents:[target]},await toPdf(f.blob));
+  ref.driveId=up.id;ref.url=up.webViewLink||`https://drive.google.com/file/d/${up.id}/view`;ref.name=name;ref.own=true;glog("Hochgeladen: "+name);return true;
+}
+async function syncNow(){
+  if(!S.settings.driveLinked)return;
+  if(!tokenValid()){G.dirty=true;updateChip();renderBanner();return}
+  if(G.busy){G.dirty=true;return}
+  G.busy=true;G.dirty=false;G.err=null;updateChip();
+  try{
+    await ensureFolders();
+    let remote=null;
+    if(S.settings.driveDataId&&!S.settings.overwriteRemote){
+      try{remote=await (await gfetch(`${API}/${S.settings.driveDataId}?alt=media`)).json()}
+      catch(e){if(e.code==="auth")throw e;S.settings.driveDataId=null;await ensureFolders()}}
+    for(const [id,t] of Object.entries(remote?.deleted||{}))if(!S.deleted[id]||S.deleted[id]<t)S.deleted[id]=t;
+    const im=mergeList(S.inv,remote?.invoices,S.deleted),bm=mergeList(S.besch,remote?.bescheide,S.deleted);
+    // Eigene neue Belege hochladen (fremde aus der echten App werden nie verändert)
+    for(const inv of im.values())if(inv.doc?.fileId&&!inv.doc.driveId){
+      if(await uploadRef(inv.doc,["Rechnungen",...ym(inv.invoiceDate)],`${inv.invoiceDate||today()}_${cleanName(inv.patient)}_${cleanName(title(inv))}_${r2(inv.amount).toFixed(2).replace(".",",")}.pdf`))inv.updatedAt=nowIso()}
+    const upB=new Map();
+    for(const b of bm.values())if(b.file?.fileId&&!b.file.driveId){
+      const done=upB.get(b.file.fileId);
+      if(done){Object.assign(b.file,done);b.updatedAt=nowIso();continue}
+      if(await uploadRef(b.file,["Bescheide",...ym(b.date)],`${b.date}_${SN(b.k)}_Bescheid.pdf`)){upB.set(b.file.fileId,{driveId:b.file.driveId,url:b.file.url,name:b.file.name,own:true});b.updatedAt=nowIso()}}
+    if(S.trash?.length){for(const id of [...S.trash]){await trashOwn(id);S.trash=S.trash.filter(x=>x!==id)}await dbPut("meta",{key:"trash",items:S.trash})}
+    if(remote?.settings&&(remote.settingsUpdatedAt||"")>(S.settings.updatedAt||"")){
+      const keep=Object.fromEntries(LOCAL_KEYS.map(k=>[k,S.settings[k]]));S.settings={...DEFAULT_SETTINGS,...remote.settings,updatedAt:remote.settingsUpdatedAt,...keep}}
+    // Lokal speichern
+    for(const [store,map,old] of [["invoices",im,S.inv],["bescheide",bm,S.besch]]){const ids=new Set(map.keys());
+      for(const o of old)if(!ids.has(o.id))await dbDel(store,o.id);for(const v of map.values())await dbPut(store,v)}
+    S.inv=[...im.values()];S.besch=[...bm.values()];reindex();
+    await dbPut("meta",{key:"deleted",items:S.deleted});
+    // Nach Drive schreiben
+    const strip=x=>{const c=structuredClone(x);if(c.doc)delete c.doc.fileId;if(c.file)delete c.file.fileId;delete c.thumbFileId;return c};
+    const shared=Object.fromEntries(Object.entries(S.settings).filter(([k])=>!LOCAL_KEYS.includes(k)&&k!=="updatedAt"));
+    const data={app:"pkv-beihilfe-v2",version:1,updatedAt:nowIso(),settings:shared,settingsUpdatedAt:S.settings.updatedAt||null,invoices:S.inv.map(strip),bescheide:S.besch.map(strip),deleted:S.deleted};
+    const up=await uploadMultipart(S.settings.driveDataId?{}:{name:DATA_NAME,parents:[S.settings.driveAppId]},new Blob([JSON.stringify(data)],{type:"application/json"}),S.settings.driveDataId);
+    if(!S.settings.driveDataId)S.settings.driveDataId=up.id;
+    S.settings.overwriteRemote=false;
+    await dailySnapshot(data);
+    await dbPut("meta",{key:"settings",...S.settings});
+    G.last=new Date();glog(`Abgleich ok (${S.inv.length} Rechnungen, ${S.besch.length} Bescheide)`);
+  }catch(e){G.err=e.code==="auth"?"auth":"fail";G.dirty=true;glog("Abgleich fehlgeschlagen: "+(e?.message||e))}
+  finally{G.busy=false;updateChip();render()}
+  if(G.dirty&&!G.err)scheduleSync();
+}
+async function dailySnapshot(data){
+  const day=today();if(S.settings.lastSnapshot===day)return;
+  try{if(!S.settings.driveSnapId)S.settings.driveSnapId=await findOrCreateFolder("Sicherungen",S.settings.driveAppId);
+    const name=`Sicherung_${day}.json`;if(!await findFile(name,S.settings.driveSnapId))await uploadMultipart({name,parents:[S.settings.driveSnapId]},new Blob([JSON.stringify(data)],{type:"application/json"}));
+    S.settings.lastSnapshot=day}catch(e){if(e.code==="auth")throw e;S.settings.driveSnapId=null}
+}
+function driveStatus(){
+  if(!S.settings.driveLinked)return {text:"Nicht verbunden.",pending:false};
+  if(G.busy)return {text:"Gleicht gerade ab …",pending:false};
+  const pending=G.dirty||!!G.err;
+  if(G.err==="auth"||(pending&&!tokenValid()))return {text:"Änderungen sind noch nicht in Drive. Bitte anmelden.",pending:true};
+  if(G.err)return {text:"Der letzte Abgleich ist fehlgeschlagen.",pending:true};
+  if(pending)return {text:"Änderungen werden gleich abgeglichen.",pending:true};
+  if(G.last)return {text:"Alles im Drive-Ordner der Testversion, zuletzt um "+G.last.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr.",pending:false};
+  return {text:"Verbunden.",pending:false};
+}
+function updateChip(){
+  if(G.dirty)LS.set("gdirty","1");else LS.del("gdirty");
+  const st=driveStatus();$("#settingsDot").hidden=!st.pending;
+  const el=$("#driveStatus");if(el)el.textContent=st.text;
+}
+if(LS.get("gdirty")==="1")G.dirty=true;
+async function driveBlob(id){if(!tokenValid()||!id)return null;try{return await (await gfetch(`${API}/${id}?alt=media`)).blob()}catch{return null}}
+
+/* ================= Start ================= */
+(async()=>{
+  render();
+  try{
+    const st=await dbGet("meta","settings");if(st){const {key,...rest}=st;S.settings={...DEFAULT_SETTINGS,...rest}}
+    S.inv=await dbAll("invoices");S.besch=await dbAll("bescheide");
+    S.deleted=(await dbGet("meta","deleted"))?.items||{};S.trash=(await dbGet("meta","trash"))?.items||[];
+  }catch(err){$("#list").innerHTML=`<div class="empty">Speicher nicht verfügbar. Bitte nicht im privaten Modus öffnen.</div>`;return}
+  reindex();S.loaded=true;
+  if(tokenValid()&&!S.settings.driveLinked){S.settings.driveLinked=true;await dbPut("meta",{key:"settings",...S.settings})}
+  render();updateChip();
+  if(AUTH?.error)toast(AUTH.error==="access_denied"?"Anmeldung abgebrochen":"Anmeldung bei Google fehlgeschlagen ("+AUTH.error+")");
+  if(AUTH?.token)toast("Mit Google Drive verbunden");
+  if(S.settings.driveLinked&&tokenValid())syncNow();
+  document.addEventListener("visibilitychange",async()=>{
+    if(document.visibilityState!=="visible")return;
+    const had=G.token;pickToken();
+    if(tokenValid()&&!S.settings.driveLinked){S.settings.driveLinked=true;await dbPut("meta",{key:"settings",...S.settings})}
+    updateChip();render();
+    if(S.settings.driveLinked&&tokenValid()&&(G.dirty||!G.last||Date.now()-G.last>60000||G.token!==had))syncNow();
+  });
+  try{await navigator.storage?.persist?.()}catch{}
+})();
+</script>
+</body>
+</html>
