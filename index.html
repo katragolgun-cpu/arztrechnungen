@@ -795,13 +795,14 @@ async function loadSubmitFile(inv){
 function submitHtml(inv,c){
   if(S.edit.subFile===undefined){S.edit.subFile=null;loadSubmitFile(inv)}
   const f=S.edit.subFile;
-  const steps=[["bh","Beihilfe","Beihilfe-App","Antragsart: <b>Beihilfe</b>"],["pkv","AXA","AXA-App",`Person: <b>${esc(inv.patient||"")}</b>`]].filter(([k])=>c[k].state!=="na");
+  const steps=[["bh","Beihilfe","Beihilfe-App","Antragsart: <b>Beihilfe</b>"],["pkv","AXA","AXA-App","Selbst in der AXA-App einreichen"]].filter(([k])=>c[k].state!=="na");
   let open=false;
   const rows=steps.map(([k,n,app,hint],i)=>{const x=c[k];
     if(x.state!=="todo")return `<div class="line"><div><div class="t">${i+1}. ${n}</div><div class="s" style="color:var(--ok)">Eingereicht am ${dfmt(x.s.submitted)}</div></div></div>`;
     const active=!open;open=true;
     return `<div class="line" style="${active?"":"opacity:.5"}"><div><div class="t">${i+1}. ${n}</div><div class="s">${hint}</div></div></div>
-      ${active?`<div class="btnrow"><button type="button" class="btn" data-act="subshare" data-k="${k}" ${f?"":"disabled"}>PDF an ${app} senden</button><button type="button" class="btn primary" data-act="sub" data-k="${k}">Bei ${n} eingereicht</button></div>`:""}`}).join("");
+      ${active&&k==="pkv"?`<p class="status" style="margin:6px 0 0">1. PDF aufs Handy speichern.<br>2. AXA-App selbst öffnen, Person <b>${esc(inv.patient||"")}</b> wählen, Beleg hinzufügen → <b>Datei</b> → <b>Downloads</b>${f?` → <b>${esc(f.name)}</b>`:""}.<br>3. Nach dem Absenden hierher zurück und abhaken.</p>${S.edit.subSaved?`<p class="status" style="margin:4px 0 0;color:var(--ok)">Gespeichert im Ordner Downloads.</p>`:""}`:""}
+      ${active?`<div class="btnrow">${k==="pkv"?`<button type="button" class="btn" data-act="subsave" ${f?"":"disabled"}>PDF aufs Handy speichern</button>`:`<button type="button" class="btn" data-act="subshare" data-k="${k}" ${f?"":"disabled"}>PDF an ${app} senden</button>`}<button type="button" class="btn primary" data-act="sub" data-k="${k}">Bei ${n} eingereicht</button></div>`:""}`}).join("");
   const note=f===null?"Beleg wird geladen …":f===false?"Beleg nicht auf diesem Handy. Bitte in der App wie bisher aus Google Drive wählen.":"";
   return `${rows}${note?`<p class="status" style="margin:6px 0 0">${note}</p>`:""}`;
 }
@@ -937,6 +938,8 @@ async function viewClick(e){
     case "edit":{const urls=S.edit.urls;S.edit.urls=[];urls.forEach(u=>URL.revokeObjectURL(u));return openEditor(inv)}
     case "sub":{inv[k].submitted=today();await saveInvoice(inv);const c1=calc(inv);
       toast(c1.step==="einreichen"?(k==="pkv"?"AXA":"Beihilfe")+": eingereicht. Jetzt "+(k==="pkv"?"Beihilfe":"AXA")+".":"Beide eingereicht. Die Rechnung wartet jetzt auf die Erstattung.");return drawView()}
+    case "subsave":{const f=S.edit.subFile;if(!f)return;const u=URL.createObjectURL(f);const a=document.createElement("a");a.href=u;a.download=/\.pdf$/i.test(f.name)?f.name:f.name+".pdf";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),10000);
+      S.edit.subSaved=true;toast("PDF gespeichert. Jetzt die AXA-App öffnen.");return drawView()}
     case "subshare":{const f=S.edit.subFile;if(!f)return;
       if(navigator.canShare?.({files:[f]})){try{await navigator.share({files:[f],title:f.name})}catch{}}else toast("Teilen wird hier nicht unterstützt");return}
     case "ask":S.edit.ask=k;S.edit.moreOpen=false;drawView();$(".nextstep")?.scrollIntoView({block:"center"});$("#askAmt")?.focus();return;
