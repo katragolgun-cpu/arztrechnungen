@@ -1612,8 +1612,20 @@ function parseInvoiceText(text,people,providers){
   const STOP=new Set(["dr","med","prof","dipl","gmbh","ggmbh","mbh","mvz","co","kg","ag","ug","und","u","der","die","das","fuer","für","praxis","gemeinschaftspraxis","zentrum","ohg","gbr","e","v"]);
   const words=s=>s.toLowerCase().replace(/[^a-zäöüß0-9]+/g," ").split(" ").filter(w=>w.length>=4&&!STOP.has(w));
   // Absenderzeile über der Anschrift: "NAME • Straße • PLZ Ort" (OCR liest • oft als ® oder *)
-  const sm=lines.slice(0,14).map(l=>l.match(/^([^•·®*|]{3,60}?)\s*[•·®*|]\s*.*\b\d{5}\b/)).find(m=>m&&!/herr|frau|str\.|straße/i.test(m[1]));
-  const sender=sm?(n=>n===n.toUpperCase()?n.toLowerCase().replace(/(^|[\s-])\S/g,c=>c.toUpperCase()):n)(sm[1].trim()):null;
+  // Trenner liest die Texterkennung mal als •, ®, ©, +, », = oder |; Störzeichen am Zeilenanfang entfernen
+  const clean=l=>l.replace(/^[^A-Za-zÄÖÜäöüß]+/,"").trim();
+  const top=lines.slice(0,6).map(clean).filter(l=>/^[A-Za-zÄÖÜäöüß.&' -]{4,60}$/.test(l)&&!/^(herrn?|frau|praxis für)\b/i.test(l));
+  let sender=null;
+  for(const raw of lines.slice(0,15)){const l=clean(raw);
+    if(!/\b\d{5}\b/.test(l)||/^(herrn?|frau)\b/i.test(l))continue;
+    const m=l.match(/^([A-Za-zÄÖÜäöüß.&' -]{3,60}?)\s*[^A-Za-zÄÖÜäöüß0-9.&' -]/);if(!m)continue;
+    let n=m[1].trim().replace(/\s+\S$/,"");
+    if(n.length<4||/str\.|straße|weg\b|platz\b/i.test(n))continue;
+    const same=top.find(x=>n.toLowerCase().endsWith(x.toLowerCase()));if(same)n=same;  // „S BURG DRACHENZAHN“ -> „BURG DRACHENZAHN“
+    sender=n;break}
+  // Ohne Absenderzeile: Briefkopf-Name direkt über „Praxis für …“
+  if(!sender){const i=lines.slice(0,8).findIndex(l=>/^\W*praxis für\b/i.test(l));if(i>0&&top.includes(clean(lines[i-1])))sender=clean(lines[i-1])}
+  if(sender&&sender===sender.toUpperCase())sender=sender.toLowerCase().replace(/(^|[\s-])\S/g,c=>c.toUpperCase());
   // Bekannte Rechnungssteller nur über den Briefkopf erkennen (nicht über Wörter wie „Röntgen“ oder den Ort im Rechnungstext)
   const headText=sender||lines.slice(0,14).join(" ");
   const textWords=new Set(words(headText)),PLACES=new Set(words(lines.filter(l=>/\b\d{5}\b/.test(l)).join(" ")));
