@@ -268,11 +268,13 @@ header.top h1{font-size:26px;letter-spacing:-.02em}
    Oberfläche: Zu tun (meine Aufgaben) · Läuft (warten auf andere) · Archiv (fertig, zum Nachschlagen)
    Eigene Daten: eigener Speicher auf dem Gerät, eigener Drive-Ordner. Die echte App bleibt unberührt.
    ===================================================================== */
-const V2="v2_";
+// Gleiche Datei für Test (/v2/) und produktiv (Hauptadresse). Test: eigene Daten; produktiv: echte Daten im Ordner „Arztrechnungen“.
+const PROD=!/\/v2\//.test(location.pathname);
+const V2=PROD?"p2_":"v2_";
 const LS={get(k){try{return localStorage.getItem(V2+k)}catch{return null}},set(k,v){try{localStorage.setItem(V2+k,v)}catch{}},del(k){try{localStorage.removeItem(V2+k)}catch{}}};
 
 /* ================= Speicher (IndexedDB, eigene Datenbank der Testversion) ================= */
-const DB_NAME="pkv-beihilfe-v2",DB_VER=1;
+const DB_NAME=PROD?"pkv-beihilfe":"pkv-beihilfe-v2",DB_VER=1;
 let _db;
 function idb(){
   if(_db)return Promise.resolve(_db);
@@ -408,7 +410,7 @@ function migrateOld(data){
       treatDate:o.treatDate||"",invoiceDate:o.invoiceDate||"",receivedDate:o.receivedDate||"",invoiceNo:o.invoiceNo||"",
       amount:o.amount,iban:o.iban||"",reason:o.reason||"",note:o.note||"",dueDate:o.dueDate||"",fee:+o.fee||0,
       payment:o.payment||{},refundDue:!!o.refundDue,
-      doc:o.docDriveId||o.docUrl?{driveId:o.docDriveId||null,url:o.docUrl||"",own:false}:{},
+      doc:o.docDriveId||o.docUrl?{driveId:o.docDriveId||null,url:o.docUrl||"",own:PROD}:{},
       issues:[],createdAt:o.createdAt||o.updatedAt||nowIso(),updatedAt:nowIso(),origin:"kopie"};
     if(o.check){const kk=(CHECK_RE.find(([re])=>re.test(o.check))||[])[1]||"sonst";v.issues.push({id:uid(),kind:kk,text:o.check,created:today(),done:null})}
     for(const k of ["pkv","bh"]){const s=o[k]||{};
@@ -418,7 +420,7 @@ function migrateOld(data){
       const key=s.proofDriveId?`d:${k}:${s.proofDriveId}`:s.proofUrl?`u:${k}:${s.proofUrl}`:s.appId?`a:${k}:${s.appId}:${date}`:s.proofDate?`p:${k}:${s.proofDate}`:`m:${o.id}:${k}`;
       let b=besch.get(key);
       if(!b){b={id:uid(),k,date,appId:s.appId||null,total:null,manual:!s.proofDriveId&&!s.proofUrl,
-        file:s.proofDriveId||s.proofUrl?{driveId:s.proofDriveId||null,url:s.proofUrl||"",own:false}:{},
+        file:s.proofDriveId||s.proofUrl?{driveId:s.proofDriveId||null,url:s.proofUrl||"",own:PROD}:{},
         items:[],moneyIn:date,createdAt:date+"T12:00:00.000Z",updatedAt:nowIso(),origin:"kopie"};besch.set(key,b)}
       if(s.moneyIn===false&&r2(s.received)>0)b.moneyIn=null;
       else if(typeof s.moneyIn==="string"&&b.moneyIn&&s.moneyIn>b.moneyIn)b.moneyIn=s.moneyIn;
@@ -489,6 +491,7 @@ function render(){
   const rows=rowsFor();
   renderSummary(rows);renderBanner();
   const n=counts(rows);
+  if(PROD&&S.loaded){const all=S.inv.reduce((a,i)=>a+calc(i).tasks.length,0);try{if(navigator.setAppBadge){all?navigator.setAppBadge(all):navigator.clearAppBadge()}}catch{}}
   $("#bnav").innerHTML=AREAS.map(a=>{const c=a.id==="archiv"?0:n[a.id],on=!S.searchOpen&&a.id===S.area;
     return `<button type="button" data-area="${a.id}" class="${c||a.id==="archiv"?"":"zero"}" aria-current="${on}" aria-label="${esc(a.label)}${a.id==="archiv"?"":": "+c}"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${AREA_ICON[a.id]}</svg></span>${c?`<span class="n">${c}</span>`:""}<span>${esc(a.label)}</span></button>`}).join("");
   const names=["alle",...S.settings.people.map(p=>p.name)];
@@ -501,7 +504,10 @@ function render(){
   L.innerHTML=S.area==="zutun"?zutunHtml(rows):S.area==="laeuft"?laeuftHtml(rows):archivHtml(rows);
 }
 function welcomeHtml(){
-  return `<div class="empty" style="text-align:left"><b>Testversion 2 ist noch leer.</b><br>
+  return PROD?`<div class="empty" style="text-align:left"><b>Neue Version: einmal die Daten übernehmen.</b><br>
+    Die App liest deine bisherigen Rechnungen und Bescheide aus Drive und wandelt sie um. Die bisherige Datendatei bleibt als Sicherung liegen.
+    <div class="btnrow" style="margin-top:12px"><button type="button" class="btn primary" data-act="importstart">Daten übernehmen</button></div></div>`
+  :`<div class="empty" style="text-align:left"><b>Testversion 2 ist noch leer.</b><br>
     Hol dir eine Kopie deiner echten Daten. Die echte App und ihre Daten bleiben dabei unverändert.
     <div class="btnrow" style="margin-top:12px"><button type="button" class="btn primary" data-act="importstart">Kopie der echten Daten holen</button></div></div>`;
 }
@@ -888,16 +894,20 @@ function submitHtml(inv,c){
   if(S.edit.subFile===undefined){S.edit.subFile=null;loadSubmitFile(inv)}
   const f=S.edit.subFile;
   const steps=[["bh","Beihilfe"],["pkv","AXA"]].filter(([k])=>c[k].state!=="na");
+  const inDrive=!!(inv.doc?.driveId&&inv.doc.folder===folderKey(inv));
   let open=false;
   const rows=steps.map(([k,n],i)=>{const x=c[k];
     if(x.state!=="todo")return `<div class="line"><div><div class="t">${i+1}. ${n}</div><div class="s" style="color:var(--ok)">Eingereicht am ${dfmt(x.s.submitted)}</div></div></div>`;
     const active=!open;open=true;
     const btn=k==="bh"?`<button type="button" class="btn primary" data-act="subshare" ${f?"":"disabled"}>① PDF an Beihilfe-App senden</button>`
+      :inDrive?`<a class="btn primary" href="${AXA_APP}">① AXA-App öffnen</a>`
       :`<button type="button" class="btn primary" data-act="subsave" ${f?"":"disabled"}>① PDF aufs Handy speichern</button><a class="btn" href="${AXA_APP}">AXA-App öffnen</a>`;
-    return `<div class="line" style="${active?"":"opacity:.5"}"><div><div class="t">${i+1}. ${n}</div><div class="s">${k==="bh"?"Antragsart: Beihilfe":"In der AXA-App Person "+esc(inv.patient)+" wählen, Datei aus Downloads"}</div></div></div>
+    const axaHint=inDrive?`In der AXA-App Person ${esc(inv.patient)} wählen, dann aus Google Drive: <b>${esc(FOLDER_NAME)} › Zum Einreichen › AXA › ${esc(inv.patient)}</b>${inv.doc.name?` › ${esc(inv.doc.name)}`:""}`
+      :`In der AXA-App Person ${esc(inv.patient)} wählen, Datei aus Downloads`;
+    return `<div class="line" style="${active?"":"opacity:.5"}"><div><div class="t">${i+1}. ${n}</div><div class="s">${k==="bh"?"Antragsart: Beihilfe":axaHint}</div></div></div>
       ${active?`<div class="btnrow">${btn}<button type="button" class="btn done" data-act="sub" data-k="${k}">② Erledigt – bei ${n} eingereicht</button></div>${k==="pkv"&&S.edit.subSaved?`<p class="status" style="margin:4px 0 0;color:var(--ok)">Im Ordner Downloads gespeichert.</p>`:""}`:""}`}).join("");
   const note=f===null?"Beleg wird geladen …":f===false?(inv.doc?.driveId&&!tokenValid()?"Beleg liegt in Drive. Für das Senden bitte in den Einstellungen anmelden.":"Kein Beleg vorhanden. Unter „Weitere Aktionen“ hinzufügen."):"";
-  return `${S.settings.testMode!==false?`<p class="status" style="margin:0 0 8px;color:var(--warn)"><b>Testversion:</b> nur abhaken, nicht wirklich einreichen.</p>`:""}${rows}${note?`<p class="status" style="margin:6px 0 0">${note}</p>`:""}`;
+  return `${!PROD?`<p class="status" style="margin:0 0 8px;color:var(--warn)"><b>Testversion:</b> nur abhaken, nicht wirklich einreichen.</p>`:""}${rows}${note?`<p class="status" style="margin:6px 0 0">${note}</p>`:""}`;
 }
 /* ---- Bezahlen: Daten und GiroCode ---- */
 function payData(inv,c){
@@ -1071,6 +1081,33 @@ async function viewClick(e){
       inv.doc={fileId:await storeFile(blob,fname(inv,blob)),own:true};await saveInvoice(inv);return openView(inv.id)}
   }
 }
+
+/* ================= Dateien von außen: Teilen-Menü und „Öffnen mit“ ================= */
+async function takeShared(){
+  history.replaceState(null,"",location.pathname);
+  try{const c=await caches.open("share-inbox");const key=new URL("shared-file",location.origin+location.pathname).href;
+    const r=await c.match(key);if(!r)return;const b=await r.blob();await c.delete(key);
+    takeIncoming(new File([b],decodeURIComponent(r.headers.get("x-name")||"Dokument"),{type:b.type||r.headers.get("content-type")||""}))}catch{toast("Die geteilte Datei konnte nicht gelesen werden.")}
+}
+// Bescheid oder Rechnung? Erst am Namen, sonst am Inhalt erkennen
+const BESCHEID_RE=/beihilfebescheid|beihilfenummer|festgesetzte\s+beihilfe|leistungsabrechnung|erstattungsbetrag|auszahlungsbetrag|bemessungssatz/i;
+async function takeIncoming(f){
+  while(!S.loaded)await new Promise(r=>setTimeout(r,100));
+  if(S.edit)closeSheet();
+  if(/^Bescheid_|leistungsabrechnung|bescheid/i.test(f.name))return openProof({file:f});
+  toast("Dokument wird gelesen …");
+  let text="";try{text=await readText({file:f})}catch{}
+  if(text&&BESCHEID_RE.test(text))return openProof({file:f});
+  if(text&&text.replace(/\s/g,"").length>80)return openNew({file:f});
+  sheet("Dokument übernehmen",`<div class="sec"><p class="status" style="margin:0">${esc(f.name)}</p>
+    <div class="btnrow"><button type="button" class="btn primary" data-act="inproof">Bescheid</button><button type="button" class="btn" data-act="ininv">Neue Rechnung</button></div></div>`,
+    `<button type="button" class="btn" data-act="incancel">Abbrechen</button>`);
+  $("#scrim").addEventListener("click",ev=>{const b=ev.target.closest("[data-act]");if(!b)return;
+    if(b.dataset.act==="incancel")return closeSheet();
+    if(b.dataset.act==="inproof"){closeSheet();return openProof({file:f})}
+    if(b.dataset.act==="ininv"){closeSheet();return openNew({file:f})}});
+}
+if(PROD&&"launchQueue" in window)launchQueue.setConsumer(async p=>{if(p.files?.length){try{takeIncoming(await p.files[0].getFile())}catch{}}});
 
 /* ================= Erfassen und Bearbeiten ================= */
 // Abrechnungsstellen erkennt die App am Namen: dann ist der Arzt ein eigenes Feld
@@ -1884,28 +1921,29 @@ function openSettings(focus){
   const tok=tokenSource();
   sheet("Einstellungen",`
     <div id="edStatus" class="status" style="margin-top:10px"></div>
-    <div class="sec"><h3>Testversion 2</h3>
-      <p class="status" style="margin:0">Diese Version hat eigene Daten: einen eigenen Speicher auf dem Gerät und einen eigenen Drive-Ordner „${FOLDER_NAME}“. Die echte App und der Ordner „Arztrechnungen“ werden nicht verändert. Belege der echten App werden nur gelesen.</p></div>
-    <div class="sec" id="secImport"><h3>Kopie der echten Daten</h3>
-      <p class="status" style="margin:0">${s.importedAt?`Letzte Kopie: ${dfmt(s.importedAt)} um ${new Date(s.importedAt).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})} Uhr. `:""}Eine neue Kopie ersetzt alle Daten dieser Testversion.</p>
-      <div class="btnrow"><button type="button" class="btn primary" data-act="import" ${tokenValid()?"":"disabled"}>Kopie aus Drive holen</button><button type="button" class="btn" data-act="importfile">Aus Sicherungsdatei</button></div>
-      ${tokenValid()?"":`<p class="status" style="margin:0">Für die Kopie aus Drive erst unten anmelden. Oder eine Sicherungsdatei wählen (Drive › Arztrechnungen › _App-Daten › Sicherungen).</p>`}
+    ${PROD?"":`<div class="sec"><h3>Testversion 2</h3>
+      <p class="status" style="margin:0">Diese Version hat eigene Daten: einen eigenen Speicher auf dem Gerät und einen eigenen Drive-Ordner „${FOLDER_NAME}“. Die echte App und der Ordner „Arztrechnungen“ werden nicht verändert. Belege der echten App werden nur gelesen.</p></div>`}
+    <div class="sec" id="secImport"><h3>${PROD?"Daten aus der bisherigen App":"Kopie der echten Daten"}</h3>
+      <p class="status" style="margin:0">${s.importedAt?`${PROD?"Übernommen":"Letzte Kopie"}: ${dfmt(s.importedAt)} um ${new Date(s.importedAt).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})} Uhr. `:""}${PROD?(s.importedAt?"<b>Erneut übernehmen ersetzt alles, was seitdem in dieser Version erfasst wurde.</b>":"Liest die bisherige Datendatei aus Drive. Sie bleibt als Sicherung liegen."):"Eine neue Kopie ersetzt alle Daten dieser Testversion."}</p>
+      <div class="btnrow"><button type="button" class="btn ${PROD&&s.importedAt?"":"primary"}" data-act="import" ${tokenValid()?"":"disabled"}>${PROD?(s.importedAt?"Erneut übernehmen":"Daten übernehmen"):"Kopie aus Drive holen"}</button><button type="button" class="btn" data-act="importfile">Aus Sicherungsdatei</button></div>
+      ${tokenValid()?"":`<p class="status" style="margin:0">Dafür erst unten bei Google Drive anmelden. Oder eine Sicherungsdatei wählen (Drive › Arztrechnungen › _App-Daten › Sicherungen).</p>`}
       <div id="importBox"></div></div>
     <div class="sec"><h3>Google Drive</h3>
       <p class="status" id="driveStatus" style="margin:0;font-weight:600"></p>
-      <p class="status" style="margin:0">${tok==="eigen"?"Angemeldet in der Testversion.":tok==="app"?"Angemeldet über die normale App (gleiches Google-Konto, gilt ca. 1 Stunde).":"Nicht angemeldet."}</p>
+      ${PROD?`<div class="btnrow">${s.driveLinked&&tokenValid()?`<button type="button" class="btn primary" data-act="sync">Jetzt abgleichen</button>`:`<button type="button" class="btn primary" data-act="link">Mit Google Drive verbinden</button>`}</div>`
+      :`<p class="status" style="margin:0">${tok==="eigen"?"Angemeldet in der Testversion.":tok==="app"?"Angemeldet über die normale App (gleiches Google-Konto, gilt ca. 1 Stunde).":"Nicht angemeldet."}</p>
       <div class="btnrow">${s.driveLinked&&tokenValid()?`<button type="button" class="btn primary" data-act="sync">Jetzt abgleichen</button>`:""}
         <a class="btn ${tokenValid()?"":"primary"}" href="../" target="_blank" rel="noopener">Normale App öffnen</a>
         <button type="button" class="btn" data-act="tokcheck">Anmeldung übernehmen</button></div>
       <p class="status" style="margin:0">So geht die Anmeldung: normale App öffnen, dort ist man bei Google angemeldet. Zurück hierher wechseln und „Anmeldung übernehmen“ tippen.</p>
       <details><summary class="status">Direkt anmelden</summary><p class="status" style="margin:6px 0">Klappt nur, wenn die Adresse dieser Testversion in der Google Cloud Console eingetragen ist (Anmeldedaten › OAuth-Client › Autorisierte Weiterleitungs-URIs: <span class="num">${esc(REDIRECT_URI)}</span>).</p>
-        <div class="btnrow"><button type="button" class="btn" data-act="link">Direkt bei Google anmelden</button></div></details>
+        <div class="btnrow"><button type="button" class="btn" data-act="link">Direkt bei Google anmelden</button></div></details>`}
       <details><summary class="status">Verlauf anzeigen</summary><pre class="status" style="white-space:pre-wrap;margin:6px 0 0;font-size:12px">${esc((()=>{try{return JSON.parse(LS.get("glog")||"[]").join("\n")}catch{return ""}})()||"Noch keine Einträge.")}</pre></details></div>
     <div class="sec"><h3>Anteile</h3>${rates}<p class="status" style="margin:0">Gilt für neue Rechnungen.</p></div>
     <div class="sec"><h3>Personen</h3>${rows}</div>
     <div class="sec"><h3>Regeln</h3><div class="grid2">${field("Zahlungsfrist (Tage)","payD",s.payDays,"number")}${field("Warnen vor Fälligkeit (Tage)","warnD",s.warnDays??7,"number")}</div></div>
-    <div class="sec"><h3>Testdaten</h3><p class="status" style="margin:0">Löscht alle Daten dieser Testversion auf dem Gerät und in ihrem Drive-Ordner. Die echte App bleibt unberührt.</p>
-      <div class="btnrow"><button type="button" class="btn danger" data-act="wipe">Alle Testdaten löschen</button></div></div>
+    ${PROD?"":`<div class="sec"><h3>Testdaten</h3><p class="status" style="margin:0">Löscht alle Daten dieser Testversion auf dem Gerät und in ihrem Drive-Ordner. Die echte App bleibt unberührt.</p>
+      <div class="btnrow"><button type="button" class="btn danger" data-act="wipe">Alle Testdaten löschen</button></div></div>`}
   `,`<button type="button" class="btn" data-act="close">Abbrechen</button><button type="button" class="btn primary" data-act="save">Speichern</button>`);
   updateChip();
   if(focus==="import")$("#secImport")?.scrollIntoView({block:"start"});
@@ -1945,7 +1983,7 @@ function importPreview(raw,src){
   const m=migrateOld(raw);S.edit.imp=m;
   const nb=m.bescheide.length,nm=m.bescheide.filter(b=>b.manual).length;
   setStatus("");
-  $("#importBox").innerHTML=`<div class="checkline" style="margin-top:8px"><b>Gefunden (${esc(src)}):</b><br>${m.invoices.length} Rechnungen, ${nb} Bescheide${nm?` (davon ${nm} ohne Dokument)`:""}, ${m.invoices.reduce((a,i)=>a+(i.issues.length),0)} offene Punkte.<br>Übernehmen ersetzt alle Daten der Testversion.
+  $("#importBox").innerHTML=`<div class="checkline" style="margin-top:8px"><b>Gefunden (${esc(src)}):</b><br>${m.invoices.length} Rechnungen, ${nb} Bescheide${nm?` (davon ${nm} ohne Dokument)`:""}, ${m.invoices.reduce((a,i)=>a+(i.issues.length),0)} offene Punkte.<br>${PROD?"Übernehmen ersetzt alle Daten dieser Version.":"Übernehmen ersetzt alle Daten der Testversion."}
     <div class="btnrow" style="margin-top:8px"><button type="button" class="btn primary" data-act="importok">Übernehmen</button><button type="button" class="btn" data-act="importno">Abbrechen</button></div></div>`;
 }
 async function importApply(){
@@ -1967,7 +2005,7 @@ async function replaceAll(m){
 const GOOGLE_CLIENT_ID="592336920931-5s1klnrs64841o02016jk7mknm248rdf.apps.googleusercontent.com";
 const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.file";
 const API="https://www.googleapis.com/drive/v3/files",UPLOAD="https://www.googleapis.com/upload/drive/v3/files";
-const FOLDER_NAME="PKV-Beihilfe Testversion 2",DATA_NAME="pkv-beihilfe-v2-daten.json",REAL_DATA="arztrechnungen-daten.json";
+const FOLDER_NAME=PROD?"Arztrechnungen":"PKV-Beihilfe Testversion 2",DATA_NAME=PROD?"pkv-beihilfe-daten.json":"pkv-beihilfe-v2-daten.json",REAL_DATA="arztrechnungen-daten.json";
 const G={token:null,exp:0,src:null,busy:false,dirty:false,last:null,err:null,timer:null};
 const LOCAL_KEYS=["driveLinked","driveFolderId","driveDataId","driveAppId","driveSnapId","driveFolderMap","lastSnapshot","importedAt","overwriteRemote"];
 // Anmeldung: eigene (Testversion) oder die der normalen App (gleiche Seite, gleiches Google-Konto)
@@ -2035,6 +2073,24 @@ async function ensurePath(parts){
 }
 const cleanName=s=>String(s||"").replace(/[\\/:*?"<>|#%]+/g," ").replace(/\s+/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,"").slice(0,60);
 const ym=d=>{d=d||today();const m=+d.slice(5,7)||1;return [d.slice(0,4),String(m).padStart(2,"0")+" "+MONTHS[m-1]]};
+// Wo die Rechnung in Drive liegen soll: solange AXA offen ist im Ordner zum Einreichen (dort wählt die AXA-App sie aus)
+function folderParts(inv){const c=calc(inv);
+  if(c.pkv.state==="todo")return ["Zum Einreichen","AXA",cleanName(inv.patient||"Ohne Person")];
+  if(c.bh.state==="todo")return ["Zum Einreichen","Beihilfe"];
+  return ["Rechnungen",...ym(inv.invoiceDate)];}
+const folderKey=inv=>folderParts(inv).join("/");
+// Datei in den richtigen Ordner verschieben (Test: nur eigene Dateien)
+async function placeDoc(inv){
+  const d=inv.doc;if(!d?.driveId||!(PROD||d.own))return false;
+  const key=folderKey(inv);if(d.folder===key)return false;
+  const target=await ensurePath(folderParts(inv));
+  let meta;try{meta=await (await gfetch(`${API}/${d.driveId}?fields=parents,name`)).json()}catch(e){if(e.code==="auth")throw e;return false}
+  const parents=meta.parents||[];
+  if(!parents.includes(target)){
+    await gfetch(`${API}/${d.driveId}?addParents=${target}&removeParents=${parents.join(",")}&fields=id`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:"{}"});
+    glog("Verschoben: "+meta.name+" -> "+key)}
+  d.folder=key;d.name=meta.name;return true;
+}
 function scheduleSync(){if(!S.settings.driveLinked)return;G.dirty=true;updateChip();clearTimeout(G.timer);G.timer=setTimeout(syncNow,1500)}
 // Zusammenführen nach Änderungszeit; Löschungen gewinnen, wenn sie neuer sind
 function mergeList(local,remote,deleted){
@@ -2067,9 +2123,12 @@ async function syncNow(){
       catch(e){if(e.code==="auth")throw e;S.settings.driveDataId=null;await ensureFolders()}}
     for(const [id,t] of Object.entries(remote?.deleted||{}))if(!S.deleted[id]||S.deleted[id]<t)S.deleted[id]=t;
     const im=mergeList(S.inv,remote?.invoices,S.deleted),bm=mergeList(S.besch,remote?.bescheide,S.deleted);
+    S.besch=[...bm.values()];reindex();
     // Eigene neue Belege hochladen (fremde aus der echten App werden nie verändert)
     for(const inv of im.values())if(inv.doc?.fileId&&!inv.doc.driveId){
-      if(await uploadRef(inv.doc,["Rechnungen",...ym(inv.invoiceDate)],`${inv.invoiceDate||today()}_${cleanName(inv.patient)}_${cleanName(title(inv))}_${r2(inv.amount).toFixed(2).replace(".",",")}.pdf`))inv.updatedAt=nowIso()}
+      if(await uploadRef(inv.doc,folderParts(inv),`${inv.invoiceDate||today()}_${cleanName(inv.patient)}_${cleanName(title(inv))}_${r2(inv.amount).toFixed(2).replace(".",",")}.pdf`)){inv.doc.folder=folderKey(inv);inv.updatedAt=nowIso()}}
+    reindex();
+    for(const inv of im.values())if(await placeDoc(inv))inv.updatedAt=nowIso();
     const upB=new Map();
     for(const b of bm.values())if(b.file?.fileId&&!b.file.driveId){
       const done=upB.get(b.file.fileId);
@@ -2110,7 +2169,7 @@ function driveStatus(){
   if(G.err==="auth"||(pending&&!tokenValid()))return {text:"Änderungen sind noch nicht in Drive. Bitte anmelden.",pending:true};
   if(G.err)return {text:"Der letzte Abgleich ist fehlgeschlagen.",pending:true};
   if(pending)return {text:"Änderungen werden gleich abgeglichen.",pending:true};
-  if(G.last)return {text:"Alles im Drive-Ordner der Testversion, zuletzt um "+G.last.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr.",pending:false};
+  if(G.last)return {text:(PROD?"Alles in Drive, zuletzt um ":"Alles im Drive-Ordner der Testversion, zuletzt um ")+G.last.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr.",pending:false};
   return {text:"Verbunden.",pending:false};
 }
 function updateChip(){
@@ -2123,6 +2182,7 @@ async function driveBlob(id){if(!tokenValid()||!id)return null;try{return await 
 
 /* ================= Start ================= */
 (async()=>{
+  if(PROD){document.querySelector(".teststrip")?.remove();document.title="PKV & Beihilfe";$("#sub").textContent="";}
   render();
   try{
     const st=await dbGet("meta","settings");if(st){const {key,...rest}=st;S.settings={...DEFAULT_SETTINGS,...rest}}
@@ -2143,6 +2203,8 @@ async function driveBlob(id){if(!tokenValid()||!id)return null;try{return await 
     if(S.settings.driveLinked&&tokenValid()&&(G.dirty||!G.last||Date.now()-G.last>60000||G.token!==had))syncNow();
   });
   try{await navigator.storage?.persist?.()}catch{}
+  if(PROD){if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+    if(new URLSearchParams(location.search).has("share"))takeShared();}
 })();
 </script>
 </body>
