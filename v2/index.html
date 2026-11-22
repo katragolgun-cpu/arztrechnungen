@@ -410,17 +410,18 @@ function migrateOld(data){
       treatDate:o.treatDate||"",invoiceDate:o.invoiceDate||"",receivedDate:o.receivedDate||"",invoiceNo:o.invoiceNo||"",
       amount:o.amount,iban:o.iban||"",reason:o.reason||"",note:o.note||"",dueDate:o.dueDate||"",fee:+o.fee||0,
       payment:o.payment||{},refundDue:!!o.refundDue,
-      doc:o.docDriveId||o.docUrl?{driveId:o.docDriveId||null,url:o.docUrl||"",own:PROD}:{},
+      doc:o.docDriveId||o.docUrl||o.docFileId?{driveId:o.docDriveId||null,url:o.docUrl||"",own:PROD,...(o.docFileId?{fileId:o.docFileId}:{})}:{},
+      ...(o.thumbFileId?{thumbFileId:o.thumbFileId}:{}),
       issues:[],createdAt:o.createdAt||o.updatedAt||nowIso(),updatedAt:nowIso(),origin:"kopie"};
     if(o.check){const kk=(CHECK_RE.find(([re])=>re.test(o.check))||[])[1]||"sonst";v.issues.push({id:uid(),kind:kk,text:o.check,created:today(),done:null})}
     for(const k of ["pkv","bh"]){const s=o[k]||{};
       v[k]={rate:+s.rate||0,deduction:+s.deduction||0,submitted:s.submitted||(s.receivedDate?s.receivedDate:null),cutOk:!!s.cutOk,obj:s.obj||null,note:s.note||""};
       if(!s.receivedDate)continue;
       const date=s.proofDate||s.receivedDate;
-      const key=s.proofDriveId?`d:${k}:${s.proofDriveId}`:s.proofUrl?`u:${k}:${s.proofUrl}`:s.appId?`a:${k}:${s.appId}:${date}`:s.proofDate?`p:${k}:${s.proofDate}`:`m:${o.id}:${k}`;
+      const key=s.proofDriveId?`d:${k}:${s.proofDriveId}`:s.proofFileId?`f:${k}:${s.proofFileId}`:s.proofUrl?`u:${k}:${s.proofUrl}`:s.appId?`a:${k}:${s.appId}:${date}`:s.proofDate?`p:${k}:${s.proofDate}`:`m:${o.id}:${k}`;
       let b=besch.get(key);
-      if(!b){b={id:uid(),k,date,appId:s.appId||null,total:null,manual:!s.proofDriveId&&!s.proofUrl,
-        file:s.proofDriveId||s.proofUrl?{driveId:s.proofDriveId||null,url:s.proofUrl||"",own:PROD}:{},
+      if(!b){b={id:uid(),k,date,appId:s.appId||null,total:null,manual:!s.proofDriveId&&!s.proofUrl&&!s.proofFileId,
+        file:s.proofDriveId||s.proofUrl||s.proofFileId?{driveId:s.proofDriveId||null,url:s.proofUrl||"",own:PROD,...(s.proofFileId?{fileId:s.proofFileId}:{})}:{},
         items:[],moneyIn:date,createdAt:date+"T12:00:00.000Z",updatedAt:nowIso(),origin:"kopie"};besch.set(key,b)}
       if(s.moneyIn===false&&r2(s.received)>0)b.moneyIn=null;
       else if(typeof s.moneyIn==="string"&&b.moneyIn&&s.moneyIn>b.moneyIn)b.moneyIn=s.moneyIn;
@@ -504,9 +505,10 @@ function render(){
   L.innerHTML=S.area==="zutun"?zutunHtml(rows):S.area==="laeuft"?laeuftHtml(rows):archivHtml(rows);
 }
 function welcomeHtml(){
+  if(PROD&&G.busy)return `<div class="empty">Daten werden aus Drive geladen …</div>`;
   return PROD?`<div class="empty" style="text-align:left"><b>Neue Version: einmal die Daten übernehmen.</b><br>
     Die App liest deine bisherigen Rechnungen und Bescheide aus Drive und wandelt sie um. Die bisherige Datendatei bleibt als Sicherung liegen.
-    <div class="btnrow" style="margin-top:12px"><button type="button" class="btn primary" data-act="importstart">Daten übernehmen</button></div></div>`
+    <div class="btnrow" style="margin-top:12px">${tokenValid()?`<button type="button" class="btn primary" data-act="importstart">Daten übernehmen</button>`:`<button type="button" class="btn primary" data-act="connect">Mit Google Drive verbinden</button>`}</div></div>`
   :`<div class="empty" style="text-align:left"><b>Testversion 2 ist noch leer.</b><br>
     Hol dir eine Kopie deiner echten Daten. Die echte App und ihre Daten bleiben dabei unverändert.
     <div class="btnrow" style="margin-top:12px"><button type="button" class="btn primary" data-act="importstart">Kopie der echten Daten holen</button></div></div>`;
@@ -729,6 +731,7 @@ document.addEventListener("click",e=>{
     if(act==="bmoney")return moneyIn(a.dataset.bid);
     if(act==="settings")return openSettings();
     if(act==="importstart")return openSettings("import");
+    if(act==="connect")return connectDrive();
   }
   const op=e.target.closest("[data-open]");if(op){openView(op.dataset.open);return}
   const bm=e.target.closest("[data-bid]");if(bm){openBescheid(bm.dataset.bid);return}
@@ -1975,19 +1978,50 @@ async function importFromDrive(){
   try{
     const r=await (await gfetch(`${API}?q=${q(`name='${REAL_DATA}' and trashed=false`)}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&spaces=drive`)).json();
     const f=r.files?.[0];if(!f){setStatus("Datendatei der echten App nicht gefunden.",true);return}
-    const d=await (await gfetch(`${API}/${f.id}?alt=media`)).json();
-    importPreview(d,`Drive, Stand ${new Date(f.modifiedTime).toLocaleString("de-DE",{dateStyle:"short",timeStyle:"short"})}`);
+    let d=await (await gfetch(`${API}/${f.id}?alt=media`)).json();
+    let src=`Drive, Stand ${new Date(f.modifiedTime).toLocaleString("de-DE",{dateStyle:"short",timeStyle:"short"})}`;
+    if(PROD){const loc=await readOldLocal();if(loc){const r=mergeOldLocal(d,loc);d=r.data;S.edit.oldFiles=loc.files;src+=r.newer?`, dazu ${r.newer} neuere Änderung${r.newer===1?"":"en"} von diesem Gerät`:""}}
+    importPreview(d,src);
   }catch(e){setStatus(e.code==="auth"?"Anmeldung abgelaufen. Bitte neu anmelden.":"Lesen fehlgeschlagen.",true)}
+}
+/* Gerätespeicher der bisherigen App (nur lesen): Änderungen und Belege, die noch nicht in Drive sind */
+async function readOldLocal(){
+  try{
+    if(indexedDB.databases){const l=await indexedDB.databases();if(!l.some(x=>x.name==="arztrechnungen"))return null}
+    const db=await new Promise((res,rej)=>{const r=indexedDB.open("arztrechnungen");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+    if(!db.objectStoreNames.contains("invoices")){db.close();return null}
+    const all=s=>db.objectStoreNames.contains(s)?new Promise((res,rej)=>{const t=db.transaction(s,"readonly").objectStore(s).getAll();t.onsuccess=()=>res(t.result);t.onerror=()=>rej(t.error)}):Promise.resolve([]);
+    const invoices=await all("invoices"),meta=await all("meta"),files=await all("files");db.close();
+    return {invoices,deleted:meta.find(x=>x.key==="deleted")?.items||{},files};
+  }catch{return null}
+}
+function mergeOldLocal(drive,loc){
+  const d=structuredClone(drive);const map=new Map((d.invoices||[]).map(i=>[i.id,i]));let newer=0;
+  d.deleted=d.deleted||{};for(const [id,t] of Object.entries(loc.deleted))if(!d.deleted[id]||d.deleted[id]<t)d.deleted[id]=t;
+  for(const li of loc.invoices){const r=map.get(li.id);
+    if(!r||(li.updatedAt||"")>(r.updatedAt||"")){map.set(li.id,structuredClone(li));newer++;continue}
+    if(li.docFileId&&(!r.docDriveId||r.docDriveId===li.docDriveId))r.docFileId=li.docFileId;
+    if(li.thumbFileId)r.thumbFileId=li.thumbFileId;
+    for(const k of ["pkv","bh"])if(li[k]?.proofFileId&&r[k]&&(!r[k].proofDriveId||r[k].proofDriveId===li[k].proofDriveId))r[k].proofFileId=li[k].proofFileId;}
+  d.invoices=[...map.values()];return {data:d,newer};
 }
 function importPreview(raw,src){
   const m=migrateOld(raw);S.edit.imp=m;
+  // Belege vom Gerät: nur Verweise behalten, deren Datei es hier wirklich gibt
+  const have=new Set((S.edit.oldFiles||[]).map(f=>f.id));let local=0;
+  const fix=(o,f)=>{if(o?.[f]&&!have.has(o[f]))delete o[f]};
+  for(const i of m.invoices){fix(i.doc,"fileId");fix(i,"thumbFileId");if(i.doc?.fileId&&!i.doc.driveId)local++}
+  for(const b of m.bescheide){fix(b.file,"fileId");if(b.file?.fileId&&!b.file.driveId)local++}
+  m.localOnly=local;
   const nb=m.bescheide.length,nm=m.bescheide.filter(b=>b.manual).length;
   setStatus("");
-  $("#importBox").innerHTML=`<div class="checkline" style="margin-top:8px"><b>Gefunden (${esc(src)}):</b><br>${m.invoices.length} Rechnungen, ${nb} Bescheide${nm?` (davon ${nm} ohne Dokument)`:""}, ${m.invoices.reduce((a,i)=>a+(i.issues.length),0)} offene Punkte.<br>${PROD?"Übernehmen ersetzt alle Daten dieser Version.":"Übernehmen ersetzt alle Daten der Testversion."}
+  $("#importBox").innerHTML=`<div class="checkline" style="margin-top:8px"><b>Gefunden (${esc(src)}):</b><br>${m.invoices.length} Rechnungen, ${nb} Bescheide${nm?` (davon ${nm} ohne Dokument)`:""}, ${m.invoices.reduce((a,i)=>a+(i.issues.length),0)} offene Punkte.${m.localOnly?`<br>${m.localOnly} Beleg${m.localOnly===1?" liegt":"e liegen"} nur auf diesem Gerät und ${m.localOnly===1?"wird":"werden"} mit hochgeladen.`:""}<br>${PROD?"Übernehmen ersetzt alle Daten dieser Version.":"Übernehmen ersetzt alle Daten der Testversion."}
     <div class="btnrow" style="margin-top:8px"><button type="button" class="btn primary" data-act="importok">Übernehmen</button><button type="button" class="btn" data-act="importno">Abbrechen</button></div></div>`;
 }
 async function importApply(){
   const m=S.edit?.imp;if(!m)return;
+  const need=new Set();for(const i of m.invoices){if(i.doc?.fileId)need.add(i.doc.fileId);if(i.thumbFileId)need.add(i.thumbFileId)}for(const b of m.bescheide)if(b.file?.fileId)need.add(b.file.fileId);
+  for(const f of S.edit.oldFiles||[])if(need.has(f.id))await dbPut("files",f);
   await replaceAll(m);
   S.settings.importedAt=nowIso();await saveSettings();
   closeSheet();S.area="zutun";render();toast(`${m.invoices.length} Rechnungen und ${m.bescheide.length} Bescheide übernommen`);
@@ -2117,6 +2151,9 @@ async function syncNow(){
   G.busy=true;G.dirty=false;G.err=null;updateChip();
   try{
     await ensureFolders();
+    if(PROD&&!S.settings.importedAt){
+      if(!S.settings.driveDataId){G.dirty=false;return} // noch nicht übernommen: nichts schreiben
+      S.settings.importedAt=nowIso();glog("Daten von einem anderen Gerät geladen")}
     let remote=null;
     if(S.settings.driveDataId&&!S.settings.overwriteRemote){
       try{remote=await (await gfetch(`${API}/${S.settings.driveDataId}?alt=media`)).json()}
