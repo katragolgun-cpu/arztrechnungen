@@ -1284,7 +1284,10 @@ async function ocr(input){
     if(got.iban&&!inv.iban){inv.iban=got.iban;filled.push("IBAN")}
     if(got.treat&&!inv.treatDate){inv.treatDate=dfmt(got.treat);filled.push("Behandlungsdatum")}
     // Briefkopf: Abrechnungsstelle oder Arzt? Bei Abrechnungsstellen den behandelnden Arzt aus dem Text suchen
-    const head=got.provider||(qr?.name)||"";
+    // Gleiche IBAN wie bei einer früheren Rechnung: Arzt und Abrechnungsstelle von dort (sicherer als der gelesene Briefkopf)
+    const ibPrev=(got.iban||qr?.iban)&&S.inv.filter(x=>x.iban&&x.iban===(qr?.iban||got.iban)).sort((a,b)=>(b.invoiceDate||"").localeCompare(a.invoiceDate||""))[0];
+    if(ibPrev&&!inv.doctor&&!inv.billing){inv.doctor=ibPrev.doctor||"";inv.billing=ibPrev.billing||"";filled.push(ibPrev.billing?"Abrechnungsstelle (über IBAN)":"Arzt (über IBAN)")}
+    const head=ibPrev?"":got.provider||(qr?.name)||"";
     if(head&&BILLING_RE.test(head)){if(!inv.billing){inv.billing=head;filled.push("Abrechnungsstelle")}
       const m=(text||"").match(/(?:im\s+auftrag\s+von|rechnungserstellung\s+erfolgt\s+im\s+auftrag\s+von|behandelnde[rn]?\s+(?:arzt|ärztin)\s*:?)\s*([^\n,]{4,70})/i);
       if(m&&!inv.doctor){inv.doctor=m[1].trim().replace(/[.:]+$/,"");filled.push("Arzt")}}
@@ -1624,11 +1627,15 @@ function parseInvoiceText(text,people,providers){
     if(n.length<4||/str\.|straße|weg\b|platz\b/i.test(n))continue;
     const same=top.find(x=>n.toLowerCase().endsWith(x.toLowerCase()));if(same)n=same;  // „S BURG DRACHENZAHN“ -> „BURG DRACHENZAHN“
     sender=n;break}
+  // Absenderzeile ohne lesbare Postleitzahl: „NAME » …“ oberhalb von „Herrn“/„Frau“
+  if(!sender){const hi=lines.slice(0,15).findIndex(l=>/^\W*(herrn?|frau)\b/i.test(l));
+    for(const raw of hi>0?lines.slice(0,hi):[]){const m=clean(raw).match(/^([A-ZÄÖÜ][A-Za-zÄÖÜäöüß.&' -]{3,59}?)\s*[•·®©*|+»«=]/);
+      if(m&&m[1].trim().length>=4&&!/str\.|straße|praxis für/i.test(m[1])){sender=m[1].trim().replace(/\s+\S$/,"");break}}}
   // Ohne Absenderzeile: Briefkopf-Name direkt über „Praxis für …“
   if(!sender){const i=lines.slice(0,8).findIndex(l=>/^\W*praxis für\b/i.test(l));if(i>0&&top.includes(clean(lines[i-1])))sender=clean(lines[i-1])}
   if(sender&&sender===sender.toUpperCase())sender=sender.toLowerCase().replace(/(^|[\s-])\S/g,c=>c.toUpperCase());
   // Bekannte Rechnungssteller nur über den Briefkopf erkennen (nicht über Wörter wie „Röntgen“ oder den Ort im Rechnungstext)
-  const headText=sender||lines.slice(0,14).join(" ");
+  const headText=[sender||"",...lines.slice(0,14)].join(" ");
   const textWords=new Set(words(headText)),PLACES=new Set(words(lines.filter(l=>/\b\d{5}\b/.test(l)).join(" ")));
   const hit=w=>textWords.has(w)||[...textWords].some(x=>x.length>w.length&&x.startsWith(w));
   let bestProv=null,bestScore=0;
@@ -1637,7 +1644,13 @@ function parseInvoiceText(text,people,providers){
     const score=n/ws.length+n*0.01;if(score>bestScore){bestScore=score;bestProv=pr}}
   if(bestProv)out.provider=bestProv;
   else if(sender)out.provider=sender;
-  else{ // unbekannter Rechnungssteller: Briefkopf in den ersten Zeilen
+  else{ // Internetadresse der Praxis: www.burg-drachenzahn.de -> Burg Drachenzahn
+    const dm=t.match(/(?:www\.|@)([a-z0-9äöü-]{4,40})\.(?:de|com|net|org|eu|info)\b/i);
+    if(dm&&!/^(gmail|gmx|web|t-online|outlook|hotmail|yahoo|icloud|freenet|arcor|posteo|pvs|bundesbank)/i.test(dm[1]))
+      out.provider=dm[1].split("-").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ");
+  }
+  if(!out.provider){
+  // unbekannter Rechnungssteller: Briefkopf in den ersten Zeilen
     const head=lines.slice(0,10).find(l=>/(gmbh|praxis|mvz|klinik|apotheke|labor|pvs|zahnarzt|dr\.\s*med)/i.test(l)&&!/herr|frau|str\.|straße|\d{5}/i.test(l));
     if(head)out.provider=head.replace(/[•·|].*$/,"").trim().slice(0,60);
   }
