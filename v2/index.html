@@ -1147,7 +1147,7 @@ function drawEditor(){
       ${preview?`<img class="thumb" src="${preview}" alt="Rechnungsfoto">`:""}
       <div class="grid2">
         <label class="f">Person<select id="patient">${opts}</select></label>
-        ${field("Betrag (€)","amount",inv.amount,"number")}
+        ${field("Betrag (€)","amount",inv.amount===""||inv.amount==null?"":r2(inv.amount).toFixed(2),"number")}
         ${field("Arzt / Praxis / Klinik","doctor",inv.doctor,"text","full",'autocomplete="off" list="docList"')}
         ${field("Abrechnungsstelle (nur wenn vorhanden)","billing",inv.billing,"text","full",'autocomplete="off" list="billList" placeholder="z. B. PVS, Mediserv, DZR"')}
         ${field("Behandlung am","treatDate",inv.treatDate,"text","",'placeholder="z. B. 13.05.2026"')}
@@ -1611,17 +1611,20 @@ function parseInvoiceText(text,people,providers){
   // Rechnungssteller: nur über unterscheidende Wörter erkennen (nicht über "Dr.", "med.", "GmbH" usw.)
   const STOP=new Set(["dr","med","prof","dipl","gmbh","ggmbh","mbh","mvz","co","kg","ag","ug","und","u","der","die","das","fuer","für","praxis","gemeinschaftspraxis","zentrum","ohg","gbr","e","v"]);
   const words=s=>s.toLowerCase().replace(/[^a-zäöüß0-9]+/g," ").split(" ").filter(w=>w.length>=4&&!STOP.has(w));
-  const textWords=new Set(words(t));
+  // Absenderzeile über der Anschrift: "NAME • Straße • PLZ Ort" (OCR liest • oft als ® oder *)
+  const sm=lines.slice(0,14).map(l=>l.match(/^([^•·®*|]{3,60}?)\s*[•·®*|]\s*.*\b\d{5}\b/)).find(m=>m&&!/herr|frau|str\.|straße/i.test(m[1]));
+  const sender=sm?(n=>n===n.toUpperCase()?n.toLowerCase().replace(/(^|[\s-])\S/g,c=>c.toUpperCase()):n)(sm[1].trim()):null;
+  // Bekannte Rechnungssteller nur über den Briefkopf erkennen (nicht über Wörter wie „Röntgen“ oder den Ort im Rechnungstext)
+  const headText=sender||lines.slice(0,14).join(" ");
+  const textWords=new Set(words(headText)),PLACES=new Set(words(lines.filter(l=>/\b\d{5}\b/.test(l)).join(" ")));
   const hit=w=>textWords.has(w)||[...textWords].some(x=>x.length>w.length&&x.startsWith(w));
   let bestProv=null,bestScore=0;
-  for(const pr of providers){const ws=[...new Set(words(pr))];if(!ws.length)continue;
+  for(const pr of providers){const ws=[...new Set(words(pr))].filter(w=>!PLACES.has(w));if(!ws.length)continue;
     const n=ws.filter(hit).length;if(n<Math.min(2,ws.length))continue;
     const score=n/ws.length+n*0.01;if(score>bestScore){bestScore=score;bestProv=pr}}
   if(bestProv)out.provider=bestProv;
+  else if(sender)out.provider=sender;
   else{ // unbekannter Rechnungssteller: Briefkopf in den ersten Zeilen
-    // Absenderzeile über der Anschrift: "NAME • Straße • PLZ Ort" (OCR liest • oft als ® oder *)
-    const sender=lines.slice(0,14).map(l=>l.match(/^([^•·®*|]{3,60}?)\s*[•·®*|]\s*.*\b\d{5}\b/)).find(m=>m&&!/herr|frau|str\.|straße/i.test(m[1]));
-    if(sender){const n=sender[1].trim();out.provider=n===n.toUpperCase()?n.toLowerCase().replace(/(^|[\s-])\S/g,c=>c.toUpperCase()):n;return out}
     const head=lines.slice(0,10).find(l=>/(gmbh|praxis|mvz|klinik|apotheke|labor|pvs|zahnarzt|dr\.\s*med)/i.test(l)&&!/herr|frau|str\.|straße|\d{5}/i.test(l));
     if(head)out.provider=head.replace(/[•·|].*$/,"").trim().slice(0,60);
   }
