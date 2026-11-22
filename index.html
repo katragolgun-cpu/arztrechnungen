@@ -1282,6 +1282,7 @@ async function ocr(input){
     if(got.due&&!inv.dueDate){inv.dueDate=got.due;filled.push("Fälligkeit")}
     if(got.invoiceNo&&!inv.invoiceNo){inv.invoiceNo=got.invoiceNo;filled.push("Rechnungsnummer")}
     if(got.iban&&!inv.iban){inv.iban=got.iban;filled.push("IBAN")}
+    if(got.treat&&!inv.treatDate){inv.treatDate=dfmt(got.treat);filled.push("Behandlungsdatum")}
     // Briefkopf: Abrechnungsstelle oder Arzt? Bei Abrechnungsstellen den behandelnden Arzt aus dem Text suchen
     const head=got.provider||(qr?.name)||"";
     if(head&&BILLING_RE.test(head)){if(!inv.billing){inv.billing=head;filled.push("Abrechnungsstelle")}
@@ -1575,20 +1576,23 @@ function parseInvoiceText(text,people,providers){
   const dRe=/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/,dReG=/(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2}(?!\d))/g;
   const iso=m=>{let y=+m[3];if(y<100)y+=2000;const d=`${y}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`;return isNaN(new Date(d))||+m[2]>12||+m[1]>31?null:d};
   // Fälligkeit: "bis zum 28.11.2026", "zahlbar bis", "fällig am"
-  const dueM=t.match(/(?:bis\s+(?:zum|spätestens)?|zahlbar\s+bis|fällig\s+(?:am|bis)?|zahlungsziel:?)\s*(\d{1,2}\.\d{1,2}\.\d{2,4})/i);
+  const dueM=t.match(/(?:bis\s+(?:spätestens\s+)?(?:zum\s+)?|zahlbar\s+bis|fällig\s+(?:am|bis)?|zahlungsziel:?)\s*(\d{1,2}\.\d{1,2}\.\d{2,4})/i);
   if(dueM){const m=dueM[1].match(dRe);const d=m&&iso(m);if(d)out.due=d}
   // Rechnungsdatum: Bezeichnung in derselben oder der nächsten Zeile, sonst das späteste plausible Datum
   let date=null;
+  // Tabellenkopf ("Datum Region Nr. Leistung …"): das ist das Behandlungsdatum, nicht das Rechnungsdatum
+  const TABLE=/leistung|region|faktor|anz\b|ziffer|goä|goz|gebühren|bgr/i;
+  for(let i=0;i<lines.length;i++)if(/^datum\b/i.test(lines[i])&&TABLE.test(lines[i])){const m=(lines[i+1]||"").match(dRe);const d=m&&iso(m);if(d){out.treat=d;break}}
   for(let i=0;i<lines.length&&!date;i++){
-    if(/(rechnungs|r\.?-|re\.?-)\s*datum|datum\s*der\s*rechnung|^datum\b/i.test(lines[i])){
+    if(/(rechnungs|r\.?-|re\.?-)\s*datum|datum\s*der\s*rechnung|^datum\b/i.test(lines[i])&&!TABLE.test(lines[i])){
       for(const l of [lines[i],lines[i+1]||""]){const ms=[...l.matchAll(dReG)].map(iso).filter(Boolean);if(ms.length){date=ms[ms.length-1];break}}
     }
   }
   if(!date){const now=today(),min=String(+now.slice(0,4)-2)+now.slice(4);
-    const all=[...t.matchAll(dReG)].map(iso).filter(d=>d&&d<=now&&d>=min&&d!==out.due).sort();if(all.length)date=all[all.length-1]}
+    const all=[...t.matchAll(dReG)].map(iso).filter(d=>d&&d<=now&&d>=min&&d!==out.due&&d!==out.treat).sort();if(all.length)date=all[all.length-1]}
   if(date)out.date=date;
   // Rechnungsnummer: viele Schreibweisen, Wert in derselben oder der nächsten Zeile
-  const label=/(rechnungs[\s-]*(?:nr|nummer|no)|r[\s.-]*(?:nr|nummer)|rg[\s.-]*nr|re[\s.-]*nr|beleg[\s-]*(?:nr|nummer))\.?/i;
+  const label=/(rechnung(?:s)?[\s-]*(?:nr|nummer|no)|r[\s.-]*(?:nr|nummer)|rg[\s.-]*nr|re[\s.-]*nr|beleg[\s-]*(?:nr|nummer))\.?/i;
   for(let i=0;i<lines.length&&!out.invoiceNo;i++){
     const l=lines[i],m=l.match(label);if(!m)continue;
     const after=l.slice(m.index+m[0].length).replace(/^[\s:./-]*/,"");
@@ -1616,6 +1620,9 @@ function parseInvoiceText(text,people,providers){
     const score=n/ws.length+n*0.01;if(score>bestScore){bestScore=score;bestProv=pr}}
   if(bestProv)out.provider=bestProv;
   else{ // unbekannter Rechnungssteller: Briefkopf in den ersten Zeilen
+    // Absenderzeile über der Anschrift: "NAME • Straße • PLZ Ort" (OCR liest • oft als ® oder *)
+    const sender=lines.slice(0,14).map(l=>l.match(/^([^•·®*|]{3,60}?)\s*[•·®*|]\s*.*\b\d{5}\b/)).find(m=>m&&!/herr|frau|str\.|straße/i.test(m[1]));
+    if(sender){const n=sender[1].trim();out.provider=n===n.toUpperCase()?n.toLowerCase().replace(/(^|[\s-])\S/g,c=>c.toUpperCase()):n;return out}
     const head=lines.slice(0,10).find(l=>/(gmbh|praxis|mvz|klinik|apotheke|labor|pvs|zahnarzt|dr\.\s*med)/i.test(l)&&!/herr|frau|str\.|straße|\d{5}/i.test(l));
     if(head)out.provider=head.replace(/[•·|].*$/,"").trim().slice(0,60);
   }
