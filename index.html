@@ -723,6 +723,7 @@ function renderSummary(rows){
 function renderBanner(){
   const b=$("#banner");const st=driveStatus();
   if(S.loaded&&S.inv.length&&!S.settings.driveLinked){b.innerHTML=`<span>Nicht mit Drive verbunden. Änderungen bleiben nur auf diesem Gerät.</span><button type="button" class="btn" data-act="settings">Einstellungen</button>`;b.hidden=false;return}
+  if(G.err==="guard"&&G.guard){b.innerHTML=`<span><b>Abgleich gestoppt.</b> Er würde in Drive ${G.guard.inv} Rechnung${G.guard.inv===1?"":"en"} und ${G.guard.b} Bescheid${G.guard.b===1?"":"e"} entfernen. Drive bleibt unverändert, eine Sicherung liegt unter Sicherungen.</span><button type="button" class="btn" data-act="syncforce">Trotzdem abgleichen</button>`;b.hidden=false;return}
   if(st.pending&&!tokenValid()&&S.settings.driveLinked){b.innerHTML=`<span>Drive-Anmeldung abgelaufen. Änderungen sind noch nicht in Drive.</span><button type="button" class="btn" data-act="settings">Anmelden</button>`;b.hidden=false;return}
   b.hidden=true;
 }
@@ -807,6 +808,7 @@ document.addEventListener("click",e=>{
     if(act==="aioverview")return aiOverview();
     if(act==="bmoney")return moneyIn(a.dataset.bid);
     if(act==="settings")return openSettings();
+    if(act==="syncforce"){if(a.dataset.confirm!=="1"){a.dataset.confirm="1";a.textContent="Wirklich? Nochmal tippen";return}G.force=true;G.err=null;G.guard=null;renderBanner();return syncNow()}
     if(act==="importstart")return openSettings("import");
     if(act==="connect")return connectDrive();
   }
@@ -2400,8 +2402,8 @@ const GOOGLE_CLIENT_ID="592336920931-5s1klnrs64841o02016jk7mknm248rdf.apps.googl
 const DRIVE_SCOPE="https://www.googleapis.com/auth/drive.file";
 const API="https://www.googleapis.com/drive/v3/files",UPLOAD="https://www.googleapis.com/upload/drive/v3/files";
 const FOLDER_NAME=PROD?"Arztrechnungen":"PKV-Beihilfe Testversion 2",DATA_NAME=PROD?"pkv-beihilfe-daten.json":"pkv-beihilfe-v2-daten.json",REAL_DATA="arztrechnungen-daten.json";
-const G={token:null,exp:0,src:null,busy:false,dirty:false,last:null,err:null,timer:null};
-const LOCAL_KEYS=["driveLinked","driveFolderId","driveDataId","driveAppId","driveSnapId","driveFolderMap","lastSnapshot","importedAt","overwriteRemote"];
+const G={token:null,exp:0,src:null,busy:false,dirty:false,last:null,err:null,timer:null,guard:null,force:false};
+const LOCAL_KEYS=["driveLinked","driveFolderId","driveDataId","driveAppId","driveSnapId","driveFolderMap","lastSnapshot","lastBackup","importedAt","overwriteRemote"];
 // Anmeldung: eigene (Testversion) oder die der normalen App (gleiche Seite, gleiches Google-Konto)
 function pickToken(){
   const read=k=>{try{const t=JSON.parse(localStorage.getItem(k)||"null");return t&&t.exp>Date.now()+60000?t:null}catch{return null}};
@@ -2514,10 +2516,11 @@ async function syncNow(){
     if(PROD&&!S.settings.importedAt){
       if(!S.settings.driveDataId){G.dirty=false;return} // noch nicht übernommen: nichts schreiben
       S.settings.importedAt=nowIso();glog("Daten von einem anderen Gerät geladen")}
-    let remote=null;
-    if(S.settings.driveDataId&&!S.settings.overwriteRemote){
-      try{remote=await (await gfetch(`${API}/${S.settings.driveDataId}?alt=media`)).json()}
+    let remote=null,remoteRaw=null;
+    if(S.settings.driveDataId){
+      try{remoteRaw=await (await gfetch(`${API}/${S.settings.driveDataId}?alt=media`)).json()}
       catch(e){if(e.code==="auth")throw e;S.settings.driveDataId=null;await ensureFolders()}}
+    if(!S.settings.overwriteRemote)remote=remoteRaw;
     for(const [id,t] of Object.entries(remote?.deleted||{}))if(!S.deleted[id]||S.deleted[id]<t)S.deleted[id]=t;
     const im=mergeList(S.inv,remote?.invoices,S.deleted),bm=mergeList(S.besch,remote?.bescheide,S.deleted);
     S.besch=[...bm.values()];reindex();
@@ -2543,15 +2546,34 @@ async function syncNow(){
     const strip=x=>{const c=structuredClone(x);if(c.doc)delete c.doc.fileId;if(c.file)delete c.file.fileId;delete c.thumbFileId;return c};
     const shared=Object.fromEntries(Object.entries(S.settings).filter(([k])=>!LOCAL_KEYS.includes(k)&&k!=="updatedAt"));
     const data={app:"pkv-beihilfe-v2",version:1,updatedAt:nowIso(),settings:shared,settingsUpdatedAt:S.settings.updatedAt||null,invoices:S.inv.map(strip),bescheide:S.besch.map(strip),deleted:S.deleted};
+    // Schutzregel: nie unbemerkt viele Einträge aus Drive entfernen
+    const lost=(rem,cur)=>{const ids=new Set(cur.map(y=>y.id));return (rem||[]).filter(x=>!ids.has(x.id)).length};
+    const lostInv=lost(remoteRaw?.invoices,data.invoices),lostB=lost(remoteRaw?.bescheide,data.bescheide);
+    if(remoteRaw&&(lostInv+lostB>3||S.settings.overwriteRemote||G.force))await backupBefore(remoteRaw,lostInv+lostB>0||S.settings.overwriteRemote);
+    if(lostInv+lostB>3&&!G.force){G.guard={inv:lostInv,b:lostB};glog(`Abgleich gestoppt: würde ${lostInv} Rechnungen und ${lostB} Bescheide entfernen`);const e=new Error("guard");e.code="guard";throw e}
+    G.force=false;G.guard=null;
+    if(remoteRaw)await backupBefore(remoteRaw,false);
     const up=await uploadMultipart(S.settings.driveDataId?{}:{name:DATA_NAME,parents:[S.settings.driveAppId]},new Blob([JSON.stringify(data)],{type:"application/json"}),S.settings.driveDataId);
     if(!S.settings.driveDataId)S.settings.driveDataId=up.id;
     S.settings.overwriteRemote=false;
     await dailySnapshot(data);
     await dbPut("meta",{key:"settings",...S.settings});
     G.last=new Date();glog(`Abgleich ok (${S.inv.length} Rechnungen, ${S.besch.length} Bescheide)`);
-  }catch(e){G.err=e.code==="auth"?"auth":"fail";G.dirty=true;glog("Abgleich fehlgeschlagen: "+(e?.message||e))}
+  }catch(e){G.err=e.code==="auth"?"auth":e.code==="guard"?"guard":"fail";G.dirty=e.code!=="guard";glog("Abgleich fehlgeschlagen: "+(e?.message||e))}
   finally{G.busy=false;updateChip();render()}
   if(G.dirty&&!G.err)scheduleSync();
+}
+/* Sicherung des Drive-Stands vor dem Überschreiben: höchstens einmal pro Stunde, bei Risiko immer. Die letzten 48 bleiben. */
+async function backupBefore(raw,always){
+  const now=new Date(),stamp=`${today()}_${String(now.getHours()).padStart(2,"0")}`;
+  if(!always&&S.settings.lastBackup===stamp)return;
+  try{if(!S.settings.driveSnapId)S.settings.driveSnapId=await findOrCreateFolder("Sicherungen",S.settings.driveAppId);
+    const name=`Vor-Abgleich_${stamp}${always?"-"+String(now.getMinutes()).padStart(2,"0")+String(now.getSeconds()).padStart(2,"0"):""}.json`;
+    await uploadMultipart({name,parents:[S.settings.driveSnapId]},new Blob([JSON.stringify(raw)],{type:"application/json"}));
+    S.settings.lastBackup=stamp;glog("Sicherung: "+name);
+    const r=await (await gfetch(`${API}?q=${q(`name contains 'Vor-Abgleich_' and '${S.settings.driveSnapId}' in parents and trashed=false`)}&fields=files(id,name)&orderBy=name desc&pageSize=200`)).json();
+    for(const f of (r.files||[]).slice(48))await trashOwn(f.id);
+  }catch(e){if(e.code==="auth")throw e;glog("Sicherung fehlgeschlagen")}
 }
 async function dailySnapshot(data){
   const day=today();if(S.settings.lastSnapshot===day)return;
