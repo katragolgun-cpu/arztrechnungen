@@ -1099,7 +1099,7 @@ async function aiSuggest(inv){
   const uniq=[];for(const a of acts)if(!uniq.some(u=>u.act===a.act&&u.k===a.k&&u.label===a.label))uniq.push(a);
   if(!uniq.length){S.edit.ai={...(S.edit.ai||{}),open:true,sugNone:"Für diese Rechnung gibt es gerade keine Aktion. Es heißt warten."};return drawView()}
   S.edit.ai={...(S.edit.ai||{}),open:true,busy:true,sug:null,sugNone:null};drawView();
-  const q=`Welche der folgenden Aktionen sollte als Nächstes ausgeführt werden? Wähle genau eine – oder "keine", wenn gerade nur Warten sinnvoll ist.
+  const q=`Welche der folgenden Aktionen sollte als Nächstes ausgeführt werden? Wähle genau eine – oder "keine", wenn gerade nur Warten sinnvoll ist. Wähle keine Aktion, deren Voraussetzung laut Verlauf noch fehlt (z. B. „Neu einreichen“, solange angeforderte Unterlagen oder ein Duplikat noch nicht eingetroffen sind).
 ${uniq.map((a,i)=>`A${i+1}: ${a.label}`).join("\n")}
 Antworte NUR mit JSON: {"aktion":"A1","begruendung":"ein kurzer Satz"} oder {"aktion":"keine","begruendung":"..."}`;
   try{let ans=await aiCall(q,aiContext(inv,c),200);
