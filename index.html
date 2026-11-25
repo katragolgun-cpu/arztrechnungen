@@ -987,7 +987,7 @@ function taskBody(inv,c,x){
   const rech=rechText(inv,c),L=a=>a.filter(v=>v!==null).join("\n");
   if(x.t==="kuerzung"){const s=c[x.k],b=s.b,frist=x.k==="bh"&&b?.date?addMonths(b.date,1):null,late=!!(frist&&frist<today());
     const ref=`${b?.date?` vom ${dfmt(b.date)}`:""}${b?.appId?` (${x.k==="pkv"?"Vorgang":"Antrag"} ${b.appId})`:""}`;
-    return `<p class="status" style="margin:2px 0 6px">${s.received<=0.004?`<b style="color:var(--bad)">Abgelehnt:</b> 0 € erhalten, ${eur(s.expected)} erwartet.`:`${eur(s.received)} erhalten, ${eur(s.expected)} erwartet: <b style="color:var(--bad)">${eur(s.diff)} weniger</b>.`}${s.item?.note?`<br>Grund laut Bescheid: ${esc(s.item.note)}`:""}<br>${frist?(late?`Widerspruchsfrist am ${dfmt(frist)} abgelaufen.`:`<b style="color:var(--warn)">Widerspruch möglich bis ${dfmt(frist)}.</b>`):""}</p>`
+    return `<p class="status" style="margin:2px 0 6px">${s.received<=0.004?`<b style="color:var(--bad)">Abgelehnt:</b> 0 € erhalten, ${eur(s.expected)} erwartet.`:`${eur(s.received)} erhalten, ${eur(s.expected)} erwartet: <b style="color:var(--bad)">${eur(s.diff)} weniger</b>.`}${s.item?.note?`<br>Grund laut Bescheid: ${esc(s.item.note)}`:""}${s.item?.aiRec?`<br><b>Einschätzung der KI:</b> ${esc(s.item.aiRec)}`:""}<br>${frist?(late?`Widerspruchsfrist am ${dfmt(frist)} abgelaufen.`:`<b style="color:var(--warn)">Widerspruch möglich bis ${dfmt(frist)}.</b>`):""}</p>`
       +textBox(late?`Bitte um Überprüfung an ${SN(x.k)}`:`Widerspruch an ${SN(x.k)}`,L(["Sehr geehrte Damen und Herren,","",
         late?`ich bitte um Überprüfung ${x.k==="pkv"?"der Abrechnung":"des Beihilfebescheids"}${ref}.`:`gegen ${x.k==="pkv"?"die Abrechnung":"den Beihilfebescheid"}${ref} lege ich Widerspruch ein.`,
         `Betroffen ist die ${rech} für ${inv.patient}.`,`Erstattet wurden ${eur(s.received)}, erwartet hatte ich ${eur(s.expected)}. Die Differenz beträgt ${eur(s.diff)}.`,
@@ -1548,6 +1548,14 @@ async function openProof(input,pre){
     fillProofRows();proofMsg();
   }catch(e){S.edit.msg="Der Bescheid konnte nicht gelesen werden. Bitte die Rechnungen unten selbst zuordnen."}
   S.edit.busy=false;drawProof();
+  if(S.settings.aiKey&&S.edit?.mode==="proof"&&S.edit.text)proofAuto(S.edit);
+}
+// KI automatisch: Zuordnung (wenn nötig), dann Kommentar
+async function proofAuto(e){
+  const sum=r2(e.rows.filter(r=>r.on).reduce((a,r)=>a+(+r.amount||0),0)),prev=r2(e.rows.filter(r=>r.already&&!r.on).reduce((a,r)=>a+(+r.amount||0),0));
+  const needMatch=e.k==="pkv"||!e.rows.length||(e.total!=null&&Math.abs(sum+prev-e.total)>=0.01);
+  if(needMatch){await proofMatchAI();if(S.edit!==e)return}
+  if(e.rows.length&&!e.aim?.err)await proofAI();
 }
 function proofMsg(){
   const e=S.edit,n=e.rows.length,old=e.rows.filter(r=>r.already).length,dup=dupBescheid();
@@ -1597,10 +1605,10 @@ function drawProof(){
       ${others.length?`<label class="f">Weitere Rechnung zuordnen<select id="addRow"><option value="">– auswählen –</option>${others.map(x=>`<option value="${esc(x.id)}">${esc(title(x))} · ${esc(x.patient)} · ${dfmt(x.invoiceDate)} · ${eur(x.amount)}</option>`).join("")}</select></label>`:""}
       <div class="calc"><span>Summe</span><span><span class="num">${eur(sum)}</span>${prev>0.004?` <span class="status">+ ${eur(prev)} bereits erledigt</span>`:""} ${cmp}</span></div></div>`}
     ${!e.busy&&S.settings.aiKey?`<div class="sec"><h3>KI</h3>
-      ${e.aim?.busy?`<p class="status" style="margin:0 0 6px">Die KI ordnet den Bescheid den Rechnungen zu …</p>`:e.aim?.msg?`<p class="status" style="margin:0 0 6px${e.aim.err?";color:var(--bad)":""}">${esc(e.aim.msg)}</p>`:`<p class="status" style="margin:0 0 6px">Fehlt eine Rechnung oder passt die Summe nicht? Die KI kann die Zeilen des Bescheids den offenen Rechnungen zuordnen – auch wenn die Beträge aufgeteilt sind oder AXA direkt an die Klinik gezahlt hat.</p>`}
-      ${e.aim?.busy?"":`<div class="btnrow" style="margin-bottom:8px"><button type="button" class="btn" data-act="paimatch">KI zuordnen lassen</button></div>`}
-      ${e.ai?.busy?`<p class="status" style="margin:0">Die KI liest den Bescheid …</p>`:e.ai?.err?`<p class="status" style="margin:0;color:var(--bad)">${esc(e.ai.err)}</p>`:e.rows.some(r=>r.ai)?`<label class="pchk"><input type="checkbox" id="aiTake" ${e.aiTake!==false?"checked":""}><span>KI-Kommentare beim Übernehmen in den Verlauf schreiben und als Stand auf die Karte setzen</span></label>`:`<p class="status" style="margin:0 0 6px">Die KI liest den ganzen Bescheid und schreibt zu jeder Rechnung einen kurzen Kommentar mit dem nächsten Schritt.</p>`}
-      ${e.ai?.busy||!e.rows.length?"":`<div class="btnrow"><button type="button" class="btn" data-act="paicom">${e.rows.some(r=>r.ai)?"Neu kommentieren":"KI-Kommentar erstellen"}</button></div>`}</div>`:""}
+      ${e.aim?.busy?`<p class="status" style="margin:0 0 6px">Die KI ordnet den Bescheid den Rechnungen zu …</p>`:e.aim?.msg?`<p class="status" style="margin:0 0 6px${e.aim.err?";color:var(--bad)":""}">${esc(e.aim.msg)}</p>`:""}
+      ${e.aim?.err?`<div class="btnrow" style="margin-bottom:8px"><button type="button" class="btn" data-act="paimatch">Zuordnung erneut versuchen</button></div>`:""}
+      ${e.ai?.busy?`<p class="status" style="margin:0">Die KI liest den Bescheid …</p>`:e.ai?.err?`<p class="status" style="margin:0;color:var(--bad)">${esc(e.ai.err)}</p>`:e.rows.some(r=>r.ai)?`<p class="status" style="margin:0">Die Kommentare kommen beim Übernehmen in den Verlauf.</p>`:e.rows.length&&!e.aim?.err?`<p class="status" style="margin:0">Die KI liest den Bescheid …</p>`:""}
+      ${(e.ai?.err||e.aim?.err)&&e.rows.length&&!e.rows.some(r=>r.ai)?`<div class="btnrow"><button type="button" class="btn" data-act="paicom">Kommentar erneut versuchen</button></div>`:""}</div>`:""}
   `,`<button type="button" class="btn" data-act="pcancel">Abbrechen</button><button type="button" class="btn primary" data-act="papply" ${e.busy?"disabled":""}>Übernehmen</button>`);
   const sc=$("#scrim");
   sc.addEventListener("change",ev=>{const t=ev.target;
@@ -1656,7 +1664,8 @@ async function proofAI(){
   const list=e.rows.map((r,i)=>{const inv=S.inv.find(x=>x.id===r.id);const s=side(inv,k);
     return `Nr. ${i+1}: ${title(inv)}${inv.billing?` über ${inv.billing}`:""}, ${inv.patient}, Rechnung vom ${dfmt(inv.invoiceDate)} über ${eur(inv.amount)}, erwartet ${eur(s.expected)}, laut Bescheid erstattet ${eur(+r.amount||0)}${r.note?`, Hinweis: ${r.note}`:""}${(inv.log||[]).length?`. Bisher: ${inv.log.map(l=>dfmt(l.date)+" "+l.text).join(" / ")}`:""}`}).join("\n");
   const q=`Lies den ${k==="bh"?"Beihilfe-Bescheid":"AXA-Bescheid"} unten. Schreibe für jede der folgenden Rechnungen einen kurzen Kommentar (höchstens 2 Sätze: 1. was der Bescheid dazu sagt, mit Grund bei Kürzung oder Ablehnung; 2. der konkrete nächste Schritt, z. B. „Nichts zu tun, auf das Geld warten“ oder „Formular nachreichen“) und einen sehr kurzen Stand für die Rechnungskarte (höchstens 8 Wörter).
-Antworte NUR mit JSON, ohne weiteren Text, genau in dieser Form: [{"nr":1,"kommentar":"...","status":"..."}]
+Ist eine Rechnung gekürzt oder abgelehnt und der Grund nicht eindeutig (kein Eigenbehalt, kein Höchstbetrag, kein fehlendes Formular, keine Doppeleinreichung), gib zusätzlich "empfehlung" an: "akzeptieren" oder "widerspruch prüfen", mit kurzer Begründung in "begruendung".
+Antworte NUR mit JSON, ohne weiteren Text, genau in dieser Form: [{"nr":1,"kommentar":"...","status":"...","empfehlung":"","begruendung":""}]
 Rechnungen:
 ${list}`;
   try{const r=await fetch(AI_URL,{method:"POST",headers:{"Content-Type":"application/json","X-App-Key":S.settings.aiKey},body:JSON.stringify({question:q,context:"Bescheid:\n"+(e.text||"").slice(0,9000),max_tokens:1500})});
@@ -1666,7 +1675,7 @@ ${list}`;
     const d=JSON.parse(t);if(d.error)throw new Error(d.error);
     const ans=typeof d.answer==="string"?d.answer:JSON.stringify(d.answer??"");const m=ans.match(/\[[\s\S]*\]/);if(!m)throw new Error("Die KI hat keine verwertbare Antwort geliefert. Bitte noch einmal versuchen.");
     const arr=JSON.parse(m[0]);
-    for(const x of arr){const row=e.rows[(+x.nr||0)-1];if(row&&x.kommentar)row.ai={kommentar:String(x.kommentar).slice(0,400),status:String(x.status||"").slice(0,80)}}
+    for(const x of arr){const row=e.rows[(+x.nr||0)-1];if(row&&x.kommentar)row.ai={kommentar:String(x.kommentar).slice(0,400),status:String(x.status||"").slice(0,80),rec:x.empfehlung?`${String(x.empfehlung).slice(0,40)}${x.begruendung?": "+String(x.begruendung).slice(0,250):""}`:""}}
     if(!e.rows.some(r=>r.ai))throw new Error("Die KI hat keine Kommentare zugeordnet.");
     e.ai=null;e.aiTake=true}
   catch(err){e.ai={err:err.message||"Fehler bei der KI-Anfrage"}}
@@ -1682,7 +1691,7 @@ async function applyProof(btn){
   for(const r of sel)for(const {b} of itemsOf(r.id,k))if(b.manual){const nb=structuredClone(b);nb.items=nb.items.filter(it=>it.invId!==r.id);if(nb.items.length)await saveBescheid(nb,true);else{await dbDel("bescheide",nb.id);S.deleted[nb.id]=nowIso();S.besch=S.besch.filter(x=>x.id!==nb.id)}}
   const onlyOld=sel.every(r=>r.already);
   const b={k,date:e.date,appId:e.appId||null,total:e.total,payout:e.payout,correction:!!e.correction,manual:false,file:{fileId,own:true},
-    items:sel.map(r=>{const inv=S.inv.find(x=>x.id===r.id);const it={invId:r.id,refund:r2(r.amount)};if(r.eligible!=null&&r.eligible<r2(inv.amount)-0.004){it.eligible=r.eligible;if(r.note)it.note=r.note}return it}),
+    items:sel.map(r=>{const inv=S.inv.find(x=>x.id===r.id);const it={invId:r.id,refund:r2(r.amount)};if(r.eligible!=null&&r.eligible<r2(inv.amount)-0.004){it.eligible=r.eligible;if(r.note)it.note=r.note}if(r.ai?.rec)it.aiRec=r.ai.rec;return it}),
     moneyIn:onlyOld||sel.every(r=>r2(r.amount)<=0)?e.date:null};
   await saveBescheid(b,true);
   for(const r of sel){if(!r.payee)continue;const inv=S.inv.find(x=>x.id===r.id);if(!inv)continue;const c=structuredClone(inv);
