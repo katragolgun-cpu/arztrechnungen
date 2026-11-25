@@ -374,6 +374,7 @@ function reasonOf(inv,it,received){
 /* Jahres-Merker: Formular „Ehepartner/in“ einmal je Jahr mit dem ersten Beihilfe-Antrag für die Ehefrau (Gruppe E) */
 const EHE_FORM="https://www.bva.bund.de/SharedDocs/Downloads/DE/Bundesbedienstete/Gesundheit-Vorsorge/Beihilfe/Vordrucke/Anlage_Ehegatte.html?nn=523750";
 const eheNeeded=inv=>rateFor(inv.patient).group==="E"&&String(S.settings.eheYear||"")!==today().slice(0,4);
+const REASON_TEXT={ehe:"Formular Ehepartner/in fehlte",doppelt:"doppelt eingereicht",original:"keine echte Rechnung",gebuehr:"Abrechnungsfehler des Arztes",ok:"Eigenbehalt/Höchstbetrag",sonst:"Kürzung"};
 const REASON_TASK={ehe:"r_ehe",doppelt:"r_doppelt",original:"r_original",gebuehr:"r_gebuehr"};
 // Fälligkeit: Datum von der Rechnung, sonst Rechnungsdatum + Zahlungsfrist
 function dueDate(inv){
@@ -669,6 +670,7 @@ function cardHtml({i,c},o={}){
     <div class="amt">${eur(c.amount)}</div></div>
     ${o.step?`<div class="next">${esc(STEP_LABEL[c.step])}${c.tasks.length?` · ${c.tasks.length} Aufgabe${c.tasks.length===1?"":"n"}`:""}</div>`:nx?`<div class="next ${o.task&&o.task.t!=="einreichen"&&o.task.t!=="bezahlen"?"s-klaeren":"s-"+c.step}">${esc(nx)}</div>`:""}
     ${c.step==="bezahlen"&&!o.task?dueText(c):""}
+    ${(i.log||[]).length?(l=>`<div class="via" style="margin-top:4px">Notiz ${dfmt(l.date)}: ${esc(l.text.length>110?l.text.slice(0,107)+"…":l.text)}</div>`)([...i.log].sort((a,b)=>(a.date||"").localeCompare(b.date||"")).pop()):""}
   </button>`;
 }
 function renderSummary(rows){
@@ -1053,9 +1055,10 @@ function historyHtml(inv,c){
     if(s.obj){add(s.obj.date,`Widerspruch bei ${n} eingelegt`);if(s.obj.result)add(s.obj.resultDate,`Widerspruch ${n}: ${s.obj.result==="nachzahlung"?"Nachzahlung":"abgelehnt"}`)}}
   if(inv.payment?.date)add(inv.payment.date,`${eur(inv.payment.amount)} an ${esc(payee(inv)||"Arzt")} überwiesen`);
   for(const is of inv.issues||[]){add(is.created,`Zu klären: ${esc(is.text)}`);add(is.done,"Geklärt: "+esc(is.text))}
+  for(const l of inv.log||[])add(l.date,`<b>${esc(l.text)}</b>`);
   if(!ev.length)return "";
   ev.sort((a,b)=>a[0].localeCompare(b[0]));
-  return `<div class="sec"><details><summary><b>Verlauf</b> · ${ev.length} Einträge</summary>
+  return `<div class="sec"><details${(inv.log||[]).length?" open":""}><summary><b>Verlauf</b> · ${ev.length} Einträge</summary>
     <div style="margin-top:8px">${ev.map(([d,t])=>`<div class="hrow"><span class="num">${dfmt(d)}</span><span>${t}</span></div>`).join("")}</div></details></div>`;
 }
 /* ---- Weitere Aktionen ---- */
@@ -1067,12 +1070,16 @@ function moreHtml(inv,c){
     if(x.state==="wait"||x.state==="done")L.push(b("resub",`${SN(x.k)}: erneut einreichen`,x.k));}
   if(c.unpaid&&c.step!=="bezahlen"&&!S.edit.showPay)L.push(b("paysec","Schon jetzt überweisen"));
   if(c.unpaid)L.push(b("feeask",c.fee>0?"Mahngebühr ändern":"Mahnung erhalten"));
+  L.push(b("logadd","Eintrag zum Verlauf hinzufügen"));
   L.push(b("issueadd","Punkt zum Klären hinzufügen"));
   L.push(b("edit","Details bearbeiten"));
   return `<details class="sec more"${S.edit.moreOpen?" open":""}><summary><b>Weitere Aktionen</b></summary>
     ${S.edit.issueAsk?`<div class="sec" style="margin-top:10px"><label class="f">Art<select id="isKind">${["fehlbuchung","nachreichen","original","nachfrage","sonst"].map(k=>`<option value="${k}">${esc(TASK_LABEL[k])}</option>`).join("")}</select></label>
       <label class="f">Was ist zu klären?<input id="isText" placeholder="z. B. AXA hat auf Olgun statt Ikra gebucht"></label>
       <div class="btnrow"><button type="button" class="btn primary" data-act="issuesave">Hinzufügen</button><button type="button" class="btn" data-act="issueno">Abbrechen</button></div></div>`:""}
+    ${S.edit.logAsk?`<div class="sec" style="margin-top:10px"><label class="f">Datum<input id="lgDate" type="date" value="${today()}"></label>
+      <label class="f">Was wurde gemacht?<input id="lgText" placeholder="z. B. Formular nachgereicht, Antrag 9981190"></label>
+      <div class="btnrow"><button type="button" class="btn primary" data-act="logsave">Eintragen</button><button type="button" class="btn" data-act="logno">Abbrechen</button></div></div>`:""}
     <div class="morelist">${L.join("")}</div></details>`;
 }
 async function viewClick(e){
@@ -1101,7 +1108,8 @@ async function viewClick(e){
     case "resub":S.edit.resub=k;S.edit.moreOpen=false;again();$(".nextstep")?.scrollIntoView({block:"center"});return;
     case "resubno":S.edit.resub=null;return again();
     case "eheyear":S.settings.eheYear=today().slice(0,4);await saveSettings();toast(`Formular Ehepartner/in für ${S.settings.eheYear} vermerkt`);return again();
-    case "resubok":{if(b.dataset.ehe){S.settings.eheYear=today().slice(0,4);await saveSettings()}for(const {b:bs} of itemsOf(inv.id,k)){const nb=structuredClone(bs);nb.items=nb.items.filter(it=>it.invId!==inv.id);
+    case "resubok":{if(b.dataset.ehe){S.settings.eheYear=today().slice(0,4);await saveSettings()}
+      {const sd=side(inv,k),lb=sd.b;inv.log=[...(inv.log||[]),{date:today(),text:`Neu einzureichen bei ${SN(k)}${lb?.date?` – Bescheid vom ${dfmt(lb.date)}: ${eur(sd.received)}${sd.item?.note?" ("+(REASON_TEXT[sd.reason]||"gekürzt")+")":""}`:""}${inv[k].submitted?`, erste Einreichung ${dfmt(inv[k].submitted)}`:""}`}]}for(const {b:bs} of itemsOf(inv.id,k)){const nb=structuredClone(bs);nb.items=nb.items.filter(it=>it.invId!==inv.id);
         if(nb.items.length)await saveBescheid(nb,true);else await deleteBescheid(nb)}
       const was=`Erste Einreichung bei ${SN(k)} ${dfmt(inv[k].submitted)}`;inv.note=inv.note?`${inv.note} · ${was}`:was;
       inv[k].submitted=null;delete inv[k].cutOk;delete inv[k].obj;delete inv[k].asked;S.edit.resub=null;await saveInvoice(inv);toast(`${SN(k)}: wieder bei „Einreichen“`);return again()}
@@ -1111,6 +1119,10 @@ async function viewClick(e){
     case "objno":inv[k].obj.result="abgelehnt";inv[k].obj.resultDate=today();inv[k].cutOk=true;await saveInvoice(inv);toast("Widerspruch abgelehnt – Kürzung bleibt");return again();
     case "cutok":inv[k].cutOk=true;await saveInvoice(inv);toast("Kürzung akzeptiert");return again();
     case "issuedone":{const is=(inv.issues||[]).find(z=>z.id===b.dataset.iid);if(is)is.done=today();await saveInvoice(inv);toast("Erledigt");return again()}
+    case "logadd":S.edit.logAsk=true;S.edit.moreOpen=true;return again();
+    case "logno":S.edit.logAsk=false;return again();
+    case "logsave":{const t=$("#lgText").value.trim();if(!t){toast("Bitte kurz beschreiben");return}
+      inv.log=[...(inv.log||[]),{date:$("#lgDate").value||today(),text:t}];S.edit.logAsk=false;await saveInvoice(inv);toast("Im Verlauf eingetragen");return again()}
     case "issueadd":S.edit.issueAsk=true;S.edit.moreOpen=true;return again();
     case "issueno":S.edit.issueAsk=false;return again();
     case "issuesave":{const t=$("#isText").value.trim();if(!t){toast("Bitte kurz beschreiben");return}
