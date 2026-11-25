@@ -681,18 +681,18 @@ function cardHtml({i,c},o={}){
 function overviewSheet(focus){
   const rows=S.inv.map(i=>({i,c:calc(i)}));const lim=addDays(today(),-21);
   const way=new Map(),req=new Map(),old=[],you=[],pay=[];
-  const add=(m,key,lab,sub,i,amt)=>{const g=m.get(key)||{lab,sub,amt:0,items:[]};g.amt+=amt;g.items.push({i,amt});m.set(key,g)};
+  const add=(m,key,lab,sub,i,amt,bid)=>{const g=m.get(key)||{lab,sub,amt:0,items:[],bid};g.amt+=amt;g.items.push({i,amt});m.set(key,g)};
   for(const {i,c} of rows){
     if(c.unpaid)pay.push({i,amt:c.open,sub:i.dueDate?`fällig ${dfmt(i.dueDate)}`:"ohne Fälligkeit"});
     for(const x of [c.bh,c.pkv]){const n=SN(x.k);
       if(x.state==="wait")add(req,x.k+"|"+x.s.submitted,`${n}, eingereicht am ${dfmt(x.s.submitted)}`,"Bescheid fehlt noch · Betrag geschätzt",i,x.expected);
       else if(x.state==="todo")you.push({i,amt:x.expected,sub:`bei ${n} einreichen`});
       else if(x.moneyOpen){if((x.b?.date||"")<lim)old.push({i,amt:x.received,sub:`${n}-Bescheid vom ${dfmt(x.b?.date)}`});
-        else add(way,x.b?.id||x.k,`${n}-Bescheid vom ${dfmt(x.b?.date)}`,"kommt in den nächsten Tagen",i,x.received)}
+        else add(way,x.b?.id||x.k,`${n}-Bescheid vom ${dfmt(x.b?.date)}`,"kommt in den nächsten Tagen",i,x.received,x.b?.id)}
       if(x.cutOpen&&["ehe","original"].includes(x.reason))you.push({i,amt:x.diff,sub:TASK_LABEL[REASON_TASK[x.reason]]})}}
   const tot=a=>a.reduce((s,x)=>s+x.amt,0);
   const inv=x=>`<button type="button" class="ov-row" data-ovinv="${esc(x.i.id)}"><span>${esc(x.i.patient)} · ${esc(title(x.i))}${x.sub?`<br><span class="s">${x.sub}</span>`:""}</span><b>${eur(x.amt)}</b></button>`;
-  const grp=g=>`<details style="border-top:1px solid var(--line,#e5e7eb);padding:6px 0"><summary style="display:flex;justify-content:space-between;gap:10px;cursor:pointer"><span>${g.lab}<br><span class="s" style="font-size:12.5px;opacity:.75">${g.sub} · ${g.items.length} Rechnung${g.items.length>1?"en":""}</span></span><b>${eur(g.amt)}</b></summary>${g.items.map(inv).join("")}</details>`;
+  const grp=g=>`<details style="border-top:1px solid var(--line,#e5e7eb);padding:6px 0"><summary style="display:flex;justify-content:space-between;gap:10px;cursor:pointer"><span>${g.lab}<br><span class="s" style="font-size:12.5px;opacity:.75">${g.sub} · ${g.items.length} Rechnung${g.items.length>1?"en":""}</span></span><b>${eur(g.amt)}</b></summary>${g.items.map(inv).join("")}</details>${g.bid?`<div class="btnrow" style="margin:2px 0 8px"><button type="button" class="btn primary" data-ovmoney="${esc(g.bid)}">Geld ist da</button></div>`:""}`;
   const block=(key,label,sum,sentence,body)=>`<details class="sec" ${focus===key?"open":""}><summary style="cursor:pointer"><b>${label}</b> <b style="float:right">${eur(sum)}</b><br><span class="status">${sentence}</span></summary><div style="margin-top:6px">${body}</div></details>`;
   const W=[...way.values()],R=[...req.values()].sort((a,b)=>a.lab.localeCompare(b.lab));
   const wSum=tot(W),rSum=tot(R);
@@ -706,7 +706,8 @@ function overviewSheet(focus){
     ${block("pay","Geht raus an Ärzte",tot(pay),pS,pay.sort((a,b)=>(a.i.dueDate||"9").localeCompare(b.i.dueDate||"9")).map(inv).join(""))}
     ${old.length?block("old","Geld prüfen",tot(old),"Bescheid älter als 3 Wochen, Geldeingang nie bestätigt. Bitte im Konto prüfen.",old.map(inv).join("")):""}
   `,`<button type="button" class="btn" data-act="ovclose">Schließen</button>`);
-  $("#scrim").addEventListener("click",ev=>{const r=ev.target.closest("[data-ovinv]");if(r){closeSheet();return openView(r.dataset.ovinv)}
+  $("#scrim").addEventListener("click",async ev=>{const mb=ev.target.closest("[data-ovmoney]");if(mb){await moneyIn(mb.dataset.ovmoney);closeSheet();render();return overviewSheet("in")}
+    const r=ev.target.closest("[data-ovinv]");if(r){closeSheet();return openView(r.dataset.ovinv)}
     if(ev.target.closest('[data-act="ovclose"]'))closeSheet()});
 }
 function renderSummary(rows){
