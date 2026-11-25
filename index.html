@@ -1077,7 +1077,7 @@ async function askAI(inv,c,q){
     if(r.status===401)throw new Error("Schlüssel falsch. Bitte in den Einstellungen prüfen.");
     if(!r.ok)throw new Error(`KI nicht erreichbar (${r.status}). ${/limit|neuron|quota/i.test(t)?"Tageskontingent aufgebraucht, morgen wieder.":""}`);
     const d=JSON.parse(t);if(d.error)throw new Error(d.error);
-    S.edit.ai={open:true,q,answer:d.answer||"Keine Antwort erhalten."}}
+    S.edit.ai={open:true,q,answer:(typeof d.answer==="string"?d.answer:JSON.stringify(d.answer,null,1))||"Keine Antwort erhalten."}}
   catch(e){S.edit.ai={open:true,q,err:e.message||"Fehler bei der KI-Anfrage"}}
   if(S.edit?.id===inv.id)drawView();
 }
@@ -1522,7 +1522,7 @@ async function proofAI(){
   const e=S.edit,k=e.k;e.ai={busy:true};drawProof();
   const list=e.rows.map((r,i)=>{const inv=S.inv.find(x=>x.id===r.id);const s=side(inv,k);
     return `Nr. ${i+1}: ${title(inv)}${inv.billing?` über ${inv.billing}`:""}, ${inv.patient}, Rechnung vom ${dfmt(inv.invoiceDate)} über ${eur(inv.amount)}, erwartet ${eur(s.expected)}, laut Bescheid erstattet ${eur(+r.amount||0)}${r.note?`, Hinweis: ${r.note}`:""}${(inv.log||[]).length?`. Bisher: ${inv.log.map(l=>dfmt(l.date)+" "+l.text).join(" / ")}`:""}`}).join("\n");
-  const q=`Lies den ${k==="bh"?"Beihilfe-Bescheid":"AXA-Bescheid"} unten. Schreibe für jede der folgenden Rechnungen einen kurzen Kommentar (höchstens 2 Sätze: was der Bescheid dazu sagt und was zu tun ist) und einen sehr kurzen Stand für die Rechnungskarte (höchstens 8 Wörter).
+  const q=`Lies den ${k==="bh"?"Beihilfe-Bescheid":"AXA-Bescheid"} unten. Schreibe für jede der folgenden Rechnungen einen kurzen Kommentar (höchstens 2 Sätze: 1. was der Bescheid dazu sagt, mit Grund bei Kürzung oder Ablehnung; 2. der konkrete nächste Schritt, z. B. „Nichts zu tun, auf das Geld warten“ oder „Formular nachreichen“) und einen sehr kurzen Stand für die Rechnungskarte (höchstens 8 Wörter).
 Antworte NUR mit JSON, ohne weiteren Text, genau in dieser Form: [{"nr":1,"kommentar":"...","status":"..."}]
 Rechnungen:
 ${list}`;
@@ -1531,7 +1531,7 @@ ${list}`;
     if(r.status===401)throw new Error("Schlüssel falsch. Bitte in den Einstellungen prüfen.");
     if(!r.ok)throw new Error(`KI nicht erreichbar (${r.status}).${/limit|neuron|quota/i.test(t)?" Tageskontingent aufgebraucht, morgen wieder.":""}`);
     const d=JSON.parse(t);if(d.error)throw new Error(d.error);
-    const m=String(d.answer||"").match(/\[[\s\S]*\]/);if(!m)throw new Error("Die KI hat keine verwertbare Antwort geliefert. Bitte noch einmal versuchen.");
+    const ans=typeof d.answer==="string"?d.answer:JSON.stringify(d.answer??"");const m=ans.match(/\[[\s\S]*\]/);if(!m)throw new Error("Die KI hat keine verwertbare Antwort geliefert. Bitte noch einmal versuchen.");
     const arr=JSON.parse(m[0]);
     for(const x of arr){const row=e.rows[(+x.nr||0)-1];if(row&&x.kommentar)row.ai={kommentar:String(x.kommentar).slice(0,400),status:String(x.status||"").slice(0,80)}}
     if(!e.rows.some(r=>r.ai))throw new Error("Die KI hat keine Kommentare zugeordnet.");
