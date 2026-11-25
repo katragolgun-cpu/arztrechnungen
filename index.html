@@ -1483,7 +1483,7 @@ function fillProofRows(){const e=S.edit,k=e.k;
 function drawProof(){
   const e=S.edit,k=e.k;
   const rows=e.rows.map((r,i)=>{const inv=S.inv.find(x=>x.id===r.id);if(!inv)return "";const s=side(inv,k);
-    return `<div class="prow"><label class="pchk"><input type="checkbox" data-row="${i}" ${r.on?"checked":""}><span><b>${esc(title(inv))}</b><br><span class="status">${esc(inv.patient)} · ${dfmt(inv.invoiceDate)} · ${eur(inv.amount)} · erwartet ${eur(s.expected)}</span>${r.rejected?`<br><span style="color:var(--bad);font-size:12.5px">Im Bescheid abgelehnt (0 €) – wird als Ablehnung übernommen, danach unter „Klären“</span>`:""}${r.ambiguous?`<br><span style="color:var(--warn);font-size:12.5px">Gleicher Betrag wie eine andere Rechnung – bitte selbst auswählen</span>`:""}${r.ai?`<br><span style="font-size:12.5px"><b>KI:</b> ${esc(r.ai.kommentar||"")}${r.ai.status?` <b>→ ${esc(r.ai.status)}</b>`:""}</span>`:""}${r.already?`<br><span class="status" style="font-size:12.5px">Hat schon einen Bescheid (${eur(s.received)} vom ${dfmt(s.b?.date)})</span>`:""}${r.eligible!=null&&r.eligible<r2(inv.amount)-0.004?`<br><span style="color:var(--warn);font-size:12.5px"><b>Gekürzt:</b> ${eur(r2(inv.amount-r.eligible))}${r.note?" · "+esc(r.note):""}</span>`:""}</span></label>
+    return `<div class="prow"><label class="pchk"><input type="checkbox" data-row="${i}" ${r.on?"checked":""}><span><b>${esc(title(inv))}</b><br><span class="status">${esc(inv.patient)} · ${dfmt(inv.invoiceDate)} · ${eur(inv.amount)} · erwartet ${eur(s.expected)}</span>${r.rejected?`<br><span style="color:var(--bad);font-size:12.5px">Im Bescheid abgelehnt (0 €) – wird als Ablehnung übernommen, danach unter „Klären“</span>`:""}${r.ambiguous?`<br><span style="color:var(--warn);font-size:12.5px">Gleicher Betrag wie eine andere Rechnung – bitte selbst auswählen</span>`:""}${r.aiMatch?`<br><span style="color:var(--warn);font-size:12.5px">Von der KI zugeordnet – bitte prüfen${r.payee?` · Zahlung direkt an ${esc(r.payee)}`:""}</span>`:""}${r.ai?`<br><span style="font-size:12.5px"><b>KI:</b> ${esc(r.ai.kommentar||"")}${r.ai.status?` <b>→ ${esc(r.ai.status)}</b>`:""}</span>`:""}${r.already?`<br><span class="status" style="font-size:12.5px">Hat schon einen Bescheid (${eur(s.received)} vom ${dfmt(s.b?.date)})</span>`:""}${r.eligible!=null&&r.eligible<r2(inv.amount)-0.004?`<br><span style="color:var(--warn);font-size:12.5px"><b>Gekürzt:</b> ${eur(r2(inv.amount-r.eligible))}${r.note?" · "+esc(r.note):""}</span>`:""}</span></label>
       <label class="f">Erstattet (€)<input class="num" inputmode="decimal" data-amt="${i}" value="${String((+r.amount||0).toFixed(2)).replace(".",",")}"></label></div>`}).join("");
   const used=new Set(e.rows.map(r=>r.id));
   const isOpen=x=>["todo","wait"].includes(side(x,k).state);
@@ -1501,9 +1501,11 @@ function drawProof(){
     ${e.busy?"":`<div class="sec"><h3>Zugeordnete Rechnungen</h3>${rows||`<p class="status" style="margin:0">Noch keine Rechnung zugeordnet.</p>${e.lines?.length?`<p class="status" style="margin:6px 0 0">Im Bescheid stehen:<br>${e.lines.map(l=>`${esc(l.person)} · ${esc(l.date)} · ${eur(l.amount)} → ${eur(l.refund)}`).join("<br>")}</p>`:""}`}
       ${others.length?`<label class="f">Weitere Rechnung zuordnen<select id="addRow"><option value="">– auswählen –</option>${others.map(x=>`<option value="${esc(x.id)}">${esc(title(x))} · ${esc(x.patient)} · ${dfmt(x.invoiceDate)} · ${eur(x.amount)}</option>`).join("")}</select></label>`:""}
       <div class="calc"><span>Summe</span><span><span class="num">${eur(sum)}</span>${prev>0.004?` <span class="status">+ ${eur(prev)} bereits erledigt</span>`:""} ${cmp}</span></div></div>`}
-    ${!e.busy&&e.rows.length&&S.settings.aiKey?`<div class="sec"><h3>KI-Kommentar</h3>
+    ${!e.busy&&S.settings.aiKey?`<div class="sec"><h3>KI</h3>
+      ${e.aim?.busy?`<p class="status" style="margin:0 0 6px">Die KI ordnet den Bescheid den Rechnungen zu …</p>`:e.aim?.msg?`<p class="status" style="margin:0 0 6px${e.aim.err?";color:var(--bad)":""}">${esc(e.aim.msg)}</p>`:`<p class="status" style="margin:0 0 6px">Fehlt eine Rechnung oder passt die Summe nicht? Die KI kann die Zeilen des Bescheids den offenen Rechnungen zuordnen – auch wenn die Beträge aufgeteilt sind oder AXA direkt an die Klinik gezahlt hat.</p>`}
+      ${e.aim?.busy?"":`<div class="btnrow" style="margin-bottom:8px"><button type="button" class="btn" data-act="paimatch">KI zuordnen lassen</button></div>`}
       ${e.ai?.busy?`<p class="status" style="margin:0">Die KI liest den Bescheid …</p>`:e.ai?.err?`<p class="status" style="margin:0;color:var(--bad)">${esc(e.ai.err)}</p>`:e.rows.some(r=>r.ai)?`<label class="pchk"><input type="checkbox" id="aiTake" ${e.aiTake!==false?"checked":""}><span>KI-Kommentare beim Übernehmen in den Verlauf schreiben und als Stand auf die Karte setzen</span></label>`:`<p class="status" style="margin:0 0 6px">Die KI liest den ganzen Bescheid und schreibt zu jeder Rechnung einen kurzen Kommentar mit dem nächsten Schritt.</p>`}
-      ${e.ai?.busy?"":`<div class="btnrow"><button type="button" class="btn" data-act="paicom">${e.rows.some(r=>r.ai)?"Neu kommentieren":"KI-Kommentar erstellen"}</button></div>`}</div>`:""}
+      ${e.ai?.busy||!e.rows.length?"":`<div class="btnrow"><button type="button" class="btn" data-act="paicom">${e.rows.some(r=>r.ai)?"Neu kommentieren":"KI-Kommentar erstellen"}</button></div>`}</div>`:""}
   `,`<button type="button" class="btn" data-act="pcancel">Abbrechen</button><button type="button" class="btn primary" data-act="papply" ${e.busy?"disabled":""}>Übernehmen</button>`);
   const sc=$("#scrim");
   sc.addEventListener("change",ev=>{const t=ev.target;
@@ -1516,7 +1518,43 @@ function drawProof(){
     if(b.dataset.act==="pcancel")return closeSheet();
     if(b.dataset.act==="pside"){S.edit.k=b.dataset.k;fillProofRows();proofMsg();return drawProof()}
     if(b.dataset.act==="paicom")return proofAI();
+    if(b.dataset.act==="paimatch")return proofMatchAI();
     if(b.dataset.act==="papply")return applyProof(b)});
+}
+async function aiCall(question,context,maxTokens){
+  const r=await fetch(AI_URL,{method:"POST",headers:{"Content-Type":"application/json","X-App-Key":S.settings.aiKey},body:JSON.stringify({question,context,max_tokens:maxTokens||1500})});
+  const t=await r.text();
+  if(r.status===401)throw new Error("Schlüssel falsch. Bitte in den Einstellungen prüfen.");
+  if(!r.ok)throw new Error(`KI nicht erreichbar (${r.status}).${/limit|neuron|quota/i.test(t)?" Tageskontingent aufgebraucht, morgen wieder.":""}`);
+  const d=JSON.parse(t);if(d.error)throw new Error(d.error);
+  return d.answer;
+}
+function aiJsonArray(ans){
+  if(Array.isArray(ans))return ans;
+  if(ans&&typeof ans==="object"){const v=Object.values(ans).find(Array.isArray);if(v)return v}
+  const m=String(ans||"").match(/\[[\s\S]*\]/);if(!m)throw new Error("Die KI hat keine verwertbare Antwort geliefert. Bitte noch einmal versuchen.");
+  return JSON.parse(m[0]);
+}
+async function proofMatchAI(){
+  const e=S.edit,k=e.k;e.aim={busy:true};drawProof();
+  const used=new Set(e.rows.map(r=>r.id));
+  const cand=S.inv.filter(x=>{const s=side(x,k);return s.state==="wait"||(s.state==="todo"&&s.rate>0)}).slice(0,40);
+  const list=cand.map((x,j)=>`R${j+1}: ${x.patient}, ${title(x)}${x.billing?` über ${x.billing}`:""}, Rechnung vom ${dfmt(x.invoiceDate)}${x.treatDate?`, Behandlung ${x.treatDate}`:""}, Betrag ${eur(r2(x.amount))}, erwartete Erstattung ${eur(side(x,k).expected)}${used.has(x.id)?" (schon zugeordnet)":""}`).join("\n");
+  const q=`Ordne die Erstattungen im ${k==="bh"?"Beihilfe-Bescheid":"AXA-Bescheid (Leistungsabrechnung)"} den offenen Rechnungen R1, R2 … zu.
+Regeln: Eine Rechnung kann im Bescheid auf mehrere Zeilen aufgeteilt sein (z. B. Fallpauschale + Zimmer) – dann zusammenzählen. Achte auf Person und Rechnungsbetrag. Krankenhaustagegeld gehört zu keiner Rechnung. Steht bei einer Zahlung ein anderer Empfänger als Olgun Katrag (z. B. eine Klinik), gib ihn als "zahlung_an" an. Ordne nur zu, was sicher passt.
+Antworte NUR mit JSON: [{"rechnung":"R3","erstattet":12.34,"abgelehnt":0,"zahlung_an":"","hinweis":"kurzer Grund"}]`;
+  try{const arr=aiJsonArray(await aiCall(q,`Offene Rechnungen:\n${list}\n\nBescheid:\n${(e.text||"").slice(0,8000)}`,1200));
+    let n=0,upd=0;
+    for(const x of arr){const j=+String(x.rechnung||"").replace(/\D/g,"")-1;const inv=cand[j];if(!inv)continue;
+      const amt=r2(+String(x.erstattet??"").replace(",",".")||0);const payee=String(x.zahlung_an||"").trim();const direct=payee&&!/olgun|katrag/i.test(payee)?payee:"";
+      const note=[x.hinweis?String(x.hinweis).slice(0,200):"",direct?`Zahlung direkt an ${direct}`:""].filter(Boolean).join(" · ");
+      const ex=e.rows.find(r=>r.id===inv.id);
+      if(ex){if(Math.abs((+ex.amount||0)-amt)>0.004||direct){ex.amount=amt;ex.aiMatch=true;ex.payee=direct;if(note&&!ex.note)ex.note=note;upd++}continue}
+      e.rows.push({id:inv.id,on:true,already:false,ambiguous:false,rejected:amt<=0.004,eligible:amt<=0.004?0:null,amount:amt,note,aiMatch:true,payee:direct});n++}
+    e.aim={msg:n||upd?`KI: ${n} Rechnung${n===1?"":"en"} neu zugeordnet${upd?`, ${upd} Betrag/Zahlung angepasst`:""}. Bitte prüfen, bevor du übernimmst.`:"Die KI hat keine weitere passende Rechnung gefunden."};
+    proofMsg();}
+  catch(err){e.aim={msg:err.message||"Fehler bei der KI-Anfrage",err:true}}
+  if(S.edit===e)drawProof();
 }
 async function proofAI(){
   const e=S.edit,k=e.k;e.ai={busy:true};drawProof();
@@ -1552,6 +1590,8 @@ async function applyProof(btn){
     items:sel.map(r=>{const inv=S.inv.find(x=>x.id===r.id);const it={invId:r.id,refund:r2(r.amount)};if(r.eligible!=null&&r.eligible<r2(inv.amount)-0.004){it.eligible=r.eligible;if(r.note)it.note=r.note}return it}),
     moneyIn:onlyOld||sel.every(r=>r2(r.amount)<=0)?e.date:null};
   await saveBescheid(b,true);
+  for(const r of sel){if(!r.payee)continue;const inv=S.inv.find(x=>x.id===r.id);if(!inv)continue;const c=structuredClone(inv);
+    c.log=[...(c.log||[]),{date:e.date,text:`${SN(k)} hat laut Bescheid vom ${dfmt(e.date)} ${eur(+r.amount||0)} direkt an ${r.payee} gezahlt – dieser Teil muss nicht mehr überwiesen werden.`,short:`${SN(k)} zahlt ${eur(+r.amount||0)} direkt an ${r.payee}`}];await saveInvoice(c,true)}
   if(e.aiTake!==false)for(const r of sel){if(!r.ai)continue;const inv=S.inv.find(x=>x.id===r.id);if(!inv)continue;const c=structuredClone(inv);
     c.log=[...(c.log||[]),{date:e.date,text:`KI zum ${SN(k)}-Bescheid vom ${dfmt(e.date)}: ${r.ai.kommentar}`,...(r.ai.status?{short:r.ai.status}:{})}];await saveInvoice(c,true)}
   for(const r of sel){const inv=S.inv.find(x=>x.id===r.id);if(inv&&!inv[k]?.submitted){const c=structuredClone(inv);c[k].submitted=e.date;await saveInvoice(c,true)}}
