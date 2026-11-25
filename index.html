@@ -1483,7 +1483,7 @@ function fillProofRows(){const e=S.edit,k=e.k;
 function drawProof(){
   const e=S.edit,k=e.k;
   const rows=e.rows.map((r,i)=>{const inv=S.inv.find(x=>x.id===r.id);if(!inv)return "";const s=side(inv,k);
-    return `<div class="prow"><label class="pchk"><input type="checkbox" data-row="${i}" ${r.on?"checked":""}><span><b>${esc(title(inv))}</b><br><span class="status">${esc(inv.patient)} · ${dfmt(inv.invoiceDate)} · ${eur(inv.amount)} · erwartet ${eur(s.expected)}</span>${r.rejected?`<br><span style="color:var(--bad);font-size:12.5px">Im Bescheid abgelehnt (0 €) – wird als Ablehnung übernommen, danach unter „Klären“</span>`:""}${r.ambiguous?`<br><span style="color:var(--warn);font-size:12.5px">Gleicher Betrag wie eine andere Rechnung – bitte selbst auswählen</span>`:""}${r.already?`<br><span class="status" style="font-size:12.5px">Hat schon einen Bescheid (${eur(s.received)} vom ${dfmt(s.b?.date)})</span>`:""}${r.eligible!=null&&r.eligible<r2(inv.amount)-0.004?`<br><span style="color:var(--warn);font-size:12.5px"><b>Gekürzt:</b> ${eur(r2(inv.amount-r.eligible))}${r.note?" · "+esc(r.note):""}</span>`:""}</span></label>
+    return `<div class="prow"><label class="pchk"><input type="checkbox" data-row="${i}" ${r.on?"checked":""}><span><b>${esc(title(inv))}</b><br><span class="status">${esc(inv.patient)} · ${dfmt(inv.invoiceDate)} · ${eur(inv.amount)} · erwartet ${eur(s.expected)}</span>${r.rejected?`<br><span style="color:var(--bad);font-size:12.5px">Im Bescheid abgelehnt (0 €) – wird als Ablehnung übernommen, danach unter „Klären“</span>`:""}${r.ambiguous?`<br><span style="color:var(--warn);font-size:12.5px">Gleicher Betrag wie eine andere Rechnung – bitte selbst auswählen</span>`:""}${r.ai?`<br><span style="font-size:12.5px"><b>KI:</b> ${esc(r.ai.kommentar||"")}${r.ai.status?` <b>→ ${esc(r.ai.status)}</b>`:""}</span>`:""}${r.already?`<br><span class="status" style="font-size:12.5px">Hat schon einen Bescheid (${eur(s.received)} vom ${dfmt(s.b?.date)})</span>`:""}${r.eligible!=null&&r.eligible<r2(inv.amount)-0.004?`<br><span style="color:var(--warn);font-size:12.5px"><b>Gekürzt:</b> ${eur(r2(inv.amount-r.eligible))}${r.note?" · "+esc(r.note):""}</span>`:""}</span></label>
       <label class="f">Erstattet (€)<input class="num" inputmode="decimal" data-amt="${i}" value="${String((+r.amount||0).toFixed(2)).replace(".",",")}"></label></div>`}).join("");
   const used=new Set(e.rows.map(r=>r.id));
   const isOpen=x=>["todo","wait"].includes(side(x,k).state);
@@ -1501,17 +1501,43 @@ function drawProof(){
     ${e.busy?"":`<div class="sec"><h3>Zugeordnete Rechnungen</h3>${rows||`<p class="status" style="margin:0">Noch keine Rechnung zugeordnet.</p>${e.lines?.length?`<p class="status" style="margin:6px 0 0">Im Bescheid stehen:<br>${e.lines.map(l=>`${esc(l.person)} · ${esc(l.date)} · ${eur(l.amount)} → ${eur(l.refund)}`).join("<br>")}</p>`:""}`}
       ${others.length?`<label class="f">Weitere Rechnung zuordnen<select id="addRow"><option value="">– auswählen –</option>${others.map(x=>`<option value="${esc(x.id)}">${esc(title(x))} · ${esc(x.patient)} · ${dfmt(x.invoiceDate)} · ${eur(x.amount)}</option>`).join("")}</select></label>`:""}
       <div class="calc"><span>Summe</span><span><span class="num">${eur(sum)}</span>${prev>0.004?` <span class="status">+ ${eur(prev)} bereits erledigt</span>`:""} ${cmp}</span></div></div>`}
+    ${!e.busy&&e.rows.length&&S.settings.aiKey?`<div class="sec"><h3>KI-Kommentar</h3>
+      ${e.ai?.busy?`<p class="status" style="margin:0">Die KI liest den Bescheid …</p>`:e.ai?.err?`<p class="status" style="margin:0;color:var(--bad)">${esc(e.ai.err)}</p>`:e.rows.some(r=>r.ai)?`<label class="pchk"><input type="checkbox" id="aiTake" ${e.aiTake!==false?"checked":""}><span>KI-Kommentare beim Übernehmen in den Verlauf schreiben und als Stand auf die Karte setzen</span></label>`:`<p class="status" style="margin:0 0 6px">Die KI liest den ganzen Bescheid und schreibt zu jeder Rechnung einen kurzen Kommentar mit dem nächsten Schritt.</p>`}
+      ${e.ai?.busy?"":`<div class="btnrow"><button type="button" class="btn" data-act="paicom">${e.rows.some(r=>r.ai)?"Neu kommentieren":"KI-Kommentar erstellen"}</button></div>`}</div>`:""}
   `,`<button type="button" class="btn" data-act="pcancel">Abbrechen</button><button type="button" class="btn primary" data-act="papply" ${e.busy?"disabled":""}>Übernehmen</button>`);
   const sc=$("#scrim");
   sc.addEventListener("change",ev=>{const t=ev.target;
     if(t.dataset.row!==undefined){S.edit.rows[+t.dataset.row].on=t.checked;drawProof()}
     if(t.dataset.amt!==undefined){S.edit.rows[+t.dataset.amt].amount=numIn(t.value)||0;drawProof()}
     if(t.id==="pdate"){S.edit.date=t.value||today();proofMsg();drawProof()}
+    if(t.id==="aiTake"){S.edit.aiTake=t.checked}
     if(t.id==="addRow"&&t.value){const inv=S.inv.find(x=>x.id===t.value);const s=side(inv,S.edit.k);S.edit.rows.push({id:t.value,on:true,already:s.state==="done",amount:s.expected});drawProof()}});
   sc.addEventListener("click",async ev=>{const b=ev.target.closest("[data-act]");if(!b)return;
     if(b.dataset.act==="pcancel")return closeSheet();
     if(b.dataset.act==="pside"){S.edit.k=b.dataset.k;fillProofRows();proofMsg();return drawProof()}
+    if(b.dataset.act==="paicom")return proofAI();
     if(b.dataset.act==="papply")return applyProof(b)});
+}
+async function proofAI(){
+  const e=S.edit,k=e.k;e.ai={busy:true};drawProof();
+  const list=e.rows.map((r,i)=>{const inv=S.inv.find(x=>x.id===r.id);const s=side(inv,k);
+    return `Nr. ${i+1}: ${title(inv)}${inv.billing?` über ${inv.billing}`:""}, ${inv.patient}, Rechnung vom ${dfmt(inv.invoiceDate)} über ${eur(inv.amount)}, erwartet ${eur(s.expected)}, laut Bescheid erstattet ${eur(+r.amount||0)}${r.note?`, Hinweis: ${r.note}`:""}${(inv.log||[]).length?`. Bisher: ${inv.log.map(l=>dfmt(l.date)+" "+l.text).join(" / ")}`:""}`}).join("\n");
+  const q=`Lies den ${k==="bh"?"Beihilfe-Bescheid":"AXA-Bescheid"} unten. Schreibe für jede der folgenden Rechnungen einen kurzen Kommentar (höchstens 2 Sätze: was der Bescheid dazu sagt und was zu tun ist) und einen sehr kurzen Stand für die Rechnungskarte (höchstens 8 Wörter).
+Antworte NUR mit JSON, ohne weiteren Text, genau in dieser Form: [{"nr":1,"kommentar":"...","status":"..."}]
+Rechnungen:
+${list}`;
+  try{const r=await fetch(AI_URL,{method:"POST",headers:{"Content-Type":"application/json","X-App-Key":S.settings.aiKey},body:JSON.stringify({question:q,context:"Bescheid:\n"+(e.text||"").slice(0,9000),max_tokens:1500})});
+    const t=await r.text();
+    if(r.status===401)throw new Error("Schlüssel falsch. Bitte in den Einstellungen prüfen.");
+    if(!r.ok)throw new Error(`KI nicht erreichbar (${r.status}).${/limit|neuron|quota/i.test(t)?" Tageskontingent aufgebraucht, morgen wieder.":""}`);
+    const d=JSON.parse(t);if(d.error)throw new Error(d.error);
+    const m=String(d.answer||"").match(/\[[\s\S]*\]/);if(!m)throw new Error("Die KI hat keine verwertbare Antwort geliefert. Bitte noch einmal versuchen.");
+    const arr=JSON.parse(m[0]);
+    for(const x of arr){const row=e.rows[(+x.nr||0)-1];if(row&&x.kommentar)row.ai={kommentar:String(x.kommentar).slice(0,400),status:String(x.status||"").slice(0,80)}}
+    if(!e.rows.some(r=>r.ai))throw new Error("Die KI hat keine Kommentare zugeordnet.");
+    e.ai=null;e.aiTake=true}
+  catch(err){e.ai={err:err.message||"Fehler bei der KI-Anfrage"}}
+  if(S.edit===e)drawProof();
 }
 async function applyProof(btn){
   const e=S.edit,k=e.k,sel=e.rows.filter(r=>r.on);
@@ -1526,6 +1552,8 @@ async function applyProof(btn){
     items:sel.map(r=>{const inv=S.inv.find(x=>x.id===r.id);const it={invId:r.id,refund:r2(r.amount)};if(r.eligible!=null&&r.eligible<r2(inv.amount)-0.004){it.eligible=r.eligible;if(r.note)it.note=r.note}return it}),
     moneyIn:onlyOld||sel.every(r=>r2(r.amount)<=0)?e.date:null};
   await saveBescheid(b,true);
+  if(e.aiTake!==false)for(const r of sel){if(!r.ai)continue;const inv=S.inv.find(x=>x.id===r.id);if(!inv)continue;const c=structuredClone(inv);
+    c.log=[...(c.log||[]),{date:e.date,text:`KI zum ${SN(k)}-Bescheid vom ${dfmt(e.date)}: ${r.ai.kommentar}`,...(r.ai.status?{short:r.ai.status}:{})}];await saveInvoice(c,true)}
   for(const r of sel){const inv=S.inv.find(x=>x.id===r.id);if(inv&&!inv[k]?.submitted){const c=structuredClone(inv);c[k].submitted=e.date;await saveInvoice(c,true)}}
   await dbPut("meta",{key:"deleted",items:S.deleted});
   closeSheet();render();scheduleSync();

@@ -33,7 +33,7 @@ export default {
 
     let body;
     try { body = await request.json(); } catch { return new Response("Ungültige Anfrage", { status: 400, headers: h }); }
-    const question = String(body.question || "").slice(0, 1000);
+    const question = String(body.question || "").slice(0, 4000);
     const context = String(body.context || "").slice(0, MAX_INPUT);
     if (!question) return new Response("Frage fehlt", { status: 400, headers: h });
 
@@ -42,7 +42,8 @@ export default {
       { role: "user", content: (context ? `Unterlagen:\n${context}\n\n` : "") + `Frage: ${question}` },
     ];
     try {
-      const r = await env.AI.run(MODEL, { messages, max_tokens: 600, temperature: 0.2 });
+      const maxTokens = Math.min(1500, Math.max(100, Number(body.max_tokens) || 600));
+      const r = await env.AI.run(MODEL, { messages, max_tokens: maxTokens, temperature: 0.2 });
       return new Response(JSON.stringify({ answer: r.response || "" }), {
         headers: { ...h, "Content-Type": "application/json; charset=utf-8" },
       });
