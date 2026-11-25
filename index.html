@@ -2284,8 +2284,8 @@ function openSettings(focus){
     ${PROD?"":`<div class="sec"><h3>Testversion 2</h3>
       <p class="status" style="margin:0">Diese Version hat eigene Daten: einen eigenen Speicher auf dem Gerät und einen eigenen Drive-Ordner „${FOLDER_NAME}“. Die echte App und der Ordner „Arztrechnungen“ werden nicht verändert. Belege der echten App werden nur gelesen.</p></div>`}
     <div class="sec" id="secImport"><h3>${PROD?"Daten aus der bisherigen App":"Kopie der echten Daten"}</h3>
-      <p class="status" style="margin:0">${s.importedAt?`${PROD?"Übernommen":"Letzte Kopie"}: ${dfmt(s.importedAt)} um ${new Date(s.importedAt).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})} Uhr. `:""}${PROD?(s.importedAt?"<b>Erneut übernehmen ersetzt alles, was seitdem in dieser Version erfasst wurde.</b>":"Liest die bisherige Datendatei aus Drive. Sie bleibt als Sicherung liegen."):"Eine neue Kopie ersetzt alle Daten dieser Testversion."}</p>
-      <div class="btnrow"><button type="button" class="btn ${PROD&&s.importedAt?"":"primary"}" data-act="import" ${tokenValid()?"":"disabled"}>${PROD?(s.importedAt?"Erneut übernehmen":"Daten übernehmen"):"Kopie aus Drive holen"}</button><button type="button" class="btn" data-act="importfile">Aus Sicherungsdatei</button></div>
+      <p class="status" style="margin:0">${s.importedAt?`${PROD?"Übernommen":"Letzte Kopie"}: ${dfmt(s.importedAt)} um ${new Date(s.importedAt).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})} Uhr. `:""}${PROD?(s.importedAt?"<b>„Aus Sicherungsdatei“ ersetzt alle Daten auf allen Geräten. Nur im Notfall benutzen.</b>":"Liest die bisherige Datendatei aus Drive. Sie bleibt als Sicherung liegen."):"Eine neue Kopie ersetzt alle Daten dieser Testversion."}</p>
+      <div class="btnrow">${PROD&&s.importedAt?"":`<button type="button" class="btn primary" data-act="import" ${tokenValid()?"":"disabled"}>${PROD?"Daten übernehmen":"Kopie aus Drive holen"}</button>`}<button type="button" class="btn" data-act="importfile">Aus Sicherungsdatei</button></div>
       ${tokenValid()?"":`<p class="status" style="margin:0">Dafür erst unten bei Google Drive anmelden. Oder eine Sicherungsdatei wählen (Drive › Arztrechnungen › _App-Daten › Sicherungen).</p>`}
       <div id="importBox"></div></div>
     <div class="sec"><h3>Google Drive</h3>
@@ -2318,7 +2318,7 @@ function openSettings(focus){
       case "tokcheck":{pickToken();if(tokenValid()){if(!S.settings.driveLinked){S.settings.driveLinked=true;await dbPut("meta",{key:"settings",...S.settings})}toast("Anmeldung übernommen");closeSheet();render();syncNow();openSettings()}
         else toast("Keine gültige Anmeldung gefunden. Erst die normale App öffnen.");return}
       case "sync":closeSheet();return syncNow();
-      case "import":return importFromDrive();
+      case "import":if(PROD&&S.settings.importedAt)return;return importFromDrive();
       case "importfile":{const p=$("#pickBackup");p.value="";p.onchange=async()=>{const f=p.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!Array.isArray(d.invoices))throw 0;importPreview(d,"Sicherungsdatei "+f.name)}catch{setStatus("Datei nicht lesbar. Bitte eine Sicherung der App wählen.",true)}};p.click();return}
       case "importok":return importApply();
       case "importno":S.edit.imp=null;$("#importBox").innerHTML="";return;
