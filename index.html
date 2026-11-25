@@ -233,7 +233,9 @@ header.top h1{font-size:26px;letter-spacing:-.02em}
 .task .t{font-weight:700;font-size:14px}
 .hrow{display:flex;gap:12px;padding:4px 0;border-bottom:1px solid var(--line)} .hrow .num{min-width:84px;color:var(--muted)}
 .btn.link.inl{padding:0;font-size:inherit;text-decoration:underline}
-#sumBar{cursor:default}
+#sumBar{cursor:pointer}
+.ov-row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line,#e5e7eb);cursor:pointer;text-align:left;width:100%;background:none;border-left:0;border-right:0;border-bottom:0;font:inherit;color:inherit}
+.ov-row:first-child{border-top:0}.ov-row .s{font-size:12.5px;opacity:.75}.ov-row b{white-space:nowrap}
 .mline{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
 .mline .btn{flex:none}
 </style>
@@ -674,14 +676,54 @@ function cardHtml({i,c},o={}){
     ${(l=>l?`<div class="via" style="margin-top:4px">${esc(l.short)} (${dfmt(l.date)})</div>`:"")([...(i.log||[])].filter(x=>x.short).sort((a,b)=>(a.date||"").localeCompare(b.date||"")).pop())}
   </button>`;
 }
+/* ---- Überblick: Zahlen mit Rechnungen, Bescheide/Anträge, Geldfluss ---- */
+function overviewSheet(focus){
+  const rows=S.inv.map(i=>({i,c:calc(i)}));
+  const row=(i,amt,sub)=>`<button type="button" class="ov-row" data-ovinv="${esc(i.id)}"><span><span>${esc(i.patient)} · ${esc(title(i))}</span><br><span class="s">${sub}</span></span><b>${eur(amt)}</b></button>`;
+  const grp=(key,label,expl,items)=>{const sum=items.reduce((a,x)=>a+x.amt,0);
+    return `<details class="sec" ${focus===key?"open":""}><summary><b>${label}</b> · ${eur(sum)} <span class="status">(${items.length})</span></summary><p class="status" style="margin:6px 0">${expl}</p>${items.length?items.sort((a,b)=>b.amt-a.amt).map(x=>row(x.i,x.amt,x.sub)).join(""):`<p class="status">Nichts.</p>`}</details>`};
+  const pay=[],way=[],req=[],you=[];
+  for(const {i,c} of rows){
+    if(c.unpaid)pay.push({i,amt:c.open,sub:`${STEP_LABEL[c.step]}${i.dueDate?` · fällig ${dfmt(i.dueDate)}`:""}${c.step!=="bezahlen"?" · erst bezahlen, wenn die Erstattung da ist":""}`});
+    for(const x of [c.bh,c.pkv]){const n=SN(x.k);
+      if(x.state==="wait")req.push({i,amt:x.expected,sub:`${n} · eingereicht am ${dfmt(x.s.submitted)} · ${x.waitDays??""}${x.waitDays!=null?" Tage":""}`});
+      else if(x.state==="todo")you.push({i,amt:x.expected,sub:`${n} · noch einreichen`});
+      else if(x.moneyOpen)way.push({i,amt:x.received,sub:`${n} · Bescheid vom ${dfmt(x.b?.date)} · Geld noch nicht bestätigt`});
+      if(x.cutOpen&&["ehe","original"].includes(x.reason))you.push({i,amt:x.diff,sub:`${n} · ${TASK_LABEL[REASON_TASK[x.reason]]}`})}}
+  // Bescheide / Anträge
+  const bes=[...S.besch].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,12).map(b=>{
+    const its=b.items.map(it=>({it,inv:S.inv.find(x=>x.id===it.invId)})).filter(x=>x.inv);
+    const sum=its.reduce((a,x)=>a+(+x.it.refund||0),0),zero=its.filter(x=>(+x.it.refund||0)<=0.004).length;
+    return `<details class="ov-b" style="padding:8px 0;border-top:1px solid var(--line,#e5e7eb)"><summary><b>${SN(b.k)} ${dfmt(b.date)}</b>${b.appId?` · ${b.k==="pkv"?"Vorgang":"Antrag"} ${esc(b.appId)}`:""} · ${eur(b.payout??sum)} · ${b.moneyIn?`Geld da ${dfmt(b.moneyIn)}`:sum>0.004?`<span style="color:var(--warn)">Geld offen</span>`:"kein Geld"}${zero?` · <span style="color:var(--bad)">${zero} abgelehnt</span>`:""}</summary>
+      ${its.map(x=>row(x.inv,+x.it.refund||0,(+x.it.refund||0)<=0.004?`abgelehnt${x.it.note?": "+esc(x.it.note.slice(0,90))+"…":""}`:x.it.eligible!=null?"gekürzt":"erstattet")).join("")}</details>`}).join("");
+  // Geldfluss
+  const inflow=[...way.map(x=>({...x,when:"kommt bald"})),...req.map(x=>({...x,when:"nach Bescheid"}))];
+  const flow=`<div class="sec"><h3>Geldfluss</h3>
+    <div class="calc"><span>Kommt rein: unterwegs</span><b>${eur(way.reduce((a,x)=>a+x.amt,0))}</b></div>
+    <div class="calc"><span>Kommt rein: nach Bescheid</span><b>${eur(req.reduce((a,x)=>a+x.amt,0))}</b></div>
+    <div class="calc"><span>Kommt rein: wenn du handelst</span><b>${eur(you.reduce((a,x)=>a+x.amt,0))}</b></div>
+    <div class="calc"><span>Geht raus: an Ärzte</span><b>${eur(pay.reduce((a,x)=>a+x.amt,0))}</b></div>
+    ${pay.filter(x=>x.i.dueDate).sort((a,b)=>a.i.dueDate.localeCompare(b.i.dueDate)).slice(0,5).map(x=>row(x.i,x.amt,`fällig ${dfmt(x.i.dueDate)}`)).join("")}</div>`;
+  sheet("Überblick",`
+    <p class="status" style="margin:10px 0 0">Tippe auf eine Zeile, um die Rechnung zu öffnen.</p>
+    ${grp("you","Wartet auf dich","Dieses Geld kommt erst, wenn du etwas tust: einreichen oder Unterlagen nachreichen.",you)}
+    ${grp("way","Unterwegs","Der Bescheid ist da. Sobald das Geld auf dem Konto ist, unter „Läuft“ bestätigen.",way)}
+    ${grp("req","Beantragt","Eingereicht, der Bescheid fehlt noch.",req)}
+    ${grp("pay","Offen beim Arzt","Noch nicht bezahlt. Regel: erst bezahlen, wenn die Erstattung da ist.",pay)}
+    ${flow}
+    <div class="sec"><h3>Bescheide</h3>${bes||`<p class="status">Noch keine Bescheide.</p>`}</div>
+  `,`<button type="button" class="btn" data-act="ovclose">Schließen</button>`);
+  $("#scrim").addEventListener("click",ev=>{const r=ev.target.closest("[data-ovinv]");if(r){closeSheet();return openView(r.dataset.ovinv)}
+    if(ev.target.closest('[data-act="ovclose"]'))closeSheet()});
+}
 function renderSummary(rows){
   // Erstattungen nach Stand: unterwegs (Bescheid da, Geld fehlt), beantragt (Bescheid fehlt), wartet auf dich (einreichen/nachreichen)
   let pay=0,way=0,req=0,you=0;
   for(const {c} of rows){if(c.unpaid)pay+=c.open;
     for(const x of [c.pkv,c.bh]){if(x.state==="wait")req+=x.expected;else if(x.state==="todo")you+=x.expected;else if(x.moneyOpen)way+=x.received;
       if(x.cutOpen&&["ehe","original"].includes(x.reason))you+=x.diff}}
-  const ex=[["Unterwegs",way,"Bescheid da, Geld noch nicht auf dem Konto"],["Beantragt",req,"eingereicht, Bescheid fehlt noch"],["Wartet auf dich",you,"erst einreichen oder Unterlagen nachreichen"]].filter(x=>x[1]>0.004);
-  $("#sumBar").innerHTML=`<span class="vals"><span class="pay">Offen beim Arzt <b>${eur(pay)}</b></span>${ex.length?ex.map(([l,v,t])=>`<span class="exp" title="${t}">${l} <b>${eur(v)}</b></span>`).join(""):`<span class="exp">Erstattung erwartet <b>${eur(0)}</b></span>`}</span>`;
+  const ex=[["Unterwegs",way,"way"],["Beantragt",req,"req"],["Wartet auf dich",you,"you"]].filter(x=>x[1]>0.004);
+  $("#sumBar").innerHTML=`<span class="vals"><span class="pay" data-ov="pay">Offen beim Arzt <b>${eur(pay)}</b></span>${ex.length?ex.map(([l,v,f])=>`<span class="exp" data-ov="${f}">${l} <b>${eur(v)}</b></span>`).join(""):`<span class="exp">Erstattung erwartet <b>${eur(0)}</b></span>`}</span><span class="status" style="font-size:12px;opacity:.8;margin-left:auto">Überblick ›</span>`;
   $("#sub").textContent=`${S.inv.length} Rechnungen · ${S.besch.length} Bescheide`;
 }
 function renderBanner(){
@@ -782,6 +824,7 @@ document.addEventListener("click",e=>{
     openView(id,c.dataset.task||null);}
 });
 $("#btnAdd").addEventListener("click",async()=>{const r=await scanDocument("Rechnung scannen");if(r)openNew(r)});
+$("#sumBar").addEventListener("click",ev=>{const f=ev.target.closest("[data-ov]")?.dataset.ov;overviewSheet(f||"you")});
 $("#btnSettings").addEventListener("click",()=>openSettings());
 function closeSearch(){S.searchOpen=false;S.q="";$("#q").value="";$("#qClear").hidden=true;$("#searchRow").hidden=true;$("#btnSearch").setAttribute("aria-pressed","false")}
 $("#btnSearch").addEventListener("click",()=>{if(S.searchOpen)closeSearch();else{S.searchOpen=true;S.select=null;$("#searchRow").hidden=false;$("#btnSearch").setAttribute("aria-pressed","true");$("#q").focus()}render()});
