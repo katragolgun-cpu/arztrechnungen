@@ -682,13 +682,13 @@ function overviewSheet(focus){
   const row=(i,amt,sub)=>`<button type="button" class="ov-row" data-ovinv="${esc(i.id)}"><span><span>${esc(i.patient)} · ${esc(title(i))}</span><br><span class="s">${sub}</span></span><b>${eur(amt)}</b></button>`;
   const grp=(key,label,expl,items)=>{const sum=items.reduce((a,x)=>a+x.amt,0);
     return `<details class="sec" ${focus===key?"open":""}><summary><b>${label}</b> · ${eur(sum)} <span class="status">(${items.length})</span></summary><p class="status" style="margin:6px 0">${expl}</p>${items.length?items.sort((a,b)=>b.amt-a.amt).map(x=>row(x.i,x.amt,x.sub)).join(""):`<p class="status">Nichts.</p>`}</details>`};
-  const pay=[],way=[],req=[],you=[];
+  const pay=[],way=[],req=[],you=[],old=[];const lim=addDays(today(),-21);
   for(const {i,c} of rows){
     if(c.unpaid)pay.push({i,amt:c.open,sub:`${STEP_LABEL[c.step]}${i.dueDate?` · fällig ${dfmt(i.dueDate)}`:""}${c.step!=="bezahlen"?" · erst bezahlen, wenn die Erstattung da ist":""}`});
     for(const x of [c.bh,c.pkv]){const n=SN(x.k);
       if(x.state==="wait")req.push({i,amt:x.expected,sub:`${n} · eingereicht am ${dfmt(x.s.submitted)} · ${x.waitDays??""}${x.waitDays!=null?" Tage":""}`});
       else if(x.state==="todo")you.push({i,amt:x.expected,sub:`${n} · noch einreichen`});
-      else if(x.moneyOpen)way.push({i,amt:x.received,sub:`${n} · Bescheid vom ${dfmt(x.b?.date)} · Geld noch nicht bestätigt`});
+      else if(x.moneyOpen)((x.b?.date||"")<lim?old:way).push({i,amt:x.received,sub:`${n} · Bescheid vom ${dfmt(x.b?.date)} · Geld noch nicht bestätigt`});
       if(x.cutOpen&&["ehe","original"].includes(x.reason))you.push({i,amt:x.diff,sub:`${n} · ${TASK_LABEL[REASON_TASK[x.reason]]}`})}}
   // Bescheide / Anträge
   const bes=[...S.besch].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,12).map(b=>{
@@ -709,6 +709,7 @@ function overviewSheet(focus){
     ${grp("you","Wartet auf dich","Dieses Geld kommt erst, wenn du etwas tust: einreichen oder Unterlagen nachreichen.",you)}
     ${grp("way","Unterwegs","Der Bescheid ist da. Sobald das Geld auf dem Konto ist, unter „Läuft“ bestätigen.",way)}
     ${grp("req","Beantragt","Eingereicht, der Bescheid fehlt noch.",req)}
+    ${old.length?grp("old","Geld prüfen","Bescheid ist älter als 3 Wochen, aber „Geld da“ wurde nie bestätigt. Vermutlich ist das Geld längst auf dem Konto – bitte prüfen und unter „Läuft“ bestätigen.",old):""}
     ${grp("pay","Offen beim Arzt","Noch nicht bezahlt. Regel: erst bezahlen, wenn die Erstattung da ist.",pay)}
     ${flow}
     <div class="sec"><h3>Bescheide</h3>${bes||`<p class="status">Noch keine Bescheide.</p>`}</div>
@@ -718,11 +719,11 @@ function overviewSheet(focus){
 }
 function renderSummary(rows){
   // Erstattungen nach Stand: unterwegs (Bescheid da, Geld fehlt), beantragt (Bescheid fehlt), wartet auf dich (einreichen/nachreichen)
-  let pay=0,way=0,req=0,you=0;
+  let pay=0,way=0,req=0,you=0,old=0;const lim=addDays(today(),-21);
   for(const {c} of rows){if(c.unpaid)pay+=c.open;
-    for(const x of [c.pkv,c.bh]){if(x.state==="wait")req+=x.expected;else if(x.state==="todo")you+=x.expected;else if(x.moneyOpen)way+=x.received;
+    for(const x of [c.pkv,c.bh]){if(x.state==="wait")req+=x.expected;else if(x.state==="todo")you+=x.expected;else if(x.moneyOpen){if((x.b?.date||"")<lim)old+=x.received;else way+=x.received}
       if(x.cutOpen&&["ehe","original"].includes(x.reason))you+=x.diff}}
-  const ex=[["Unterwegs",way,"way"],["Beantragt",req,"req"],["Wartet auf dich",you,"you"]].filter(x=>x[1]>0.004);
+  const ex=[["Unterwegs",way,"way"],["Beantragt",req,"req"],["Wartet auf dich",you,"you"],["Geld prüfen",old,"old"]].filter(x=>x[1]>0.004);
   $("#sumBar").innerHTML=`<span class="vals"><span class="pay" data-ov="pay">Offen beim Arzt <b>${eur(pay)}</b></span>${ex.length?ex.map(([l,v,f])=>`<span class="exp" data-ov="${f}">${l} <b>${eur(v)}</b></span>`).join(""):`<span class="exp">Erstattung erwartet <b>${eur(0)}</b></span>`}</span><span class="status" style="font-size:12px;opacity:.8;margin-left:auto">Überblick ›</span>`;
   $("#sub").textContent=`${S.inv.length} Rechnungen · ${S.besch.length} Bescheide`;
 }
