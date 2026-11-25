@@ -1498,7 +1498,7 @@ Antworte NUR mit JSON: {"art":"rechnung","person":"","arzt":"","abrechnungsstell
     const art=String(ans.art||"").toLowerCase();
     e.aiFill={sug,warn:art==="mahnung"?"Das ist eine Zahlungserinnerung oder Mahnung, keine Rechnung mit Einzelleistungen. Beihilfe und AXA erstatten darauf nichts. Bitte die Originalrechnung oder ein Duplikat anfordern.":"",
       msg:got.length?`KI hat ergänzt: ${got.join(", ")}.${sug.length?" Abweichungen oben prüfen.":" Bitte prüfen."}`:sug.length?"Die KI hat Abweichungen gefunden.":"Die KI hat gegengelesen: keine Abweichungen."};
-    drawEditor();if(inv.doctor||inv.billing)suggestFrom();checkKnownIban();drawAiBox();}
+    const st=$("#edStatus")?.textContent||"";drawEditor();if(st)setStatus(st);if(inv.doctor||inv.billing)suggestFrom();checkKnownIban();drawAiBox();}
   catch(err){e.aiFill={msg:err.message||"Fehler bei der KI-Anfrage",err:true};drawAiBox()}
 }
 
