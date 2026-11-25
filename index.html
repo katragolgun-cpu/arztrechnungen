@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>PKV & Beihilfe</title>
-<meta name="theme-color" content="#163a6b">
+<meta name="theme-color" content="#F4F3EF">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -238,6 +239,57 @@ header.top h1{font-size:26px;letter-spacing:-.02em}
 .ov-row:first-child{border-top:0}.ov-row .s{font-size:12.5px;opacity:.75}.ov-row b{white-space:nowrap}
 .mline{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
 .mline .btn{flex:none}
+/* ===== Neues Aussehen (v84): hell und ruhig ===== */
+:root{--bg:#F4F3EF;--surface:#FFFFFF;--sunken:#EEECE7;--line:#E6E3DC;--ink:#1C1F1E;--muted:#5E6662;
+  --accent:#1C1F1E;--accent-ink:#FFFFFF;--ok:#2F6B5E;--ok-soft:#E3EFE9;--warn:#9A4B12;--warn-soft:#F6E8DA;--bad:#A8323A;--bad-soft:#FCE4E4;--wait:#2F5C51;--wait-soft:#EEF6F2;
+  --r:24px;--shadow:0 1px 2px rgba(0,0,0,.04);--f-ui:Inter,system-ui,-apple-system,sans-serif;--f-num:Inter,system-ui,sans-serif;color-scheme:light}
+@media (prefers-color-scheme: dark){:root{--bg:#F4F3EF;--surface:#FFFFFF;--sunken:#EEECE7;--line:#E6E3DC;--ink:#1C1F1E;--muted:#5E6662;--accent:#1C1F1E;--accent-ink:#FFFFFF;
+  --ok:#2F6B5E;--ok-soft:#E3EFE9;--warn:#9A4B12;--warn-soft:#F6E8DA;--bad:#A8323A;--bad-soft:#FCE4E4;--wait:#2F5C51;--wait-soft:#EEF6F2;--shadow:0 1px 2px rgba(0,0,0,.04);color-scheme:light}}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+header.top h1{font-size:28px;letter-spacing:-.02em}
+header.top p{font-size:14px}
+.card,.bcard,.sumbar{border:0;border-radius:var(--r);box-shadow:var(--shadow)}
+.btn{border-radius:999px;min-height:44px;padding:0 16px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
+.btn.primary{background:var(--ink);border-color:var(--ink)}
+.btn.go{background:var(--ok);border-color:var(--ok);color:#fff}
+.iconbtn.sq{border-radius:999px;border:0;background:var(--surface);box-shadow:var(--shadow)}
+.fab{width:auto;height:56px;padding:0 24px;border-radius:28px;left:50%;right:auto;transform:translateX(-50%);gap:10px;font:600 15px var(--f-ui);background:var(--ink);color:#fff;box-shadow:0 8px 24px rgba(28,31,30,.18)}
+.fab svg{width:20px;height:20px}
+.bnav{background:rgba(244,243,239,.94);border-top:1px solid var(--line);backdrop-filter:blur(10px)}
+.bnav button[aria-current="true"]{color:var(--ink)} .bnav button[aria-current="true"] .ic{background:var(--surface)}
+.bnav .n{background:var(--ink)}
+body.home #sumBar{display:none}
+body.home #people{order:10}
+.h-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.h-tile{border:0;border-radius:24px;padding:18px;display:flex;flex-direction:column;gap:6px;text-align:left;font:inherit;color:inherit;cursor:pointer}
+body.home #people{margin-bottom:84px}
+.h-tile .l{font-size:13px;font-weight:600} .h-tile .v{font-size:24px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums} .h-tile .s{font-size:13px}
+.h-tile.mint{background:#E3EFE9} .h-tile.mint .l{color:#2F5C51} .h-tile.mint .s{color:#3E5A53}
+.h-tile.sand{background:#F6E8DA} .h-tile.sand .l{color:#7A4A1E} .h-tile.sand .s{color:#6B4A2C}
+.h-tile.white{background:#fff} .h-tile.white .l,.h-tile.white .s{color:var(--muted)} .h-tile.white .v{font-size:20px}
+.h-sec{display:flex;flex-direction:column;gap:12px}
+.h-sec>h2{margin:0;font-size:19px;font-weight:700}
+.h-box{background:#fff;border-radius:24px;padding:6px 16px;display:flex;flex-direction:column}
+.h-task{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--sunken)}
+.h-task:first-child{border-top:0}
+.h-task .t{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;text-align:left;background:none;border:0;font:inherit;color:inherit;padding:0;cursor:pointer}
+.h-task .t b{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h-task .t span{font-size:13px;color:var(--muted)}
+.h-task .btn{flex:none}
+.h-task .btn.ghost{background:#fff;border:1px solid #D9D6CF;color:var(--ink)}
+.ini{width:40px;height:40px;border-radius:20px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex:none}
+.h-money{background:#fff;border-radius:24px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.h-money .hd{display:flex;justify-content:space-between;align-items:baseline;font-size:15px;font-weight:600}
+.h-money .hd b{font-size:17px;font-variant-numeric:tabular-nums}
+.h-bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--sunken);gap:2px}
+.h-bar i{display:block;background:#5FA38E}.h-bar i+i{background:#C9DED6}
+.h-hi{display:flex;align-items:center;gap:12px;background:#EEF6F2;border-radius:18px;padding:12px}
+.h-hi div{display:flex;flex-direction:column;gap:2px;flex:1}.h-hi b{font-size:14px}.h-hi span{font-size:13px;color:#3E5A53}
+.h-hi .a{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;flex:none}
+.h-line{display:flex;justify-content:space-between;gap:10px;font-size:14px}
+.h-line div{display:flex;flex-direction:column;gap:2px}.h-line span{font-size:13px;color:var(--muted)}
+.h-line .a{font-weight:600;color:#3D4441;font-variant-numeric:tabular-nums;white-space:nowrap}
+.h-more{align-self:flex-start;background:none;border:0;padding:0;color:var(--ok);font:600 14px var(--f-ui);cursor:pointer;min-height:32px}
 </style>
 </head>
 <body>
@@ -253,7 +305,7 @@ header.top h1{font-size:26px;letter-spacing:-.02em}
   <nav class="people" id="people" aria-label="Personen"></nav>
   <section class="list" id="list" aria-live="polite"><div class="empty">Wird geladen …</div></section>
 </div>
-<button class="fab" id="btnAdd" type="button" aria-label="Rechnung hinzufügen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+<button class="fab" id="btnAdd" type="button" aria-label="Rechnung fotografieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Fotografieren</button>
 <nav class="bnav" id="bnav" aria-label="Bereiche"></nav>
 <div class="selbar" id="selBar" hidden></div>
 <input type="file" id="pick" accept="image/*,application/pdf" hidden>
@@ -501,7 +553,7 @@ function matchQ(i,q){
 }
 
 /* ================= Hauptseite: drei Bereiche ================= */
-const AREAS=[{id:"zutun",label:"Zu tun"},{id:"laeuft",label:"Läuft"},{id:"archiv",label:"Archiv"}];
+const AREAS=[{id:"zutun",label:"Start"},{id:"laeuft",label:"Läuft"},{id:"archiv",label:"Archiv"}];
 const AREA_ICON={
   zutun:'<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
   laeuft:'<path d="M7 3h10M7 21h10"/><path d="M8 3c0 5 8 6 8 9s-8 4-8 9M16 3c0 5-8 6-8 9s8 4 8 9"/>',
@@ -516,8 +568,14 @@ function counts(rows){
 // Bescheid wartet auf Geld: Betrag > 0, noch nicht als eingegangen markiert
 function geldOffen(b){return !b.moneyIn&&b.items.some(it=>r2(it.refund)>0.004&&isLatest(b,it))}
 function isLatest(b,it){const l=itemsOf(it.invId,b.k);return l.length&&l[l.length-1].b===b}
+const PCOL={Olgun:["#E6E3F5","#4A3F86"],Pinar:["#F7E1EC","#86305C"],"Pınar":["#F7E1EC","#86305C"],Ikra:["#FCE4E4","#8A2F3A"],Hamza:["#DDEBF7","#24527A"]};
+const ini=(name,size)=>{const [bg,fg]=PCOL[name]||["#EEECE7","#3D4441"];return `<span class="ini" style="background:${bg};color:${fg}${size?`;width:${size}px;height:${size}px;border-radius:${size/2}px`:""}" aria-hidden="true">${esc((name||"?").slice(0,1).toUpperCase())}</span>`};
+function greet(){const hr=new Date().getHours(),w=hr<11?"Guten Morgen":hr<18?"Hallo":"Guten Abend";const me=S.settings.people?.[0]?.name;
+  return {t:me?`${w}, ${me}`:w,d:new Date().toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"})}}
 function render(){
   const rows=rowsFor();
+  const gr=greet();const h1=$("header.top h1");if(h1&&PROD){h1.textContent=gr.t;$("#sub").textContent=gr.d}
+  document.body.classList.toggle("home",S.area==="zutun"&&!S.searchOpen&&!S.select);
   renderSummary(rows);renderBanner();
   const n=counts(rows);
   if(PROD&&S.loaded){const all=S.inv.reduce((a,i)=>a+calc(i).tasks.length,0);try{if(navigator.setAppBadge){all?navigator.setAppBadge(all):navigator.clearAppBadge()}}catch{}}
@@ -530,7 +588,7 @@ function render(){
   if(!S.loaded){L.innerHTML=`<div class="empty">Wird geladen …</div>`;return}
   if(!S.inv.length){L.innerHTML=welcomeHtml();return}
   if(S.searchOpen){L.innerHTML=searchHtml(rows);return}
-  L.innerHTML=S.area==="zutun"?zutunHtml(rows):S.area==="laeuft"?laeuftHtml(rows):archivHtml(rows);
+  L.innerHTML=S.area==="zutun"?(S.select?zutunHtml(rows):homeHtml(rows)):S.area==="laeuft"?laeuftHtml(rows):archivHtml(rows);
 }
 function welcomeHtml(){
   if(PROD&&G.busy)return `<div class="empty">Daten werden aus Drive geladen …</div>`;
@@ -554,6 +612,46 @@ function grp(key,label,sub,right,inner,defOpen=true){
 }
 function sectionHead(t,n,extra=""){return `<div class="area-h"><h2>${esc(t)}</h2>${n!=null?`<span class="cnt">${n}</span>`:""}${extra}</div>`}
 
+/* ---- Startseite (neues Aussehen): Was muss ich tun? Wo steht mein Geld? ---- */
+function homeTasks(rows){
+  const out=[];
+  for(const {i,c} of rows)for(const t of c.tasks){
+    let sub,btn,cls="";
+    if(t.t==="einreichen"){const s=[c.pkv,c.bh].filter(x=>x.state==="todo").map(x=>SN(x.k));sub=`bei ${s.join(" und ")} einreichen`;btn="Einreichen"}
+    else if(t.t==="bezahlen"){sub=`${eur(c.open)} bezahlen${c.due?`, fällig ${dfmt(c.due)}`:""}`;btn="Bezahlen";cls=c.overdue||c.dueSoon?"":"ghost"}
+    else{sub=TASK_LABEL[t.t]||"Klären";btn="Ansehen";cls="ghost"}
+    out.push({i,c,t,sub,btn,cls,ord:taskOrder(t),due:c.due||"9"})}
+  return out.sort((a,b)=>a.ord-b.ord||a.due.localeCompare(b.due));
+}
+function homeHtml(rows){
+  const tasks=homeTasks(rows),m=moneyModel(rows);
+  const W=[...m.way.values()],R=[...m.req.values()].sort((a,b)=>b.lab.localeCompare(a.lab));
+  const wSum=tot(W),rSum=tot(R),inSum=wSum+rSum;
+  const nextDue=m.pay.filter(x=>x.i.dueDate||calc(x.i).due).map(x=>({x,d:calc(x.i).due})).sort((a,b)=>a.d.localeCompare(b.d))[0];
+  let h=`<div class="h-tiles">
+    <button type="button" class="h-tile mint" data-act="ovopen" data-f="in"><span class="l">${wSum>0.004?"Kommt bald":"Beantragt"}</span><span class="v">${eur(wSum>0.004?wSum:rSum)}</span><span class="s">${wSum>0.004?W.map(g=>g.lab.split("-Bescheid")[0]).filter((v,j,a)=>a.indexOf(v)===j).join(" und ")+" · Bescheid da":"Bescheid fehlt noch"}</span></button>
+    <button type="button" class="h-tile sand" data-act="ovopen" data-f="pay"><span class="l">Zu tun</span><span class="v">${tasks.length} Aufgabe${tasks.length===1?"":"n"}</span><span class="s">${nextDue?`nächste Zahlung bis ${dfmt(nextDue.d)}`:tasks.length?"jetzt erledigen":"alles erledigt"}</span></button></div>`;
+  h+=`<section class="h-sec"><h2>Was muss ich tun?</h2>`;
+  if(!tasks.length)h+=`<div class="h-box"><div class="h-task"><span class="t"><b>Nichts zu tun</b><span>Alles wartet auf andere oder ist erledigt.</span></span></div></div>`;
+  else{h+=`<div class="h-box">${tasks.map(x=>`<div class="h-task">${ini(x.i.patient)}<button type="button" class="t" data-open="${esc(x.i.id)}"><b>${esc(title(x.i))}</b><span>${esc(x.i.patient)} · ${esc(x.sub)}</span></button><button type="button" class="btn ${x.cls||"primary"}" data-open="${esc(x.i.id)}">${x.btn}</button></div>`).join("")}</div>`;
+    const ein=tasks.filter(x=>x.t.t==="einreichen").length;
+    if(ein>1)h+=`<button type="button" class="h-more" data-act="selstart">Mehrere auf einmal als eingereicht markieren</button>`}
+  h+=`</section><section class="h-sec"><h2>Wo steht mein Geld?</h2>`;
+  if(inSum>0.004){
+    h+=`<div class="h-money"><div class="hd"><span>Kommt rein</span><b>${eur(inSum)}</b></div>
+      <div class="h-bar">${wSum>0.004?`<i style="width:${Math.max(4,Math.round(wSum/inSum*100))}%"></i>`:""}<i style="flex:1"></i></div>`;
+    for(const g of W)h+=`<div class="h-hi"><div><b>${esc(g.lab)}</b><span>kommt in den nächsten Tagen · ${g.items.length} Rechnung${g.items.length>1?"en":""}</span></div><span class="a">${eur(g.amt)}</span></div>
+      ${g.bid?`<button type="button" class="btn go" data-act="bmoney" data-bid="${esc(g.bid)}">${eur(g.amt)} sind angekommen</button>`:""}`;
+    if(R.length)h+=`<div style="display:flex;flex-direction:column;gap:10px">${R.map(g=>`<div class="h-line"><div><span style="color:var(--ink);font-size:14px;font-weight:500">${esc(g.lab)}</span><span>${g.items.length} Rechnung${g.items.length>1?"en":""} · Bescheid fehlt · geschätzt</span></div><span class="a">${eur(g.amt)}</span></div>`).join("")}</div>`;
+    h+=`<button type="button" class="h-more" data-act="ovopen" data-f="in">Alle Rechnungen dahinter</button></div>`}
+  h+=`<div class="h-tiles">
+    <button type="button" class="h-tile white" data-act="ovopen" data-f="you"><span class="l">Wartet auf dich</span><span class="v">${eur(tot(m.you))}</span><span class="s">${m.you.length?"kommt, wenn du handelst":"nichts offen"}</span></button>
+    <button type="button" class="h-tile white" data-act="ovopen" data-f="pay"><span class="l">Geht raus an Ärzte</span><span class="v">${eur(tot(m.pay))}</span><span class="s" style="${nextDue&&calc(nextDue.x.i).dueSoon?"color:var(--warn)":""}">${nextDue?`${esc(title(nextDue.x.i).split(" (")[0])} fällig ${dfmt(nextDue.d)}`:"nichts offen"}</span></button></div>`;
+  if(tot(m.old)>0.004)h+=`<button type="button" class="h-tile white" data-act="ovopen" data-f="old"><span class="l">Geld prüfen</span><span class="v">${eur(tot(m.old))}</span><span class="s">Bescheid älter als 3 Wochen, Eingang nie bestätigt</span></button>`;
+  h+=`</section>`;
+  if(S.person==="alle"&&S.settings.aiKey)h+=`<button type="button" class="h-more" data-act="aioverview">KI-Überblick: Was steht an?</button>`;
+  return h;
+}
 /* ---- Zu tun: was ich selbst machen muss ---- */
 function zutunHtml(rows){
   const t=guideTasks(rows);
@@ -678,8 +776,8 @@ function cardHtml({i,c},o={}){
   </button>`;
 }
 /* ---- Überblick: Zahlen mit Rechnungen, Bescheide/Anträge, Geldfluss ---- */
-function overviewSheet(focus){
-  const rows=S.inv.map(i=>({i,c:calc(i)}));const lim=addDays(today(),-21);
+function moneyModel(rows){
+  const lim=addDays(today(),-21);
   const way=new Map(),req=new Map(),old=[],you=[],pay=[];
   const add=(m,key,lab,sub,i,amt,bid)=>{const g=m.get(key)||{lab,sub,amt:0,items:[],bid};g.amt+=amt;g.items.push({i,amt});m.set(key,g)};
   for(const {i,c} of rows){
@@ -690,7 +788,10 @@ function overviewSheet(focus){
       else if(x.moneyOpen){if((x.b?.date||"")<lim)old.push({i,amt:x.received,sub:`${n}-Bescheid vom ${dfmt(x.b?.date)}`});
         else add(way,x.b?.id||x.k,`${n}-Bescheid vom ${dfmt(x.b?.date)}`,"kommt in den nächsten Tagen",i,x.received,x.b?.id)}
       if(x.cutOpen&&["ehe","original"].includes(x.reason))you.push({i,amt:x.diff,sub:TASK_LABEL[REASON_TASK[x.reason]]})}}
-  const tot=a=>a.reduce((s,x)=>s+x.amt,0);
+  return {way,req,old,you,pay}}
+const tot=a=>a.reduce((s,x)=>s+x.amt,0);
+function overviewSheet(focus){
+  const {way,req,old,you,pay}=moneyModel(S.inv.map(i=>({i,c:calc(i)})));
   const inv=x=>`<button type="button" class="ov-row" data-ovinv="${esc(x.i.id)}"><span>${esc(x.i.patient)} · ${esc(title(x.i))}${x.sub?`<br><span class="s">${x.sub}</span>`:""}</span><b>${eur(x.amt)}</b></button>`;
   const grp=g=>`<details style="border-top:1px solid var(--line,#e5e7eb);padding:6px 0"><summary style="display:flex;justify-content:space-between;gap:10px;cursor:pointer"><span>${g.lab}<br><span class="s" style="font-size:12.5px;opacity:.75">${g.sub} · ${g.items.length} Rechnung${g.items.length>1?"en":""}</span></span><b>${eur(g.amt)}</b></summary>${g.items.map(inv).join("")}</details>${g.bid?`<div class="btnrow" style="margin:2px 0 8px"><button type="button" class="btn primary" data-ovmoney="${esc(g.bid)}">Geld ist da</button></div>`:""}`;
   const block=(key,label,sum,sentence,body)=>`<details class="sec" ${focus===key?"open":""}><summary style="cursor:pointer"><b>${label}</b> <b style="float:right">${eur(sum)}</b><br><span class="status">${sentence}</span></summary><div style="margin-top:6px">${body}</div></details>`;
@@ -718,7 +819,7 @@ function renderSummary(rows){
       if(x.cutOpen&&["ehe","original"].includes(x.reason))you+=x.diff}}
   const ex=[["Unterwegs",way,"way"],["Beantragt",req,"req"],["Wartet auf dich",you,"you"],["Geld prüfen",old,"old"]].filter(x=>x[1]>0.004);
   $("#sumBar").innerHTML=`<span class="vals"><span class="pay" data-ov="pay">Offen beim Arzt <b>${eur(pay)}</b></span>${ex.length?ex.map(([l,v,f])=>`<span class="exp" data-ov="${f}">${l} <b>${eur(v)}</b></span>`).join(""):`<span class="exp">Erstattung erwartet <b>${eur(0)}</b></span>`}</span><span class="status" style="font-size:12px;opacity:.8;margin-left:auto">Überblick ›</span>`;
-  $("#sub").textContent=`${S.inv.length} Rechnungen · ${S.besch.length} Bescheide`;
+  if(!PROD)$("#sub").textContent=`${S.inv.length} Rechnungen · ${S.besch.length} Bescheide`;
 }
 function renderBanner(){
   const b=$("#banner");const st=driveStatus();
@@ -808,6 +909,7 @@ document.addEventListener("click",e=>{
     if(act==="aioverview")return aiOverview();
     if(act==="bmoney")return moneyIn(a.dataset.bid);
     if(act==="settings")return openSettings();
+    if(act==="ovopen")return overviewSheet(a.dataset.f||"in");
     if(act==="syncforce"){if(a.dataset.confirm!=="1"){a.dataset.confirm="1";a.textContent="Wirklich? Nochmal tippen";return}G.force=true;G.err=null;G.guard=null;renderBanner();return syncNow()}
     if(act==="importstart")return openSettings("import");
     if(act==="connect")return connectDrive();
