@@ -1244,7 +1244,7 @@ function drawEditor(){
   const opts=S.settings.people.map(p=>`<option ${p.name===inv.patient?"selected":""}>${esc(p.name)}</option>`).join("");
   sheet(isNew?"Neue Rechnung":"Bearbeiten",`
     <div id="edStatus" class="status" style="margin-top:10px"></div>
-    <div id="dupBox"></div><div id="confBox"></div>
+    <div id="dupBox"></div><div id="confBox"></div><div id="aiBox"></div>
     <div class="sec">
       ${preview?`<img class="thumb" src="${preview}" alt="Rechnungsfoto">`:""}
       <div class="grid2">
@@ -1288,7 +1288,7 @@ function drawEditor(){
   sc.addEventListener("click",editClick);
   showDup();
   for(const k of Object.keys(CONF_LABEL))$("#"+k)?.addEventListener("change",()=>{const x=S.edit.conf?.[k];if(x){x.done=true;readForm();if(k==="iban")checkKnownIban();else drawConf()}});
-  drawConf();
+  drawConf();drawAiBox();
 }
 // IBAN mit früheren Rechnungen desselben Empfängers abgleichen
 function checkKnownIban(){
@@ -1341,6 +1341,7 @@ async function editClick(e){
   const b=e.target.closest("[data-act]");if(!b)return;const act=b.dataset.act;
   if(act==="cancel"){const id=S.edit.inv.id;closeSheet();if(id)openView(id);return}
   if(act==="confok"){const x=S.edit.conf?.[b.dataset.f];if(x)x.done=true;return drawConf()}
+  if(act==="aifill")return aiFillInvoice();
   if(act==="dupopen"){const id=S.edit.dup?.id;closeSheet();if(id)openView(id);return}
   if(act==="dupsave"){S.edit.dupOk=true;$("#dupBox").innerHTML="";return editClick({target:$("#btnSave")})}
   if(act==="save"){
@@ -1376,7 +1377,7 @@ async function ocr(input){
     S.ocrCap=[];let text;try{text=await readText(input)}finally{if(S.edit)S.edit.cap=S.ocrCap;S.ocrCap=null}
     if(!S.edit||S.edit.mode!=="edit")return;
     readForm();const names=[...new Set([...S.inv.map(i=>i.doctor),...S.inv.map(i=>i.billing)].filter(Boolean))];
-    const got=parseInvoiceText(text||"",S.settings.people.map(p=>p.name),names);
+    const got=parseInvoiceText(text||"",S.settings.people.map(p=>p.name),names);S.edit.ocrText=text||"";S.edit.ocrPatient=!!got.patient;
     const inv=S.edit.inv;const filled=[];
     if(got.amount!=null&&inv.amount===""){inv.amount=got.amount;filled.push("Betrag")}
     if(got.date){inv.invoiceDate=got.date;filled.push("Datum")}
@@ -1404,7 +1405,43 @@ async function ocr(input){
     if(inv.doctor||inv.billing)suggestFrom();
     checkKnownIban();
     setStatus(filled.length?`Erkannt: ${filled.join(", ")}. Bitte prüfen.`:"Nichts sicher erkannt. Bitte Felder ausfüllen.");
+    drawAiBox();
   }catch(err){setStatus("Texterkennung nicht verfügbar (offline?). Bitte Felder ausfüllen.")}
+}
+/* ---- KI ergänzt fehlende Felder beim Erfassen ---- */
+function aiMissing(){const inv=S.edit?.inv;if(!inv)return [];readForm();
+  return [["amount","Betrag",inv.amount===""||inv.amount==null],["invoiceDate","Rechnungsdatum",!inv.invoiceDate],["doctor","Arzt",!inv.doctor],
+    ["patient","Person",!S.edit.ocrPatient&&!S.edit.patientLocked],["treatDate","Behandlungsdatum",!!inv.billing&&!inv.treatDate],["invoiceNo","Rechnungsnummer",!inv.invoiceNo],["iban","IBAN",!inv.iban]].filter(x=>x[2]).map(x=>x[1]);}
+function drawAiBox(){const box=$("#aiBox");if(!box||!S.edit||S.edit.mode!=="edit")return;const a=S.edit.aiFill||{};
+  if(!S.settings.aiKey||!S.edit.ocrText){box.innerHTML="";return}
+  const miss=aiMissing();
+  if(a.busy){box.innerHTML=`<div class="sec"><p class="status" style="margin:0">Die KI liest die Rechnung …</p></div>`;return}
+  if(a.msg){box.innerHTML=`<div class="sec"><p class="status" style="margin:0${a.err?";color:var(--bad)":""}">${esc(a.msg)}</p></div>`;return}
+  if(!miss.length){box.innerHTML="";return}
+  box.innerHTML=`<div class="sec"><p class="status" style="margin:0 0 6px">Nicht erkannt: ${esc(miss.join(", "))}. Die KI kann die Rechnung lesen und die fehlenden Felder ergänzen. Ausgefüllte Felder bleiben unverändert.</p><div class="btnrow"><button type="button" class="btn" data-act="aifill">KI ergänzen lassen</button></div></div>`;
+}
+async function aiFillInvoice(){
+  const e=S.edit;readForm();e.aiFill={busy:true};drawAiBox();
+  const people=S.settings.people.map(p=>p.name);
+  const q=`Lies die Arztrechnung und gib die Angaben zurück. Personen der Familie: ${people.join(", ")} (Nachname Katrag). Ist die Rechnung von einer Abrechnungsstelle (z. B. PVS, Mediserv, DZR, PAS), ist "abrechnungsstelle" deren Name und "arzt" der behandelnde Arzt.
+Antworte NUR mit JSON: {"person":"","arzt":"","abrechnungsstelle":"","rechnungsdatum":"TT.MM.JJJJ","behandlung":"TT.MM.JJJJ oder Zeitraum","betrag":0.00,"rechnungsnummer":"","iban":"","faellig":"TT.MM.JJJJ"}. Unbekannte Felder leer lassen, nichts erfinden.`;
+  try{let ans=await aiCall(q,"Rechnung:\n"+(e.ocrText||"").slice(0,9000),500);
+    if(typeof ans==="string"){const m=ans.match(/\{[\s\S]*\}/);if(!m)throw new Error("Die KI hat keine verwertbare Antwort geliefert.");ans=JSON.parse(m[0])}
+    if(Array.isArray(ans))ans=ans[0]||{};
+    if(S.edit!==e)return;const inv=e.inv,got=[];
+    const iso=s=>{const m=String(s||"").match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);return m?`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`:""};
+    const set=(f,v,label)=>{if(v&&(inv[f]===""||inv[f]==null)){inv[f]=v;got.push(label);e.conf=e.conf||{};e.conf[f]={lvl:"check",msg:"Von der KI gelesen. Bitte prüfen."}}};
+    const amt=+String(ans.betrag??"").replace(/[^\d.,-]/g,"").replace(/\.(?=\d{3}(\D|$))/g,"").replace(",",".");
+    if(amt>0)set("amount",r2(amt),"Betrag");
+    set("invoiceDate",iso(ans.rechnungsdatum),"Rechnungsdatum");set("dueDate",iso(ans.faellig),"Fälligkeit");
+    set("doctor",String(ans.arzt||"").trim(),"Arzt");set("billing",String(ans.abrechnungsstelle||"").trim(),"Abrechnungsstelle");
+    set("treatDate",String(ans.behandlung||"").trim(),"Behandlungsdatum");set("invoiceNo",String(ans.rechnungsnummer||"").trim(),"Rechnungsnummer");
+    const ib=String(ans.iban||"").replace(/\s/g,"").toUpperCase();if(/^DE\d{20}$/.test(ib))set("iban",ib,"IBAN");
+    const p=people.find(n=>n.toLowerCase()===String(ans.person||"").trim().split(/\s+/)[0].toLowerCase());
+    if(p&&!e.ocrPatient&&!e.patientLocked){inv.patient=p;const r=rateFor(p);inv.pkv.rate=r.pkv;inv.bh.rate=r.bh;got.push("Person")}
+    e.aiFill={msg:got.length?`KI hat ergänzt: ${got.join(", ")}. Bitte prüfen.`:"Die KI hat nichts Zusätzliches gefunden."};
+    drawEditor();if(inv.doctor||inv.billing)suggestFrom();checkKnownIban();drawAiBox();}
+  catch(err){e.aiFill={msg:err.message||"Fehler bei der KI-Anfrage",err:true};drawAiBox()}
 }
 
 /* ================= Bescheid erfassen: ein Bescheid -> mehrere Rechnungen ================= */
