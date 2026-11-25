@@ -578,7 +578,7 @@ function laeuftHtml(rows){
   h+=`<div class="btnrow prooftools"><button type="button" class="btn primary" data-act="proofstart" data-k="pkv">Bescheid AXA</button><button type="button" class="btn primary" data-act="proofstart" data-k="bh">Bescheid Beihilfe</button></div>`;
   const w=rows.filter(r=>r.c.step==="bescheid");
   if(!w.length)h+=`<div class="empty">Keine Einreichung wartet auf einen Bescheid.</div>`;
-  else{const g=new Map();for(const r of w){const d=[r.c.pkv,r.c.bh].filter(x=>x.state==="wait").map(x=>x.s.submitted).sort()[0]||"";if(!g.has(d))g.set(d,[]);g.get(d).push(r)}
+  else{const g=new Map();for(const r of w){const d=[r.c.pkv,r.c.bh].filter(x=>x.state==="wait").map(x=>x.s.submitted).sort().pop()||"";if(!g.has(d))g.set(d,[]);g.get(d).push(r)}
     for(const d of [...g.keys()].sort((a,b)=>b.localeCompare(a))){const list=g.get(d),ago=d?days(d,today()):null;
       const sum=list.reduce((a,{c})=>a+(c.pkv.state==="wait"?c.pkv.expected:0)+(c.bh.state==="wait"?c.bh.expected:0),0);
       h+=grp("w:"+d,d?"Eingereicht am "+dfmt(d):"Ohne Datum",`${ago!==null?(ago===0?"heute":`vor ${ago} Tag${ago===1?"":"en"}`)+" · ":""}${list.length} Rechnung${list.length===1?"":"en"}`,eur(sum),list.map(r=>cardHtml(r,{})).join(""))}}
@@ -670,7 +670,7 @@ function cardHtml({i,c},o={}){
     <div class="amt">${eur(c.amount)}</div></div>
     ${o.step?`<div class="next">${esc(STEP_LABEL[c.step])}${c.tasks.length?` · ${c.tasks.length} Aufgabe${c.tasks.length===1?"":"n"}`:""}</div>`:nx?`<div class="next ${o.task&&o.task.t!=="einreichen"&&o.task.t!=="bezahlen"?"s-klaeren":"s-"+c.step}">${esc(nx)}</div>`:""}
     ${c.step==="bezahlen"&&!o.task?dueText(c):""}
-    ${(i.log||[]).length?(l=>`<div class="via" style="margin-top:4px">Notiz ${dfmt(l.date)}: ${esc(l.text.length>110?l.text.slice(0,107)+"…":l.text)}</div>`)([...i.log].sort((a,b)=>(a.date||"").localeCompare(b.date||"")).pop()):""}
+    ${(l=>l?`<div class="via" style="margin-top:4px">${esc(l.short)} (${dfmt(l.date)})</div>`:"")([...(i.log||[])].filter(x=>x.short).sort((a,b)=>(a.date||"").localeCompare(b.date||"")).pop())}
   </button>`;
 }
 function renderSummary(rows){
@@ -1078,7 +1078,8 @@ function moreHtml(inv,c){
       <label class="f">Was ist zu klären?<input id="isText" placeholder="z. B. AXA hat auf Olgun statt Ikra gebucht"></label>
       <div class="btnrow"><button type="button" class="btn primary" data-act="issuesave">Hinzufügen</button><button type="button" class="btn" data-act="issueno">Abbrechen</button></div></div>`:""}
     ${S.edit.logAsk?`<div class="sec" style="margin-top:10px"><label class="f">Datum<input id="lgDate" type="date" value="${today()}"></label>
-      <label class="f">Was wurde gemacht?<input id="lgText" placeholder="z. B. Formular nachgereicht, Antrag 9981190"></label>
+      <label class="f">Was wurde gemacht? (Verlauf)<input id="lgText" placeholder="z. B. Formular mit Steuerbescheid an die Beihilfe, Antrag 9981190"></label>
+      <label class="f">Kurzer Stand für die Karte (optional)<input id="lgShort" placeholder="z. B. Nachweis bei der Beihilfe eingereicht"></label>
       <div class="btnrow"><button type="button" class="btn primary" data-act="logsave">Eintragen</button><button type="button" class="btn" data-act="logno">Abbrechen</button></div></div>`:""}
     <div class="morelist">${L.join("")}</div></details>`;
 }
@@ -1093,7 +1094,8 @@ async function viewClick(e){
     case "gstop":return guideStop();
     case "copytxt":{const o=S.edit.texts?.[+b.dataset.n];if(!o)return;try{await navigator.clipboard.writeText(o.x);toast("Text kopiert")}catch{toast("Kopieren nicht möglich – Text markieren")}return}
     case "edit":{const urls=S.edit.urls;S.edit.urls=[];urls.forEach(u=>URL.revokeObjectURL(u));return openEditor(inv)}
-    case "sub":{inv[k].submitted=today();await saveInvoice(inv);const c1=calc(inv);
+    case "sub":{if((inv.log||[]).some(l=>/^Neu einzureichen bei/.test(l.text)&&l.date<=today())&&!(inv.log||[]).some(l=>l.short&&l.date===today()&&l.short.includes(SN(k))))inv.log=[...inv.log,{date:today(),text:`Bei ${SN(k)} neu eingereicht`,short:`Bei ${SN(k)} neu eingereicht`}];
+      inv[k].submitted=today();await saveInvoice(inv);const c1=calc(inv);
       toast(c1.step==="einreichen"?`${SN(k)}: eingereicht. Jetzt ${SN(k==="pkv"?"bh":"pkv")}.`:"Eingereicht. Die Rechnung wartet jetzt unter „Läuft“ auf den Bescheid.");return again()}
     case "subsave":{const f=S.edit.subFile;if(!f)return;const u=URL.createObjectURL(f);const a=document.createElement("a");a.href=u;a.download=/\.pdf$/i.test(f.name)?f.name:f.name+".pdf";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),10000);
       S.edit.subSaved=true;toast("PDF gespeichert. Jetzt die AXA-App öffnen.");return again()}
@@ -1122,7 +1124,7 @@ async function viewClick(e){
     case "logadd":S.edit.logAsk=true;S.edit.moreOpen=true;return again();
     case "logno":S.edit.logAsk=false;return again();
     case "logsave":{const t=$("#lgText").value.trim();if(!t){toast("Bitte kurz beschreiben");return}
-      inv.log=[...(inv.log||[]),{date:$("#lgDate").value||today(),text:t}];S.edit.logAsk=false;await saveInvoice(inv);toast("Im Verlauf eingetragen");return again()}
+      const sh=$("#lgShort").value.trim();inv.log=[...(inv.log||[]),{date:$("#lgDate").value||today(),text:t,...(sh?{short:sh}:{})}];S.edit.logAsk=false;await saveInvoice(inv);toast("Im Verlauf eingetragen");return again()}
     case "issueadd":S.edit.issueAsk=true;S.edit.moreOpen=true;return again();
     case "issueno":S.edit.issueAsk=false;return again();
     case "issuesave":{const t=$("#isText").value.trim();if(!t){toast("Bitte kurz beschreiben");return}
