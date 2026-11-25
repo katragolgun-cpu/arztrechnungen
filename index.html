@@ -371,6 +371,9 @@ function reasonOf(inv,it,received){
   if(!t&&received<=0.004&&/zahlungserinnerung|mahnung/i.test(inv.note||""))return "original";
   return "sonst";
 }
+/* Jahres-Merker: Formular „Ehepartner/in“ einmal je Jahr mit dem ersten Beihilfe-Antrag für die Ehefrau (Gruppe E) */
+const EHE_FORM="https://www.bva.bund.de/SharedDocs/Downloads/DE/Bundesbedienstete/Gesundheit-Vorsorge/Beihilfe/Vordrucke/Anlage_Ehegatte.html?nn=523750";
+const eheNeeded=inv=>rateFor(inv.patient).group==="E"&&String(S.settings.eheYear||"")!==today().slice(0,4);
 const REASON_TASK={ehe:"r_ehe",doppelt:"r_doppelt",original:"r_original",gebuehr:"r_gebuehr"};
 // Fälligkeit: Datum von der Rechnung, sonst Rechnungsdatum + Zahlungsfrist
 function dueDate(inv){
@@ -633,7 +636,7 @@ function archivHtml(rows){
 /* ---- Karte einer Rechnung ---- */
 function lineText(i,c,task){
   if(task)return taskLine(i,c,task);
-  if(c.step==="einreichen"){const w=[c.pkv.state==="todo"&&"AXA",c.bh.state==="todo"&&"Beihilfe"].filter(Boolean);return `Einreichen bei ${w.join(" und ")}`}
+  if(c.step==="einreichen"){const w=[c.pkv.state==="todo"&&"AXA",c.bh.state==="todo"&&"Beihilfe"].filter(Boolean);return `Einreichen bei ${w.join(" und ")}${c.bh.state==="todo"&&eheNeeded(i)?" · Formular Ehepartner/in mitschicken":""}`}
   if(c.step==="bescheid"){const w=[c.pkv,c.bh].filter(x=>x.state==="wait").map(x=>`${SN(x.k)} ${eur(x.expected)}`);return `Warten auf Bescheid: ${w.join(" und ")}`}
   if(c.step==="geld"){const w=[c.pkv,c.bh].filter(x=>x.moneyOpen).map(x=>`${SN(x.k)} ${eur(x.received)}`);return `Warten auf Geld: ${w.join(" und ")}`}
   if(c.step==="bezahlen")return `Jetzt ${eur(c.open)} an ${payee(i)||"den Arzt"} überweisen`;
@@ -939,7 +942,9 @@ function submitHtml(inv,c){
     return `<div class="line" style="${active?"":"opacity:.5"}"><div><div class="t">${i+1}. ${n}</div><div class="s">${k==="bh"?"Antragsart: Beihilfe":axaHint}</div></div></div>
       ${active?`<div class="btnrow">${btn}<button type="button" class="btn done" data-act="sub" data-k="${k}">② Erledigt – bei ${n} eingereicht</button></div>${k==="pkv"&&S.edit.subSaved?`<p class="status" style="margin:4px 0 0;color:var(--ok)">Im Ordner Downloads gespeichert.</p>`:""}`:""}`}).join("");
   const note=f===null?"Beleg wird geladen …":f===false?(inv.doc?.driveId&&!tokenValid()?"Beleg liegt in Drive. Für das Senden bitte in den Einstellungen anmelden.":"Kein Beleg vorhanden. Unter „Weitere Aktionen“ hinzufügen."):"";
-  return `${!PROD?`<p class="status" style="margin:0 0 8px;color:var(--warn)"><b>Testversion:</b> nur abhaken, nicht wirklich einreichen.</p>`:""}${rows}${note?`<p class="status" style="margin:6px 0 0">${note}</p>`:""}`;
+  const y=+today().slice(0,4);
+  const ehe=c.bh.state==="todo"&&eheNeeded(inv)?`<div class="task" style="margin:0 0 8px"><div class="t">Formular Ehepartner/in für ${y}</div><p class="status" style="margin:2px 0 6px">Die Beihilfe braucht einmal pro Jahr mit dem ersten Antrag für ${esc(inv.patient)} das Formular „Ehepartner/in / Lebenspartner/in“ mit den Einkünften aus ${y-2}. Ohne Formular lehnt sie die Rechnungen ab. Formular und Steuerbescheid ${y-2} mit diesem Antrag mitschicken.</p><div class="btnrow"><a class="btn" href="${EHE_FORM}" target="_blank" rel="noopener">Formular beim BVA</a><button type="button" class="btn primary" data-act="eheyear">Formular für ${y} ist eingereicht</button></div></div>`:"";
+  return `${!PROD?`<p class="status" style="margin:0 0 8px;color:var(--warn)"><b>Testversion:</b> nur abhaken, nicht wirklich einreichen.</p>`:""}${ehe}${rows}${note?`<p class="status" style="margin:6px 0 0">${note}</p>`:""}`;
 }
 /* ---- Bezahlen: Daten und GiroCode ---- */
 function payData(inv,c){
@@ -989,8 +994,8 @@ function taskBody(inv,c,x){
     const resub=`<button type="button" class="btn primary" data-act="resubok" data-k="${x.k}">Neu einreichen</button>`;
     const accept=lbl=>`<button type="button" class="btn" data-act="cutok" data-k="${x.k}">${lbl}</button>`;
     if(x.t==="r_ehe")return head+`<br>Die Beihilfe braucht das Formular „Ehepartner/in / Lebenspartner/in“ mit den Einkünften aus dem vorletzten Jahr. Ein Widerspruch ist nicht nötig. Antragsfrist ab Rechnungsdatum beachten.</p>`
-      +`<ol class="status" style="margin:0 0 6px 18px;padding:0"><li>Formular ausfüllen: <a href="https://www.bva.bund.de/SharedDocs/Downloads/DE/Bundesbedienstete/Gesundheit-Vorsorge/Beihilfe/Vordrucke/Anlage_Ehegatte.html?nn=523750" target="_blank" rel="noopener">Formular beim BVA</a></li><li>Mit Steuerbescheid an die Beihilfe senden</li><li>Dann „Neu einreichen“ tippen – die Rechnung steht wieder unter „Einreichen“</li></ol>`
-      +why+`<div class="btnrow">${resub}${accept("Ablehnung akzeptieren")}</div>`;
+      +`<ol class="status" style="margin:0 0 6px 18px;padding:0"><li>Formular ausfüllen: <a href="${EHE_FORM}" target="_blank" rel="noopener">Formular beim BVA</a></li><li>Mit Steuerbescheid an die Beihilfe senden</li><li>Dann „Neu einreichen“ tippen – die Rechnung steht wieder unter „Einreichen“</li></ol>`
+      +why+`<div class="btnrow">${resub.replace('data-act="resubok"','data-act="resubok" data-ehe="1"')}${accept("Ablehnung akzeptieren")}</div>`;
     if(x.t==="r_doppelt")return head+`<br>Die Beihilfe hat diesen Beleg schon früher abgerechnet. <b>Nicht erneut einreichen.</b> Falls du sicher bist, dass er noch nie erstattet wurde: beim Bescheid nachsehen und anrufen.</p>`
       +why+`<div class="btnrow"><button type="button" class="btn primary" data-act="cutok" data-k="${x.k}">Verstanden</button></div>`;
     if(x.t==="r_original")return head+`<br>Eingereicht wurde nur eine Zahlungserinnerung oder ein sonstiger Beleg, keine Rechnung mit Einzelleistungen. Ein Widerspruch bringt nichts. Rechnung oder Duplikat anfordern und neu einreichen. Mahngebühren erstattet die Beihilfe nicht.</p>`
@@ -1095,7 +1100,8 @@ async function viewClick(e){
       toast("Eingetragen als Bescheid ohne Dokument, Geld als da markiert");return again()}
     case "resub":S.edit.resub=k;S.edit.moreOpen=false;again();$(".nextstep")?.scrollIntoView({block:"center"});return;
     case "resubno":S.edit.resub=null;return again();
-    case "resubok":{for(const {b:bs} of itemsOf(inv.id,k)){const nb=structuredClone(bs);nb.items=nb.items.filter(it=>it.invId!==inv.id);
+    case "eheyear":S.settings.eheYear=today().slice(0,4);await saveSettings();toast(`Formular Ehepartner/in für ${S.settings.eheYear} vermerkt`);return again();
+    case "resubok":{if(b.dataset.ehe){S.settings.eheYear=today().slice(0,4);await saveSettings()}for(const {b:bs} of itemsOf(inv.id,k)){const nb=structuredClone(bs);nb.items=nb.items.filter(it=>it.invId!==inv.id);
         if(nb.items.length)await saveBescheid(nb,true);else await deleteBescheid(nb)}
       const was=`Erste Einreichung bei ${SN(k)} ${dfmt(inv[k].submitted)}`;inv.note=inv.note?`${inv.note} · ${was}`:was;
       inv[k].submitted=null;delete inv[k].cutOk;delete inv[k].obj;delete inv[k].asked;S.edit.resub=null;await saveInvoice(inv);toast(`${SN(k)}: wieder bei „Einreichen“`);return again()}
