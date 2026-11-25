@@ -556,6 +556,7 @@ function zutunHtml(rows){
   const t=guideTasks(rows);
   let h="";
   if(t.length)h+=`<div class="guidecard"><div class="gl"><b>${t.length} Aufgabe${t.length===1?"":"n"}</b><span>${esc(guideSummary(t))}</span></div><button type="button" class="btn primary" data-act="guidestart">Los geht's</button></div>`;
+  if(S.settings.aiKey)h+=`<div class="btnrow" style="margin:0 0 10px"><button type="button" class="btn" data-act="aioverview">KI-Überblick: Was steht an?</button></div>`;
   const gm=rows.filter(r=>r.c.pkv.moneyOpen||r.c.bh.moneyOpen).length;
   if(gm)h+=`<button type="button" class="hint" data-area="laeuft">${gm} Rechnung${gm===1?" wartet":"en warten"} auf das Geld. Ist es da? Unter <b>Läuft</b> bestätigen, danach kannst du bezahlen.</button>`;
   const ein=rows.filter(r=>r.c.step==="einreichen").sort((a,b)=>(a.i.invoiceDate||"").localeCompare(b.i.invoiceDate||""));
@@ -762,6 +763,7 @@ document.addEventListener("click",e=>{
     if(act==="bulk")return bulkSubmit(a.dataset.k);
     if(act==="proofstart")return startProof(a.dataset.k);
     if(act==="guidestart")return guideStart();
+    if(act==="aioverview")return aiOverview();
     if(act==="bmoney")return moneyIn(a.dataset.bid);
     if(act==="settings")return openSettings();
     if(act==="importstart")return openSettings("import");
@@ -1065,10 +1067,47 @@ function aiHtml(inv,c){
   const a=S.edit.ai||{};
   if(!S.settings.aiKey)return `<details class="sec"><summary><b>KI fragen</b></summary><p class="status" style="margin:8px 0 0">Zuerst in den Einstellungen unter „KI-Hilfe“ den Schlüssel eintragen.</p></details>`;
   return `<details class="sec"${a.open?" open":""}><summary><b>KI fragen</b></summary>
-    <div class="btnrow" style="margin-top:8px"><button type="button" class="btn" data-act="aiask" data-q="Was muss ich bei dieser Rechnung als Nächstes tun?">Was ist zu tun?</button><button type="button" class="btn" data-act="aiask" data-q="Erkläre den Text aus dem Bescheid in einfachen Worten und sag, ob sich ein Widerspruch lohnt.">Bescheid erklären</button></div>
+    <div class="btnrow" style="margin-top:8px"><button type="button" class="btn" data-act="aiask" data-q="Was muss ich bei dieser Rechnung als Nächstes tun?">Was ist zu tun?</button><button type="button" class="btn" data-act="aiask" data-q="Erkläre den Text aus dem Bescheid in einfachen Worten und sag, ob sich ein Widerspruch lohnt.">Bescheid erklären</button><button type="button" class="btn" data-act="aisuggest">Aktion vorschlagen</button></div>
+    ${a.sug?`<div class="task" style="margin-top:8px"><div class="t">Vorschlag der KI: ${esc(a.sug.label)}</div><p class="status" style="margin:2px 0 6px">${esc(a.sug.why||"")}</p><div class="btnrow"><button type="button" class="btn primary" data-act="aisugdo">Ausführen</button><button type="button" class="btn" data-act="aisugno">Verwerfen</button></div></div>`:a.sugNone?`<p class="status" style="margin-top:6px">${esc(a.sugNone)}</p>`:""}
     <label class="f">Eigene Frage<input id="aiQ" placeholder="z. B. Muss ich die Mahngebühr selbst zahlen?" value="${esc(a.q||"")}"></label>
     <div class="btnrow"><button type="button" class="btn primary" data-act="aiask">Fragen</button></div>
     ${a.busy?`<p class="status">Die KI denkt nach …</p>`:a.err?`<p class="status" style="color:var(--bad)">${esc(a.err)}</p>`:a.answer?`<div class="status" style="white-space:pre-wrap;margin-top:6px;color:var(--ink,inherit)">${esc(a.answer)}</div><p class="status" style="margin:4px 0 0;font-size:12px">Antwort einer KI – bei wichtigen Entscheidungen den Bescheid selbst prüfen.</p>`:""}</details>`;
+}
+async function aiOverview(){
+  const open=S.inv.map(i=>({i,c:calc(i)})).filter(r=>r.c.step!=="erledigt");
+  sheet("KI-Überblick",`<div class="sec"><p class="status" style="margin:0">Die KI liest ${open.length} offene Rechnungen …</p></div>`,`<button type="button" class="btn" data-act="close">Schließen</button>`);
+  const lines=open.map(({i,c})=>{const s=[c.bh,c.pkv].filter(x=>x.state!=="na").map(x=>`${SN(x.k)} ${x.state==="todo"?"nicht eingereicht":x.state==="wait"?`wartet seit ${dfmt(x.s.submitted)}`:`${eur(x.received)} von ${eur(x.expected)} erstattet${x.moneyOpen?", Geld noch nicht bestätigt":""}`}`).join("; ");
+    const last=[...(i.log||[])].pop();
+    return `- ${i.patient}: ${title(i)}, ${dfmt(i.invoiceDate)}, ${eur(c.amount)}. Schritt: ${STEP_LABEL[c.step]}. Aufgaben: ${c.tasks.map(t=>TASK_LABEL[t.t]).join("; ")||"keine"}. ${s}. ${c.unpaid?`Beim Arzt offen ${eur(c.open)}${i.dueDate?`, fällig ${dfmt(i.dueDate)}`:""}`:"Arzt bezahlt"}.${last?` Zuletzt: ${dfmt(last.date)} ${last.text.slice(0,140)}`:""}`}).join("\n");
+  const q=`Heute ist der ${dfmt(today())}. Gib einen kurzen Überblick über die offenen Arztrechnungen der Familie, sortiert nach Dringlichkeit:
+1. Was ist heute oder bald zu tun (mit Rechnung und Grund)?
+2. Worauf wird gewartet, und wo ist es ungewöhnlich lange (Bescheid über 4 Wochen)?
+3. Was bald fällig wird.
+Kurze Stichpunkte, höchstens 12 Zeilen, keine Wiederholungen, nichts erfinden.`;
+  let body;
+  try{const ans=await aiCall(q,"Offene Rechnungen:\n"+lines.slice(0,11500)+"\n\nRegeln: Arzt erst bezahlen, wenn die Erstattung da ist. Beihilfe-Widerspruch 1 Monat ab Bescheid.",900);
+    body=`<div class="sec"><div style="white-space:pre-wrap;line-height:1.5">${esc(typeof ans==="string"?ans:JSON.stringify(ans,null,1))}</div><p class="status" style="margin:8px 0 0;font-size:12px">Antwort einer KI auf Basis der App-Daten – bei Geld und Fristen bitte selbst prüfen.</p></div>`}
+  catch(err){body=`<div class="sec"><p class="status" style="margin:0;color:var(--bad)">${esc(err.message||"Fehler bei der KI-Anfrage")}</p></div>`}
+  sheet("KI-Überblick",body,`<button type="button" class="btn" data-act="close">Schließen</button>`);
+  $("#scrim")?.addEventListener("click",ev=>{if(ev.target.closest('[data-act="close"]'))closeSheet()});
+}
+const AI_SKIP=new Set(["aiask","aisuggest","aisugdo","aisugno","logadd","logsave","logno","issueadd","issuesave","issueno","edit","del","close","copy","copytxt","bopen","cancel","save","guidestart","gstop","gnext","giroshare","subshare","dupopen"]);
+async function aiSuggest(inv){
+  const c=calc(inv);
+  const acts=[...document.querySelectorAll("#scrim [data-act]")].filter(x=>!AI_SKIP.has(x.dataset.act)&&!x.disabled&&x.offsetParent!==null&&x.textContent.trim())
+    .map(x=>({act:x.dataset.act,k:x.dataset.k||"",label:x.textContent.trim().slice(0,80)}));
+  const uniq=[];for(const a of acts)if(!uniq.some(u=>u.act===a.act&&u.k===a.k&&u.label===a.label))uniq.push(a);
+  if(!uniq.length){S.edit.ai={...(S.edit.ai||{}),open:true,sugNone:"Für diese Rechnung gibt es gerade keine Aktion. Es heißt warten."};return drawView()}
+  S.edit.ai={...(S.edit.ai||{}),open:true,busy:true,sug:null,sugNone:null};drawView();
+  const q=`Welche der folgenden Aktionen sollte als Nächstes ausgeführt werden? Wähle genau eine – oder "keine", wenn gerade nur Warten sinnvoll ist.
+${uniq.map((a,i)=>`A${i+1}: ${a.label}`).join("\n")}
+Antworte NUR mit JSON: {"aktion":"A1","begruendung":"ein kurzer Satz"} oder {"aktion":"keine","begruendung":"..."}`;
+  try{let ans=await aiCall(q,aiContext(inv,c),200);
+    if(typeof ans==="string"){const m=ans.match(/\{[\s\S]*\}/);if(!m)throw new Error("Die KI hat keine verwertbare Antwort geliefert.");ans=JSON.parse(m[0])}
+    const j=+String(ans.aktion||"").replace(/\D/g,"")-1,a=uniq[j];
+    S.edit.ai={...S.edit.ai,busy:false,sug:a?{...a,why:String(ans.begruendung||"").slice(0,300)}:null,sugNone:a?null:`KI: ${String(ans.begruendung||"Gerade ist keine Aktion nötig.").slice(0,300)}`}}
+  catch(err){S.edit.ai={...S.edit.ai,busy:false,err:err.message||"Fehler bei der KI-Anfrage"}}
+  if(S.edit?.id===inv.id)drawView();
 }
 async function askAI(inv,c,q){
   S.edit.ai={open:true,q,busy:true};drawView();
@@ -1157,6 +1196,12 @@ async function viewClick(e){
     case "objno":inv[k].obj.result="abgelehnt";inv[k].obj.resultDate=today();inv[k].cutOk=true;await saveInvoice(inv);toast("Widerspruch abgelehnt – Kürzung bleibt");return again();
     case "cutok":inv[k].cutOk=true;await saveInvoice(inv);toast("Kürzung akzeptiert");return again();
     case "issuedone":{const is=(inv.issues||[]).find(z=>z.id===b.dataset.iid);if(is)is.done=today();await saveInvoice(inv);toast("Erledigt");return again()}
+    case "aisuggest":return aiSuggest(S.inv.find(x=>x.id===S.edit.id));
+    case "aisugno":S.edit.ai={...(S.edit.ai||{}),sug:null,sugNone:null};return drawView();
+    case "aisugdo":{const sg=S.edit.ai?.sug;if(!sg)return;S.edit.ai={...S.edit.ai,sug:null};
+      const btn=[...document.querySelectorAll("#scrim [data-act]")].find(x=>x.dataset.act===sg.act&&(x.dataset.k||"")===(sg.k||"")&&x.textContent.trim()===sg.label);
+      if(!btn){toast("Aktion ist nicht mehr verfügbar");return drawView()}
+      btn.click();return}
     case "aiask":{const q=b.dataset.q||($("#aiQ")?.value||"").trim();if(!q){toast("Bitte eine Frage eingeben");return}return askAI(S.inv.find(x=>x.id===S.edit.id),calc(S.inv.find(x=>x.id===S.edit.id)),q)}
     case "logadd":S.edit.logAsk=true;S.edit.moreOpen=true;return again();
     case "logno":S.edit.logAsk=false;return again();
