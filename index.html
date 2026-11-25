@@ -675,8 +675,13 @@ function cardHtml({i,c},o={}){
   </button>`;
 }
 function renderSummary(rows){
-  let pay=0,exp=0;for(const {c} of rows){if(c.unpaid)pay+=c.open;for(const x of [c.pkv,c.bh])if(x.state==="wait")exp+=x.expected;else if(x.moneyOpen)exp+=x.received}
-  $("#sumBar").innerHTML=`<span class="vals"><span class="pay">Offen beim Arzt <b>${eur(pay)}</b></span><span class="exp">Erstattung erwartet <b>${eur(exp)}</b></span></span>`;
+  // Erstattungen nach Stand: unterwegs (Bescheid da, Geld fehlt), beantragt (Bescheid fehlt), wartet auf dich (einreichen/nachreichen)
+  let pay=0,way=0,req=0,you=0;
+  for(const {c} of rows){if(c.unpaid)pay+=c.open;
+    for(const x of [c.pkv,c.bh]){if(x.state==="wait")req+=x.expected;else if(x.state==="todo")you+=x.expected;else if(x.moneyOpen)way+=x.received;
+      if(x.cutOpen&&["ehe","original"].includes(x.reason))you+=x.diff}}
+  const ex=[["Unterwegs",way,"Bescheid da, Geld noch nicht auf dem Konto"],["Beantragt",req,"eingereicht, Bescheid fehlt noch"],["Wartet auf dich",you,"erst einreichen oder Unterlagen nachreichen"]].filter(x=>x[1]>0.004);
+  $("#sumBar").innerHTML=`<span class="vals"><span class="pay">Offen beim Arzt <b>${eur(pay)}</b></span>${ex.length?ex.map(([l,v,t])=>`<span class="exp" title="${t}">${l} <b>${eur(v)}</b></span>`).join(""):`<span class="exp">Erstattung erwartet <b>${eur(0)}</b></span>`}</span>`;
   $("#sub").textContent=`${S.inv.length} Rechnungen · ${S.besch.length} Bescheide`;
 }
 function renderBanner(){
