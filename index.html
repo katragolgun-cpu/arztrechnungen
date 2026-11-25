@@ -889,6 +889,7 @@ function drawView(thumb){
     ${klaerenHtml(inv,c)}
     <div class="sec"><h3>Stand</h3>${statusLine(inv,c.pkv)}${statusLine(inv,c.bh)}${payLine(inv,c)}</div>
     ${S.edit.thumb?`<div class="sec">${S.edit.thumb}</div>`:""}
+    ${aiHtml(inv,c)}
     ${historyHtml(inv,c)}
     ${moreHtml(inv,c)}
   `,`<button type="button" class="btn" data-act="close">Schließen</button>`);
@@ -1045,6 +1046,41 @@ function payLine(inv,c){
   const info=c.unpaid?`${eur(c.open)} offen`:(c.open<-0.004?`${eur(-c.open)} zu viel überwiesen`:isApo(inv)&&!inv.payment?.date?"In der Apotheke bezahlt":`Bezahlt am ${dfmt(inv.payment?.date)}`);
   return `<div class="line"><div><div class="t">Zahlung an ${esc(payee(inv)||"Arzt")}</div><div class="s">${info}${c.fee>0?` · inkl. ${eur(c.fee)} Mahngebühr`:""}</div>${dueText(c)}</div></div>`;
 }
+/* ---- KI-Hilfe (Cloudflare Worker, siehe worker.js) ---- */
+const AI_URL="https://pkv-beihilfe-ki.katrag-olgun.workers.dev/";
+function aiContext(inv,c){
+  const L=[`Rechnung: ${title(inv)}${inv.billing?` über ${inv.billing}`:""}, Patient ${inv.patient}, Rechnungsdatum ${dfmt(inv.invoiceDate)}, Betrag ${eur(c.amount)}${inv.treatDate?`, Behandlung ${inv.treatDate}`:""}.`,
+    `Aktueller Schritt in der App: ${STEP_LABEL[c.step]}. Offene Aufgaben: ${c.tasks.map(x=>TASK_LABEL[x.t]).join("; ")||"keine"}.`];
+  for(const x of [c.bh,c.pkv]){if(x.state==="na")continue;const n=SN(x.k);
+    L.push(`${n}: Anteil ${Math.round(x.rate*100)} %, erwartet ${eur(x.expected)}, ${x.state==="todo"?"noch nicht eingereicht":x.state==="wait"?`eingereicht am ${dfmt(x.s.submitted)}, Bescheid fehlt`:`Bescheid vom ${dfmt(x.b?.date)}: ${eur(x.received)} erstattet`}.`
+      +(x.item?.note?` Text aus dem Bescheid: ${x.item.note}`:"")+(x.s.cutOk?" Kürzung akzeptiert.":"")+(x.s.obj?` Widerspruch vom ${dfmt(x.s.obj.date)}${x.s.obj.result?`: ${x.s.obj.result}`:", offen"}.`:""))}
+  L.push(c.unpaid?`Beim Arzt offen: ${eur(c.open)}.`:`Arzt bezahlt${inv.payment?.date?` am ${dfmt(inv.payment.date)}`:""}.`);
+  if(inv.note)L.push(`Notiz: ${inv.note}`);
+  for(const l of inv.log||[])L.push(`Verlauf ${dfmt(l.date)}: ${l.text}`);
+  for(const is of inv.issues||[])L.push(`Zu klären${is.done?" (erledigt)":""}: ${is.text}`);
+  L.push("Regeln der Familie: Arzt erst bezahlen, wenn die Erstattung auf dem Konto ist. Bei Kürzung Arzt trotzdem voll bezahlen, danach ggf. Widerspruch (Beihilfe: 1 Monat ab Bescheid).");
+  return L.join("\n");
+}
+function aiHtml(inv,c){
+  const a=S.edit.ai||{};
+  if(!S.settings.aiKey)return `<details class="sec"><summary><b>KI fragen</b></summary><p class="status" style="margin:8px 0 0">Zuerst in den Einstellungen unter „KI-Hilfe“ den Schlüssel eintragen.</p></details>`;
+  return `<details class="sec"${a.open?" open":""}><summary><b>KI fragen</b></summary>
+    <div class="btnrow" style="margin-top:8px"><button type="button" class="btn" data-act="aiask" data-q="Was muss ich bei dieser Rechnung als Nächstes tun?">Was ist zu tun?</button><button type="button" class="btn" data-act="aiask" data-q="Erkläre den Text aus dem Bescheid in einfachen Worten und sag, ob sich ein Widerspruch lohnt.">Bescheid erklären</button></div>
+    <label class="f">Eigene Frage<input id="aiQ" placeholder="z. B. Muss ich die Mahngebühr selbst zahlen?" value="${esc(a.q||"")}"></label>
+    <div class="btnrow"><button type="button" class="btn primary" data-act="aiask">Fragen</button></div>
+    ${a.busy?`<p class="status">Die KI denkt nach …</p>`:a.err?`<p class="status" style="color:var(--bad)">${esc(a.err)}</p>`:a.answer?`<div class="status" style="white-space:pre-wrap;margin-top:6px;color:var(--ink,inherit)">${esc(a.answer)}</div><p class="status" style="margin:4px 0 0;font-size:12px">Antwort einer KI – bei wichtigen Entscheidungen den Bescheid selbst prüfen.</p>`:""}</details>`;
+}
+async function askAI(inv,c,q){
+  S.edit.ai={open:true,q,busy:true};drawView();
+  try{const r=await fetch(AI_URL,{method:"POST",headers:{"Content-Type":"application/json","X-App-Key":S.settings.aiKey},body:JSON.stringify({question:q,context:aiContext(inv,c)})});
+    const t=await r.text();
+    if(r.status===401)throw new Error("Schlüssel falsch. Bitte in den Einstellungen prüfen.");
+    if(!r.ok)throw new Error(`KI nicht erreichbar (${r.status}). ${/limit|neuron|quota/i.test(t)?"Tageskontingent aufgebraucht, morgen wieder.":""}`);
+    const d=JSON.parse(t);if(d.error)throw new Error(d.error);
+    S.edit.ai={open:true,q,answer:d.answer||"Keine Antwort erhalten."}}
+  catch(e){S.edit.ai={open:true,q,err:e.message||"Fehler bei der KI-Anfrage"}}
+  if(S.edit?.id===inv.id)drawView();
+}
 /* ---- Verlauf ---- */
 function historyHtml(inv,c){
   const ev=[];const add=(d,t)=>{if(d)ev.push([String(d).slice(0,10),t])};
@@ -1121,6 +1157,7 @@ async function viewClick(e){
     case "objno":inv[k].obj.result="abgelehnt";inv[k].obj.resultDate=today();inv[k].cutOk=true;await saveInvoice(inv);toast("Widerspruch abgelehnt – Kürzung bleibt");return again();
     case "cutok":inv[k].cutOk=true;await saveInvoice(inv);toast("Kürzung akzeptiert");return again();
     case "issuedone":{const is=(inv.issues||[]).find(z=>z.id===b.dataset.iid);if(is)is.done=today();await saveInvoice(inv);toast("Erledigt");return again()}
+    case "aiask":{const q=b.dataset.q||($("#aiQ")?.value||"").trim();if(!q){toast("Bitte eine Frage eingeben");return}return askAI(S.inv.find(x=>x.id===S.edit.id),calc(S.inv.find(x=>x.id===S.edit.id)),q)}
     case "logadd":S.edit.logAsk=true;S.edit.moreOpen=true;return again();
     case "logno":S.edit.logAsk=false;return again();
     case "logsave":{const t=$("#lgText").value.trim();if(!t){toast("Bitte kurz beschreiben");return}
@@ -2051,6 +2088,8 @@ function openSettings(focus){
       <details><summary class="status">Verlauf anzeigen</summary><pre class="status" style="white-space:pre-wrap;margin:6px 0 0;font-size:12px">${esc((()=>{try{return JSON.parse(LS.get("glog")||"[]").join("\n")}catch{return ""}})()||"Noch keine Einträge.")}</pre></details></div>
     <div class="sec"><h3>Anteile</h3>${rates}<p class="status" style="margin:0">Gilt für neue Rechnungen.</p></div>
     <div class="sec"><h3>Personen</h3>${rows}</div>
+    <div class="sec"><h3>KI-Hilfe</h3><p class="status" style="margin:0 0 6px">Kostenlos über Cloudflare Workers AI. Rechnungsdaten der gewählten Rechnung gehen dabei an Cloudflare, werden dort nicht gespeichert und nicht zum Training genutzt.</p>
+      <label class="f">Schlüssel (APP_KEY aus Cloudflare)<input id="aiKey" type="password" autocomplete="off" value="${esc(s.aiKey||"")}" placeholder="noch nicht eingetragen"></label></div>
     <div class="sec"><h3>Regeln</h3><div class="grid2">${field("Zahlungsfrist (Tage)","payD",s.payDays,"number")}${field("Warnen vor Fälligkeit (Tage)","warnD",s.warnDays??7,"number")}</div></div>
     ${PROD?"":`<div class="sec"><h3>Testdaten</h3><p class="status" style="margin:0">Löscht alle Daten dieser Testversion auf dem Gerät und in ihrem Drive-Ordner. Die echte App bleibt unberührt.</p>
       <div class="btnrow"><button type="button" class="btn danger" data-act="wipe">Alle Testdaten löschen</button></div></div>`}
@@ -2074,7 +2113,7 @@ function openSettings(focus){
         await replaceAll({invoices:[],bescheide:[],settings:{}});S.settings.importedAt=null;await saveSettings();closeSheet();render();toast("Testdaten gelöscht");return;
       case "save":
         S.settings={...S.settings,people:S.settings.people.map((p,i)=>({...p,name:($("#pn"+i)?.value??p.name).trim(),group:$("#pg"+i)?.value??p.group})).filter(p=>p.name),
-          rates:Object.fromEntries(Object.keys(GROUPS).map(g=>[g,{pkv:r2(n("rp"+g)/100),bh:r2(n("rb"+g)/100)}])),payDays:n("payD")||30,warnDays:n("warnD")};
+          rates:Object.fromEntries(Object.keys(GROUPS).map(g=>[g,{pkv:r2(n("rp"+g)/100),bh:r2(n("rb"+g)/100)}])),payDays:n("payD")||30,warnDays:n("warnD"),aiKey:($("#aiKey")?.value??S.settings.aiKey??"").trim()};
         await saveSettings();toast("Einstellungen gespeichert");closeSheet();render();
     }
   });
