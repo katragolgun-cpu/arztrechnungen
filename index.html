@@ -679,41 +679,32 @@ function cardHtml({i,c},o={}){
 }
 /* ---- Überblick: Zahlen mit Rechnungen, Bescheide/Anträge, Geldfluss ---- */
 function overviewSheet(focus){
-  const rows=S.inv.map(i=>({i,c:calc(i)}));
-  const row=(i,amt,sub)=>`<button type="button" class="ov-row" data-ovinv="${esc(i.id)}"><span><span>${esc(i.patient)} · ${esc(title(i))}</span><br><span class="s">${sub}</span></span><b>${eur(amt)}</b></button>`;
-  const grp=(key,label,expl,items)=>{const sum=items.reduce((a,x)=>a+x.amt,0);
-    return `<details class="sec" ${focus===key?"open":""}><summary><b>${label}</b> · ${eur(sum)} <span class="status">(${items.length})</span></summary><p class="status" style="margin:6px 0">${expl}</p>${items.length?items.sort((a,b)=>b.amt-a.amt).map(x=>row(x.i,x.amt,x.sub)).join(""):`<p class="status">Nichts.</p>`}</details>`};
-  const pay=[],way=[],req=[],you=[],old=[];const lim=addDays(today(),-21);
+  const rows=S.inv.map(i=>({i,c:calc(i)}));const lim=addDays(today(),-21);
+  const way=new Map(),req=new Map(),old=[],you=[],pay=[];
+  const add=(m,key,lab,sub,i,amt)=>{const g=m.get(key)||{lab,sub,amt:0,items:[]};g.amt+=amt;g.items.push({i,amt});m.set(key,g)};
   for(const {i,c} of rows){
-    if(c.unpaid)pay.push({i,amt:c.open,sub:`${STEP_LABEL[c.step]}${i.dueDate?` · fällig ${dfmt(i.dueDate)}`:""}${c.step!=="bezahlen"?" · erst bezahlen, wenn die Erstattung da ist":""}`});
+    if(c.unpaid)pay.push({i,amt:c.open,sub:i.dueDate?`fällig ${dfmt(i.dueDate)}`:"ohne Fälligkeit"});
     for(const x of [c.bh,c.pkv]){const n=SN(x.k);
-      if(x.state==="wait")req.push({i,amt:x.expected,sub:`${n} · eingereicht am ${dfmt(x.s.submitted)} · ${x.waitDays??""}${x.waitDays!=null?" Tage":""}`});
-      else if(x.state==="todo")you.push({i,amt:x.expected,sub:`${n} · noch einreichen`});
-      else if(x.moneyOpen)((x.b?.date||"")<lim?old:way).push({i,amt:x.received,sub:`${n} · Bescheid vom ${dfmt(x.b?.date)} · Geld noch nicht bestätigt`});
-      if(x.cutOpen&&["ehe","original"].includes(x.reason))you.push({i,amt:x.diff,sub:`${n} · ${TASK_LABEL[REASON_TASK[x.reason]]}`})}}
-  // Bescheide / Anträge
-  const bes=[...S.besch].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,12).map(b=>{
-    const its=b.items.map(it=>({it,inv:S.inv.find(x=>x.id===it.invId)})).filter(x=>x.inv);
-    const sum=its.reduce((a,x)=>a+(+x.it.refund||0),0),zero=its.filter(x=>(+x.it.refund||0)<=0.004).length;
-    return `<details class="ov-b" style="padding:8px 0;border-top:1px solid var(--line,#e5e7eb)"><summary><b>${SN(b.k)} ${dfmt(b.date)}</b>${b.appId?` · ${b.k==="pkv"?"Vorgang":"Antrag"} ${esc(b.appId)}`:""} · ${eur(b.payout??sum)} · ${b.moneyIn?`Geld da ${dfmt(b.moneyIn)}`:sum>0.004?`<span style="color:var(--warn)">Geld offen</span>`:"kein Geld"}${zero?` · <span style="color:var(--bad)">${zero} abgelehnt</span>`:""}</summary>
-      ${its.map(x=>row(x.inv,+x.it.refund||0,(+x.it.refund||0)<=0.004?`abgelehnt${x.it.note?": "+esc(x.it.note.slice(0,90))+"…":""}`:x.it.eligible!=null?"gekürzt":"erstattet")).join("")}</details>`}).join("");
-  // Geldfluss
-  const inflow=[...way.map(x=>({...x,when:"kommt bald"})),...req.map(x=>({...x,when:"nach Bescheid"}))];
-  const flow=`<div class="sec"><h3>Geldfluss</h3>
-    <div class="calc"><span>Kommt rein: unterwegs</span><b>${eur(way.reduce((a,x)=>a+x.amt,0))}</b></div>
-    <div class="calc"><span>Kommt rein: nach Bescheid</span><b>${eur(req.reduce((a,x)=>a+x.amt,0))}</b></div>
-    <div class="calc"><span>Kommt rein: wenn du handelst</span><b>${eur(you.reduce((a,x)=>a+x.amt,0))}</b></div>
-    <div class="calc"><span>Geht raus: an Ärzte</span><b>${eur(pay.reduce((a,x)=>a+x.amt,0))}</b></div>
-    ${pay.filter(x=>x.i.dueDate).sort((a,b)=>a.i.dueDate.localeCompare(b.i.dueDate)).slice(0,5).map(x=>row(x.i,x.amt,`fällig ${dfmt(x.i.dueDate)}`)).join("")}</div>`;
+      if(x.state==="wait")add(req,x.k+"|"+x.s.submitted,`${n}, eingereicht am ${dfmt(x.s.submitted)}`,"Bescheid fehlt noch · Betrag geschätzt",i,x.expected);
+      else if(x.state==="todo")you.push({i,amt:x.expected,sub:`bei ${n} einreichen`});
+      else if(x.moneyOpen){if((x.b?.date||"")<lim)old.push({i,amt:x.received,sub:`${n}-Bescheid vom ${dfmt(x.b?.date)}`});
+        else add(way,x.b?.id||x.k,`${n}-Bescheid vom ${dfmt(x.b?.date)}`,"kommt in den nächsten Tagen",i,x.received)}
+      if(x.cutOpen&&["ehe","original"].includes(x.reason))you.push({i,amt:x.diff,sub:TASK_LABEL[REASON_TASK[x.reason]]})}}
+  const tot=a=>a.reduce((s,x)=>s+x.amt,0);
+  const inv=x=>`<button type="button" class="ov-row" data-ovinv="${esc(x.i.id)}"><span>${esc(x.i.patient)} · ${esc(title(x.i))}${x.sub?`<br><span class="s">${x.sub}</span>`:""}</span><b>${eur(x.amt)}</b></button>`;
+  const grp=g=>`<details style="border-top:1px solid var(--line,#e5e7eb);padding:6px 0"><summary style="display:flex;justify-content:space-between;gap:10px;cursor:pointer"><span>${g.lab}<br><span class="s" style="font-size:12.5px;opacity:.75">${g.sub} · ${g.items.length} Rechnung${g.items.length>1?"en":""}</span></span><b>${eur(g.amt)}</b></summary>${g.items.map(inv).join("")}</details>`;
+  const block=(key,label,sum,sentence,body)=>`<details class="sec" ${focus===key?"open":""}><summary style="cursor:pointer"><b>${label}</b> <b style="float:right">${eur(sum)}</b><br><span class="status">${sentence}</span></summary><div style="margin-top:6px">${body}</div></details>`;
+  const W=[...way.values()],R=[...req.values()].sort((a,b)=>a.lab.localeCompare(b.lab));
+  const wSum=tot(W),rSum=tot(R);
+  const inS=[wSum>0.004?`${eur(wSum)} kommen in den nächsten Tagen`:"",rSum>0.004?`ca. ${eur(rSum)} sind beantragt, der Bescheid fehlt noch`:""].filter(Boolean).join(", ")+".";
+  const yS=you.length?`Dieses Geld kommt erst, wenn du etwas tust (${you.length} Rechnung${you.length>1?"en":""}).`:"Nichts zu tun.";
+  const nextDue=pay.filter(x=>x.i.dueDate).sort((a,b)=>a.i.dueDate.localeCompare(b.i.dueDate))[0];
+  const pS=pay.length?`${pay.length} Rechnung${pay.length>1?"en":""} noch nicht bezahlt${nextDue?`, die nächste ist am ${dfmt(nextDue.i.dueDate)} fällig`:""}.`:"Alles bezahlt.";
   sheet("Überblick",`
-    <p class="status" style="margin:10px 0 0">Tippe auf eine Zeile, um die Rechnung zu öffnen.</p>
-    ${grp("you","Wartet auf dich","Dieses Geld kommt erst, wenn du etwas tust: einreichen oder Unterlagen nachreichen.",you)}
-    ${grp("way","Unterwegs","Der Bescheid ist da. Sobald das Geld auf dem Konto ist, unter „Läuft“ bestätigen.",way)}
-    ${grp("req","Beantragt","Eingereicht, der Bescheid fehlt noch.",req)}
-    ${old.length?grp("old","Geld prüfen","Bescheid ist älter als 3 Wochen, aber „Geld da“ wurde nie bestätigt. Vermutlich ist das Geld längst auf dem Konto – bitte prüfen und unter „Läuft“ bestätigen.",old):""}
-    ${grp("pay","Offen beim Arzt","Noch nicht bezahlt. Regel: erst bezahlen, wenn die Erstattung da ist.",pay)}
-    ${flow}
-    <div class="sec"><h3>Bescheide</h3>${bes||`<p class="status">Noch keine Bescheide.</p>`}</div>
+    ${block("in","Kommt rein",wSum+rSum,inS,[...W,...R].map(grp).join("")||`<p class="status">Nichts.</p>`)}
+    ${block("you","Wartet auf dich",tot(you),yS,you.sort((a,b)=>b.amt-a.amt).map(inv).join(""))}
+    ${block("pay","Geht raus an Ärzte",tot(pay),pS,pay.sort((a,b)=>(a.i.dueDate||"9").localeCompare(b.i.dueDate||"9")).map(inv).join(""))}
+    ${old.length?block("old","Geld prüfen",tot(old),"Bescheid älter als 3 Wochen, Geldeingang nie bestätigt. Bitte im Konto prüfen.",old.map(inv).join("")):""}
   `,`<button type="button" class="btn" data-act="ovclose">Schließen</button>`);
   $("#scrim").addEventListener("click",ev=>{const r=ev.target.closest("[data-ovinv]");if(r){closeSheet();return openView(r.dataset.ovinv)}
     if(ev.target.closest('[data-act="ovclose"]'))closeSheet()});
@@ -826,7 +817,7 @@ document.addEventListener("click",e=>{
     openView(id,c.dataset.task||null);}
 });
 $("#btnAdd").addEventListener("click",async()=>{const r=await scanDocument("Rechnung scannen");if(r)openNew(r)});
-$("#sumBar").addEventListener("click",ev=>{const f=ev.target.closest("[data-ov]")?.dataset.ov;overviewSheet(f||"you")});
+$("#sumBar").addEventListener("click",ev=>{const f=ev.target.closest("[data-ov]")?.dataset.ov;overviewSheet({way:"in",req:"in"}[f]||f||"in")});
 $("#btnSettings").addEventListener("click",()=>openSettings());
 function closeSearch(){S.searchOpen=false;S.q="";$("#q").value="";$("#qClear").hidden=true;$("#searchRow").hidden=true;$("#btnSearch").setAttribute("aria-pressed","false")}
 $("#btnSearch").addEventListener("click",()=>{if(S.searchOpen)closeSearch();else{S.searchOpen=true;S.select=null;$("#searchRow").hidden=false;$("#btnSearch").setAttribute("aria-pressed","true");$("#q").focus()}render()});
