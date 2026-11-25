@@ -349,11 +349,29 @@ function side(inv,k){
   const b=last?.b||null;
   const moneyOpen=!!(last&&received>0.004&&!b.moneyIn);
   const objOpen=!!(s.obj&&!s.obj.result);
-  const cutOpen=!!(last&&diff>0.004&&!s.cutOk&&!s.obj);
+  const reason=last&&diff>0.004?reasonOf(inv,last.it,received):null;
+  const cutOpen=!!(last&&diff>0.004&&!s.cutOk&&!s.obj&&reason!=="ok");
   const waitDays=state==="wait"?days(s.submitted,today()):0;
   const askDue=state==="wait"&&waitDays>ASK_DAYS&&!(s.asked&&days(s.asked,today())<=ASK_DAYS);
-  return {k,rate,expected,state,received,diff,b,item:last?.it||null,list,moneyOpen,objOpen,cutOpen,waitDays,askDue,s};
+  return {k,rate,expected,state,received,diff,b,item:last?.it||null,list,moneyOpen,objOpen,cutOpen,reason,waitDays,askDue,s};
 }
+/* Gründe für Kürzung/Ablehnung aus dem Bescheid-Text erkennen (feste Regeln, keine KI).
+   Die Hinweis-Nummern sind je Bescheid verschieden, deshalb zählt nur der Text.
+   ok = akzeptieren ohne Aufgabe (Eigenbehalt, rezeptfrei, Höchstbetrag, § 48). */
+const REASONS=[
+  ["ehe",/§\s*6\s*Abs(?:atz|\.)?\s*2\s*BBhV|Ehepartner\/in|Anlage\s*"?Ehegatte/i],
+  ["doppelt",/doppelvorlage|doppelabrechnung|bereits\s+abgerechnet|identisch\s+zu\s+sein\s+scheint|nicht\s+nochmals\s+ein|gleichen\s+Leistungserbringers/i],
+  ["original",/sonstiger\s+beleg|zahlungserinnerung|mahnung/i],
+  ["gebuehr",/gebührenziffer|gebührenrahmen|wirtschaftlich\s+angemessen/i],
+  ["ok",/nicht\s+verschreibungspflichtig|§\s*49\s*Abs(?:atz|\.)?\s*[12]|gesondert\s+berechnete\s+Unterkunft|§\s*48\s*BBhV|hochgerechnet/i]];
+function reasonOf(inv,it,received){
+  const t=String(it?.note||"");
+  for(const [c,re] of REASONS)if(re.test(t))return c;
+  // Ablehnung ohne Hinweis, aber zur Rechnung liegt nur eine Zahlungserinnerung vor
+  if(!t&&received<=0.004&&/zahlungserinnerung|mahnung/i.test(inv.note||""))return "original";
+  return "sonst";
+}
+const REASON_TASK={ehe:"r_ehe",doppelt:"r_doppelt",original:"r_original",gebuehr:"r_gebuehr"};
 // Fälligkeit: Datum von der Rechnung, sonst Rechnungsdatum + Zahlungsfrist
 function dueDate(inv){
   if(inv.dueDate)return inv.dueDate;
@@ -366,8 +384,10 @@ function dueDate(inv){
    Daneben Aufgaben zum Klären (Kürzung, Fehlbuchung, Nachfragen …), die den Ablauf nicht blockieren. */
 const STEP_LABEL={einreichen:"Einreichen",bescheid:"Warten auf Bescheid",geld:"Warten auf Geld",bezahlen:"Arzt bezahlen",erledigt:"Erledigt"};
 const TASK_LABEL={einreichen:"Einreichen",bezahlen:"Arzt bezahlen",kuerzung:"Kürzung oder Ablehnung: akzeptieren oder Widerspruch",fehlbuchung:"AXA über Fehlbuchung informieren",
-  nachreichen:"Unterlagen nachreichen",original:"Originalrechnung anfordern",nachfrage:"Nachfragen",nachfragen:"Nachfragen: lange kein Bescheid",zahlung:"Zahlung klären",sonst:"Klären"};
-const KLAEREN=["kuerzung","fehlbuchung","nachreichen","original","nachfrage","nachfragen","zahlung","sonst"];
+  nachreichen:"Unterlagen nachreichen",original:"Originalrechnung anfordern",nachfrage:"Nachfragen",nachfragen:"Nachfragen: lange kein Bescheid",zahlung:"Zahlung klären",sonst:"Klären",
+  r_ehe:"Formular Ehepartner/in nachreichen, dann neu einreichen",r_doppelt:"Doppelt eingereicht: nicht erneut einreichen",
+  r_original:"Keine echte Rechnung: Original anfordern, dann neu einreichen",r_gebuehr:"Arzt hat falsch abgerechnet: akzeptieren oder Korrektur anfragen"};
+const KLAEREN=["r_ehe","r_original","r_gebuehr","r_doppelt","kuerzung","fehlbuchung","nachreichen","original","nachfrage","nachfragen","zahlung","sonst"];
 function calc(inv){
   const amount=r2(inv.amount),fee=r2(inv.fee);
   const paid=isApo(inv)&&!(+inv.payment?.amount)?amount:r2(inv.payment?.amount);
@@ -385,7 +405,7 @@ function calc(inv){
   const tasks=[];
   if(step==="einreichen")tasks.push({t:"einreichen"});
   if(step==="bezahlen")tasks.push({t:"bezahlen"});
-  for(const x of [pkv,bh]){if(x.cutOpen)tasks.push({t:"kuerzung",k:x.k});if(x.askDue)tasks.push({t:"nachfragen",k:x.k})}
+  for(const x of [pkv,bh]){if(x.cutOpen)tasks.push({t:REASON_TASK[x.reason]||"kuerzung",k:x.k});if(x.askDue)tasks.push({t:"nachfragen",k:x.k})}
   if(over||inv.refundDue)tasks.push({t:"zahlung"});
   for(const is of inv.issues||[])if(!is.done)tasks.push({t:KLAEREN.includes(is.kind)?is.kind:"sonst",issue:is.id});
   tasks.sort((a,b)=>taskOrder(a)-taskOrder(b));
@@ -622,6 +642,10 @@ function lineText(i,c,task){
 }
 function taskLine(i,c,x){
   if(x.t==="kuerzung"){const s=c[x.k];return s.received<=0.004?`${SN(x.k)} hat abgelehnt (0 € statt ${eur(s.expected)})`:`${SN(x.k)} hat ${eur(s.diff)} weniger erstattet`}
+  if(x.t==="r_ehe")return `${SN(x.k)}: Formular Ehepartner/in fehlt – nachreichen, dann neu einreichen`;
+  if(x.t==="r_doppelt")return `${SN(x.k)}: schon früher abgerechnet – nicht erneut einreichen`;
+  if(x.t==="r_original")return `${SN(x.k)}: keine echte Rechnung – Original anfordern, dann neu einreichen`;
+  if(x.t==="r_gebuehr")return `${SN(x.k)}: ${eur(c[x.k].diff)} gekürzt wegen Abrechnungsfehler des Arztes`;
   if(x.t==="nachfragen"){const s=c[x.k];return `${SN(x.k)}: seit ${s.waitDays} Tagen kein Bescheid`}
   if(x.t==="zahlung")return i.refundDue?`${eur(-c.open)} zu viel bezahlt: zurückfordern`:`${eur(-c.open)} mehr überwiesen als die Rechnung`;
   const is=(i.issues||[]).find(z=>z.id===x.issue);return is?.text||TASK_LABEL[x.t];
@@ -685,6 +709,10 @@ const GUIDE_HOW={
   nachfrage:"Text kopieren und senden. Danach „Erledigt“ tippen.",
   nachfragen:"Seit über 4 Wochen kein Bescheid. Text kopieren und nachfragen, dann „Nachgefragt“ tippen.",
   zahlung:"Klären, ob eine Mahngebühr enthalten war oder ob zu viel überwiesen wurde.",
+  r_ehe:"Formular „Ehepartner/in“ mit Steuerbescheid an die Beihilfe senden. Danach „Neu einreichen“ tippen.",
+  r_doppelt:"Nichts senden. „Verstanden“ tippen, damit die Rechnung nicht noch einmal eingereicht wird.",
+  r_original:"Rechnung mit Einzelleistungen beim Rechnungssteller anfordern. Wenn sie da ist: „Neu einreichen“ tippen.",
+  r_gebuehr:"Kleiner Betrag: akzeptieren. Sonst den Text an den Arzt oder die Abrechnungsstelle senden.",
   sonst:"Den Punkt erledigen, danach „Erledigt“ tippen."
 };
 function guideBar(inv,c){
@@ -955,6 +983,22 @@ function taskBody(inv,c,x){
         `Betroffen ist die ${rech} für ${inv.patient}.`,`Erstattet wurden ${eur(s.received)}, erwartet hatte ich ${eur(s.expected)}. Die Differenz beträgt ${eur(s.diff)}.`,
         "Bitte prüfen Sie die Kürzung erneut und teilen Sie mir die Gründe mit.",...SIG]),late?"Die Frist ist abgelaufen. Der Text bittet deshalb nur um Überprüfung.":"")
       +`<div class="btnrow"><button type="button" class="btn primary" data-act="objset" data-k="${x.k}">Widerspruch eingelegt</button><button type="button" class="btn" data-act="cutok" data-k="${x.k}">Kürzung akzeptieren</button></div>`}
+  if(x.t.startsWith("r_")){const s=c[x.k],b=s.b;
+    const head=`<p class="status" style="margin:2px 0 6px">${s.received<=0.004?`<b style="color:var(--bad)">Abgelehnt:</b> 0 € erhalten, ${eur(s.expected)} erwartet.`:`${eur(s.received)} erhalten, ${eur(s.expected)} erwartet: <b style="color:var(--bad)">${eur(s.diff)} weniger</b>.`}${b?.date?` Bescheid vom ${dfmt(b.date)}.`:""}`;
+    const why=s.item?.note?`<details class="txtbox"><summary>Text aus dem Bescheid</summary><p class="status" style="margin:6px 0 0">${esc(s.item.note)}</p></details>`:"";
+    const resub=`<button type="button" class="btn primary" data-act="resubok" data-k="${x.k}">Neu einreichen</button>`;
+    const accept=lbl=>`<button type="button" class="btn" data-act="cutok" data-k="${x.k}">${lbl}</button>`;
+    if(x.t==="r_ehe")return head+`<br>Die Beihilfe braucht das Formular „Ehepartner/in / Lebenspartner/in“ mit den Einkünften aus dem vorletzten Jahr. Ein Widerspruch ist nicht nötig. Antragsfrist ab Rechnungsdatum beachten.</p>`
+      +`<ol class="status" style="margin:0 0 6px 18px;padding:0"><li>Formular ausfüllen: <a href="https://www.bva.bund.de/SharedDocs/Downloads/DE/Bundesbedienstete/Gesundheit-Vorsorge/Beihilfe/Vordrucke/Anlage_Ehegatte.html?nn=523750" target="_blank" rel="noopener">Formular beim BVA</a></li><li>Mit Steuerbescheid an die Beihilfe senden</li><li>Dann „Neu einreichen“ tippen – die Rechnung steht wieder unter „Einreichen“</li></ol>`
+      +why+`<div class="btnrow">${resub}${accept("Ablehnung akzeptieren")}</div>`;
+    if(x.t==="r_doppelt")return head+`<br>Die Beihilfe hat diesen Beleg schon früher abgerechnet. <b>Nicht erneut einreichen.</b> Falls du sicher bist, dass er noch nie erstattet wurde: beim Bescheid nachsehen und anrufen.</p>`
+      +why+`<div class="btnrow"><button type="button" class="btn primary" data-act="cutok" data-k="${x.k}">Verstanden</button></div>`;
+    if(x.t==="r_original")return head+`<br>Eingereicht wurde nur eine Zahlungserinnerung oder ein sonstiger Beleg, keine Rechnung mit Einzelleistungen. Ein Widerspruch bringt nichts. Rechnung oder Duplikat anfordern und neu einreichen. Mahngebühren erstattet die Beihilfe nicht.</p>`
+      +textBox("Anfrage an den Rechnungssteller",L(["Sehr geehrte Damen und Herren,","",`zur ${rech} für ${inv.patient} liegt mir nur eine Zahlungserinnerung vor.`,"Meine Beihilfestelle benötigt die Rechnung mit den Einzelleistungen. Bitte senden Sie mir ein Rechnungsduplikat zu.",...SIG]))
+      +why+`<div class="btnrow">${resub}${accept("Ablehnung akzeptieren")}</div>`;
+    if(x.t==="r_gebuehr")return head+`<br>Die Beihilfe erkennt einzelne Gebührenziffern nicht an, weil der Arzt sie so nicht zusammen abrechnen darf. Kleine Beträge meist akzeptieren. Bei größeren: Arzt oder Abrechnungsstelle um eine korrigierte Rechnung bitten.</p>`
+      +textBox("Bitte um Rechnungskorrektur",L(["Sehr geehrte Damen und Herren,","",`meine Beihilfestelle hat die ${rech} für ${inv.patient} um ${eur(s.diff)} gekürzt.`,"Begründung: Einzelne Gebührenziffern können laut GOÄ nicht nebeneinander abgerechnet werden.","Bitte prüfen Sie die Rechnung und senden Sie mir bei Bedarf eine korrigierte Fassung.",...SIG]))
+      +why+`<div class="btnrow"><button type="button" class="btn primary" data-act="cutok" data-k="${x.k}">Kürzung akzeptieren</button></div>`}
   if(x.t==="nachfragen"){const s=c[x.k];
     return `<p class="status" style="margin:2px 0 6px">Eingereicht am ${dfmt(s.s.submitted)}, seit ${s.waitDays} Tagen kein Bescheid.</p>`
       +textBox(`Nachfrage an ${SN(x.k)}`,L(["Sehr geehrte Damen und Herren,","",`am ${dfmt(s.s.submitted)} habe ich die ${rech} für ${inv.patient} eingereicht.`,"Bisher habe ich dazu keinen Bescheid erhalten. Bitte teilen Sie mir den Bearbeitungsstand mit.",...SIG]))
@@ -1368,6 +1412,13 @@ function fillProofRows(){const e=S.edit,k=e.k;
     const note=(m.hints||[]).map(h=>e.notes?.[h]).filter(Boolean).join(" ");
     return {id:m.id,already:s.state==="done"&&!e.correction,on:!m.ambiguous,ambiguous:!!m.ambiguous,rejected:m.refund===0,eligible:m.eligible,note,
       amount:m.refund!=null?m.refund:s.state==="done"?s.received:s.expected}});
+  // „Sonstiger Beleg“ mit 0 € (z. B. Zahlungserinnerung): Betrag = Rechnung + Mahngebühr. Offene Rechnung derselben Person
+  // mit bis zu 10 € weniger als Ablehnung zuordnen, wenn sonst keine passt.
+  for(const l of e.lines||[]){if(!l.sonst||l.refund>0.004)continue;
+    const hit=S.inv.filter(inv=>{const s=side(inv,k);const d=r2(l.amount-r2(inv.amount));
+      return s.state==="wait"&&d>0.004&&d<=10&&(inv.patient||"").toLowerCase()===String(l.person).toLowerCase()&&!e.rows.some(r=>r.id===inv.id)});
+    if(hit.length===1)e.rows.push({id:hit[0].id,already:false,on:true,ambiguous:false,rejected:true,eligible:0,amount:0,
+      note:`Sonstiger Beleg vom ${l.date} über ${eur(l.amount)} (vermutlich Zahlungserinnerung mit Mahngebühr) – keine Rechnung mit Einzelleistungen.`})}
   // Schon erledigte nur anhaken, wenn der Bescheid nur erledigte betrifft (Nachtrag); sonst nur anzeigen und mitzählen
   if(e.rows.some(r=>!r.already))e.rows.forEach(r=>{if(r.already)r.on=false});
   const pid=e.pre?.id;if(pid&&!e.rows.some(r=>r.id===pid)){const inv=S.inv.find(x=>x.id===pid);if(inv){const s=side(inv,k);e.rows.unshift({id:pid,on:true,amount:s.state==="done"?s.received:s.expected})}}
@@ -1845,7 +1896,7 @@ function parseProofText(text){
     out.correction=/korrektur/i.test(t)||!!pre}
   // Zeilen der Festsetzung: Person, Datum, Rechnungsbetrag, Beihilfe
   out.lines=[...t.matchAll(/^\s*([A-Za-zÄÖÜäöüß-]+)[^\n]*?(\d{2}\.\d{2}\.\d{4})\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s+\d{1,3}\s+(\d{1,3}(?:\.\d{3})*,\d{2})/gm)]
-    .map(m=>({person:m[1],date:m[2],amount:num(m[3]),refund:num(m[5])}));
+    .map(m=>({person:m[1],date:m[2],amount:num(m[3]),refund:num(m[5]),sonst:/sonstiger\s+beleg/i.test(m[0])}));
   // Nummerierte Hinweise (Gründe für Kürzungen)
   out.notes={};const ls=t.split("\n");const hi=ls.findIndex(l=>/^\s*Hinweise\s*$/.test(l));
   if(hi>=0){let cur=null;for(const l of ls.slice(hi+1)){if(/^\s*(Seite \d|Servicezeit|De-Mail|Antragshinweise)/i.test(l))break;
