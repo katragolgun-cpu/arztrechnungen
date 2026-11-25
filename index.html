@@ -1462,8 +1462,8 @@ function drawAiBox(){const box=$("#aiBox");if(!box||!S.edit||S.edit.mode!=="edit
   const miss=aiMissing();
   if(a.busy){box.innerHTML=`<div class="sec"><p class="status" style="margin:0">Die KI liest die Rechnung …</p></div>`;return}
   if(a.msg){box.innerHTML=`<div class="sec"><p class="status" style="margin:0${a.err?";color:var(--bad)":""}">${esc(a.msg)}</p></div>`;return}
-  if(!miss.length){box.innerHTML="";return}
-  box.innerHTML=`<div class="sec"><p class="status" style="margin:0 0 6px">Nicht erkannt: ${esc(miss.join(", "))}. Die KI kann die Rechnung lesen und die fehlenden Felder ergänzen. Ausgefüllte Felder bleiben unverändert.</p><div class="btnrow"><button type="button" class="btn" data-act="aifill">KI ergänzen lassen</button></div></div>`;
+  const txt=miss.length?`Nicht erkannt: ${esc(miss.join(", "))}. Die KI kann die Rechnung lesen und die fehlenden Felder ergänzen.`:`Die KI kann die Rechnung zusätzlich lesen, z. B. um Abrechnungsstelle und behandelnden Arzt zu ergänzen.`;
+  box.innerHTML=`<div class="sec"><p class="status" style="margin:0 0 6px">${txt} Ausgefüllte Felder bleiben unverändert.</p><div class="btnrow"><button type="button" class="btn" data-act="aifill">KI ergänzen lassen</button></div></div>`;
 }
 async function aiFillInvoice(){
   const e=S.edit;readForm();e.aiFill={busy:true};drawAiBox();
