@@ -609,7 +609,7 @@ details.mehr h4{margin:16px 0 8px;font-size:13px;font-weight:600;color:var(--mut
   <section class="list" id="list" aria-live="polite"><div class="empty">Wird geladen …</div></section>
 </div>
 <div class="split" id="fabWrap"><button class="fab" id="btnAdd" type="button" aria-label="Rechnung fotografieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Fotografieren</button><button class="more" id="btnAddMore" type="button" aria-label="Weitere Wege zum Erfassen" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></button></div>
-<div class="addmenu" id="addMenu" role="menu" hidden><button type="button" role="menuitem" data-add="file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Datei oder PDF wählen</button><button type="button" role="menuitem" data-add="pkv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>Bescheid AXA</button><button type="button" role="menuitem" data-add="bh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>Bescheid Beihilfe</button></div>
+<div class="addmenu" id="addMenu" role="menu" hidden><button type="button" role="menuitem" data-add="file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Datei oder PDF wählen</button><button type="button" role="menuitem" data-add="pkv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>Bescheid AXA</button><button type="button" role="menuitem" data-add="bh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg>Bescheid Beihilfe</button><button type="button" role="menuitem" data-add="konto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>Kontoauszug</button></div>
 <div class="selbar" id="selBar" hidden></div>
 <input type="file" id="pick" accept="image/*,application/pdf" hidden>
 <input type="file" id="cam" accept="image/*" capture="environment" hidden>
@@ -1245,6 +1245,7 @@ $("#btnAddMore").addEventListener("click",e=>{e.stopPropagation();addMenu($("#ad
 document.addEventListener("click",e=>{if(!$("#addMenu").hidden&&!e.target.closest("#addMenu,#btnAddMore"))addMenu(false)},true);
 $("#addMenu").addEventListener("click",e=>{const b=e.target.closest("[data-add]");if(!b)return;addMenu(false);const k=b.dataset.add;
   if(k==="file"){const p=$("#pick");p.value="";p.onchange=()=>{const f=p.files[0];if(f)openNew({file:f})};p.click();return}
+  if(k==="konto"){const p=$("#pick");p.value="";p.onchange=()=>{const f=p.files[0];if(f)openKonto({file:f})};p.click();return}
   startProof(k)});
 $("#sumBar").addEventListener("click",ev=>{const f=ev.target.closest("[data-ov]")?.dataset.ov;overviewSheet({way:"in",req:"in"}[f]||f||"in")});
 $("#btnSettings").addEventListener("click",()=>openSettings());
@@ -1740,15 +1741,17 @@ async function takeIncoming(f){
   if(/^Bescheid_|leistungsabrechnung|bescheid/i.test(f.name))return openProof({file:f});
   toast("Dokument wird gelesen …");
   let text="";try{text=await readText({file:f})}catch{}
+  if(text&&KONTO_RE.test(text)&&!/rechnungsnummer|go[äaz]\b|gebührenziffer|beihilfebescheid|leistungsabrechnung/i.test(text))return openKonto({file:f},text);
   if(text&&BESCHEID_RE.test(text))return openProof({file:f});
   if(text&&text.replace(/\s/g,"").length>80)return openNew({file:f});
   sheet("Dokument übernehmen",`<div class="sec"><p class="status" style="margin:0">${esc(f.name)}</p>
-    <div class="btnrow"><button type="button" class="btn primary" data-act="inproof">Bescheid</button><button type="button" class="btn" data-act="ininv">Neue Rechnung</button></div></div>`,
+    <div class="btnrow"><button type="button" class="btn primary" data-act="inproof">Bescheid</button><button type="button" class="btn" data-act="ininv">Neue Rechnung</button><button type="button" class="btn" data-act="inkonto">Kontoauszug</button></div></div>`,
     `<button type="button" class="btn" data-act="incancel">Abbrechen</button>`);
   $("#scrim").addEventListener("click",ev=>{const b=ev.target.closest("[data-act]");if(!b)return;
     if(b.dataset.act==="incancel")return closeSheet();
     if(b.dataset.act==="inproof"){closeSheet();return openProof({file:f})}
-    if(b.dataset.act==="ininv"){closeSheet();return openNew({file:f})}});
+    if(b.dataset.act==="ininv"){closeSheet();return openNew({file:f})}
+    if(b.dataset.act==="inkonto"){closeSheet();return openKonto({file:f})}});
 }
 if(PROD&&"launchQueue" in window)launchQueue.setConsumer(async p=>{if(p.files?.length){try{takeIncoming(await p.files[0].getFile())}catch{}}});
 
@@ -2069,6 +2072,77 @@ async function autoMahnung(e){
     if(b.dataset.act==="mdone"){closeSheet();return render()}
     if(b.dataset.act==="mopen"){closeSheet();return openView(c.id)}
     if(b.dataset.act==="mundo"){b.disabled=true;await saveInvoice(before,true);scheduleSync();closeSheet();render();toast("Mahnung zurückgenommen")}});
+}
+
+/* ================= v93: Kontoauszug – Geld da und bezahlt automatisch ================= */
+const KONTO_RE=/kontostand|saldo|ums[aä]tze|buchungstag|kontoauszug|valuta|vorgemerkt/i;
+const SIDE_RE={bh:/bundesverwaltungsamt|beihilfe|\bbva\b/i,pkv:/\baxa\b/i};
+const amtNum=s=>{s=String(s??"").replace(/\s/g,"").replace(/€|eur/gi,"");const neg=/^-|-$/.test(s)||/^−/.test(s);s=s.replace(/[−+-]/g,"");
+  s=s.includes(",")?s.replace(/\.(?=\d{3})/g,"").replace(",","."):s;const n=r2(+s);return isNaN(n)?null:(neg?-n:n)};
+async function kontoLines(text){
+  if(S.settings.aiKey){
+    const q=`Das ist ein Kontoauszug oder ein Bildschirmfoto der Umsätze aus einer Banking-App. Liste alle Buchungen auf.
+Antworte NUR mit JSON: [{"datum":"TT.MM.JJJJ","name":"Auftraggeber oder Empfänger","zweck":"Verwendungszweck","betrag":-12.34}]. Eingänge positiv, Ausgänge negativ. Nichts erfinden, unbekannte Felder leer.`;
+    try{const arr=aiJsonArray(await aiCall(q,"Kontoauszug:\n"+text.slice(0,9000),1500));
+      return arr.map(x=>({date:(m=>m?`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`:"")(String(x.datum||"").match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/)),
+        name:String(x.name||""),zweck:String(x.zweck||""),amt:typeof x.betrag==="number"?r2(x.betrag):amtNum(x.betrag)})).filter(x=>x.amt)}catch{}}
+  // ohne KI: Zeilen mit Betrag, Text der Zeile und der Zeile davor als Name
+  const L=text.split("\n"),out=[];
+  for(let i=0;i<L.length;i++){const m=L[i].match(/([−+-]?\s?\d{1,3}(?:\.\d{3})*,\d{2})\s*(?:€|EUR)?\s*$/i);if(!m)continue;
+    const a=amtNum(m[1]);if(!a)continue;const ctx=(L[i-1]||"")+" "+L[i];if(/kontostand|saldo/i.test(ctx))continue;
+    out.push({date:"",name:ctx.replace(m[0],"").trim(),zweck:"",amt:a})}
+  return out;
+}
+function kontoMatch(lines){
+  const used=new Set(),res={money:[],paid:[],rest:[]};
+  for(const l of lines){const t=(l.name+" "+l.zweck);
+    if(l.amt>0){const k=SIDE_RE.bh.test(t)?"bh":SIDE_RE.pkv.test(t)?"pkv":null;
+      const c=S.besch.filter(b=>!used.has(b.id)&&geldOffen(b)&&(!k||b.k===k)&&Math.abs(r2(b.payout??bescheidSum(b))-l.amt)<0.01);
+      if(c.length===1){used.add(c[0].id);res.money.push({l,b:c[0]});continue}}
+    else{const a=-l.amt,w=new Set(provWords(t)),no=normNo(t);
+      const c=S.inv.filter(i=>!used.has(i.id)&&calc(i).unpaid&&Math.abs(calc(i).open-a)<0.01&&
+        ([...provWords(i.doctor),...provWords(i.billing)].some(x=>w.has(x))||(normNo(i.invoiceNo).length>=3&&no.includes(normNo(i.invoiceNo)))));
+      if(c.length===1){used.add(c[0].id);res.paid.push({l,inv:c[0]});continue}}
+    if(SIDE_RE.bh.test(l.name+" "+l.zweck)||SIDE_RE.pkv.test(l.name+" "+l.zweck))res.rest.push(l)}
+  return res;
+}
+async function openKonto(input,text){
+  S.edit={mode:"konto",urls:[]};
+  sheet("Kontoauszug",`<div class="sec"><p class="status" style="margin:0">Kontoauszug wird gelesen …</p></div>`,`<button type="button" class="btn" data-act="kclose">Abbrechen</button>`);
+  $("#scrim").addEventListener("click",ev=>{if(ev.target.closest('[data-act="kclose"]'))closeSheet()});
+  try{text=text||await readText(input)}catch{text=""}
+  if(S.edit?.mode!=="konto")return;
+  const lines=text?await kontoLines(text):[];
+  if(S.edit?.mode!=="konto")return;
+  const m=kontoMatch(lines);
+  if(!m.money.length&&!m.paid.length){
+    sheet("Kontoauszug",`<div class="sec"><p style="margin:0">Keine Buchung passt eindeutig zu einem Bescheid oder einer offenen Rechnung.</p>
+      ${m.rest.length?`<p class="status" style="margin:0">Gefunden, aber nicht zugeordnet: ${m.rest.map(l=>`${esc(l.name.slice(0,40))} ${eur(l.amt)}`).join(", ")}</p>`:`<p class="status" style="margin:0">${lines.length} Buchungen gelesen.</p>`}</div>`,
+      `<button type="button" class="btn" data-act="kclose">Schließen</button>`);
+    $("#scrim").addEventListener("click",ev=>{if(ev.target.closest('[data-act="kclose"]'))closeSheet()});return}
+  const before={besch:m.money.map(x=>structuredClone(x.b)),inv:m.paid.map(x=>structuredClone(x.inv))};
+  for(const {l,b} of m.money){const nb=structuredClone(b);nb.moneyIn=l.date||today();await saveBescheid(nb,true)}
+  for(const {l,inv} of m.paid){const c=structuredClone(inv);c.payment={date:l.date||today(),amount:r2(-l.amt)};
+    c.log=[...(c.log||[]),{date:l.date||today(),text:`Überweisung ${eur(-l.amt)} im Kontoauszug gefunden – als bezahlt eingetragen.`}];await saveInvoice(c,true)}
+  render();scheduleSync();kontoResult(m,before);
+}
+function kontoResult(m,before){
+  S.edit={mode:"result",urls:[]};
+  const pay=S.inv.filter(i=>calc(i).step==="bezahlen").sort((a,b)=>(calc(a).due||"9").localeCompare(calc(b).due||"9"));
+  const row=(l,s,a)=>`<div class="srow"><span class="l"><b>${l}</b><span>${s}</span></span><span class="a">${a}</span><span class="chev"></span></div>`;
+  sheet("Kontoauszug übernommen",`
+    ${m.money.length?`<div class="sec"><h3>Geld ist da</h3>${m.money.map(({l,b})=>row(`${SN(b.k)}-Bescheid vom ${dfmt(b.date)}`,`${b.items.length} Rechnung${b.items.length===1?"":"en"} · eingegangen ${dfmt(l.date)||"heute"}`,eur(l.amt))).join("")}</div>`:""}
+    ${m.paid.length?`<div class="sec"><h3>Bezahlt</h3>${m.paid.map(({l,inv})=>row(esc(title(inv)),`${esc(inv.patient)} · überwiesen ${dfmt(l.date)||"heute"}`,eur(-l.amt))).join("")}</div>`:""}
+    ${pay.length?`<div class="sec"><h3>Jetzt bezahlen</h3>${pay.map(i=>{const c=calc(i);return `<button type="button" class="srow" data-open="${esc(i.id)}"><span class="l"><b>${esc(title(i))}</b><span>${esc(i.patient)}${c.due?` · fällig ${dfmt(c.due)}`:""} · mit QR-Code</span></span><span class="a">${eur(c.open)}</span>${CHEV}</button>`}).join("")}</div>`:""}
+    ${m.rest.length?`<div class="sec"><p class="status" style="margin:0">Nicht zugeordnet: ${m.rest.map(l=>`${esc(l.name.slice(0,40))} ${eur(l.amt)}`).join(", ")}</p></div>`:""}
+    <div class="sec"><div class="btnrow"><button type="button" class="btn" data-act="kundo">Rückgängig</button></div></div>`,
+    `<button type="button" class="btn primary" data-act="kdone">Fertig</button>`);
+  $("#scrim").addEventListener("click",async ev=>{
+    const o=ev.target.closest("[data-open]");if(o){closeSheet();return openView(o.dataset.open)}
+    const a=ev.target.closest("[data-act]");if(!a)return;
+    if(a.dataset.act==="kdone"){closeSheet();return render()}
+    if(a.dataset.act==="kundo"){a.disabled=true;for(const b of before.besch)await saveBescheid(b,true);for(const i of before.inv)await saveInvoice(i,true);
+      scheduleSync();closeSheet();render();toast("Kontoauszug zurückgenommen")}});
 }
 
 /* ================= Bescheid erfassen: ein Bescheid -> mehrere Rechnungen ================= */
