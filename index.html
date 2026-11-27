@@ -590,6 +590,7 @@ details.mehr>summary::-webkit-details-marker{display:none}
 details.mehr>summary::after{content:"▸";color:var(--muted)}
 details.mehr[open]>summary::after{content:"▾"}
 details.mehr h4{margin:16px 0 8px;font-size:13px;font-weight:600;color:var(--muted)}
+.srow .a.bad{color:var(--bad)}
 </style>
 </head>
 <body>
@@ -2048,7 +2049,10 @@ async function openProof(input,pre){
     fillProofRows();proofMsg();
   }catch(e){S.edit.msg="Der Bescheid konnte nicht gelesen werden. Bitte die Rechnungen unten selbst zuordnen."}
   S.edit.busy=false;drawProof();
-  if(S.settings.aiKey&&S.edit?.mode==="proof"&&S.edit.text)proofAuto(S.edit);
+  const e=S.edit;
+  if(S.settings.aiKey&&e?.mode==="proof"&&e.text){e.msg="Die KI prüft den Bescheid …";drawProof();await proofAuto(e);if(S.edit!==e)return;proofMsg();drawProof()}
+  if(S.edit===e&&proofClear(e))return autoApply(e);
+  if(S.edit===e&&e.rows.length){e.msg="Nicht eindeutig: "+(e.rows.some(r=>r.ambiguous)?"gleicher Betrag bei mehreren Rechnungen – bitte die richtige anhaken.":dupBescheid()?"diesen Bescheid gibt es vermutlich schon.":e.total==null?"die Summe im Bescheid war nicht lesbar.":"die Summe passt noch nicht zum Bescheid.")+" Bitte prüfen und übernehmen.";drawProof()}
 }
 // KI automatisch: Zuordnung (wenn nötig), dann Kommentar
 async function proofAuto(e){
@@ -2183,9 +2187,18 @@ ${list}`;
   if(S.edit===e)drawProof();
 }
 async function applyProof(btn){
-  const e=S.edit,k=e.k,sel=e.rows.filter(r=>r.on);
+  const e=S.edit,sel=e.rows.filter(r=>r.on);
   if(!sel.length){setStatus("Bitte mindestens eine Rechnung auswählen.",true);return}
   btn.disabled=true;
+  const res=await applyProofCore(e);
+  closeSheet();render();scheduleSync();
+  toast(res.b.moneyIn?`Bescheid mit ${sel.length} Rechnung${sel.length===1?"":"en"} abgelegt`:`Bescheid übernommen. Er wartet jetzt unter „Läuft“ auf das Geld.`);
+}
+/* Übernehmen ohne Oberfläche. Merkt sich den Stand vorher, damit „Rückgängig“ möglich ist. */
+async function applyProofCore(e){
+  const k=e.k,sel=e.rows.filter(r=>r.on);
+  const before={inv:sel.map(r=>structuredClone(S.inv.find(x=>x.id===r.id))).filter(Boolean),manual:[]};
+  for(const r of sel)for(const {b} of itemsOf(r.id,k))if(b.manual&&!before.manual.some(m=>m.id===b.id))before.manual.push(structuredClone(b));
   const blob=e.file.type?.startsWith("image/")?await shrink(e.file,2200,0.85):e.file;
   const fileId=await storeFile(blob,`${e.date}_${SN(k)}_Bescheid${blob.type==="application/pdf"?".pdf":".jpg"}`);
   // Bescheid ohne Dokument (von Hand eingetragen) wird durch den echten ersetzt
@@ -2201,8 +2214,56 @@ async function applyProof(btn){
     c.log=[...(c.log||[]),{date:e.date,text:`KI zum ${SN(k)}-Bescheid vom ${dfmt(e.date)}: ${r.ai.kommentar}`,...(r.ai.status?{short:r.ai.status}:{})}];await saveInvoice(c,true)}
   for(const r of sel){const inv=S.inv.find(x=>x.id===r.id);if(inv&&!inv[k]?.submitted){const c=structuredClone(inv);c[k].submitted=e.date;await saveInvoice(c,true)}}
   await dbPut("meta",{key:"deleted",items:S.deleted});
-  closeSheet();render();scheduleSync();
-  toast(b.moneyIn?`Bescheid mit ${sel.length} Rechnung${sel.length===1?"":"en"} abgelegt`:`Bescheid übernommen. Er wartet jetzt unter „Läuft“ auf das Geld.`);
+  return {b,before,sel};
+}
+/* ================= v91: Bescheid automatisch ================= */
+// Eindeutig: jede Zeile zugeordnet, keine Auswahl offen, Summe passt zum Bescheid, kein Doppel
+function proofClear(e){
+  if(!e||e.busy||e.total==null||!e.rows.length)return false;
+  if(e.rows.some(r=>r.ambiguous)||dupBescheid())return false;
+  const on=e.rows.filter(r=>r.on);if(!on.length)return false;
+  const sum=r2(on.reduce((a,r)=>a+(+r.amount||0),0)),prev=r2(e.rows.filter(r=>r.already&&!r.on).reduce((a,r)=>a+(+r.amount||0),0));
+  return Math.abs(sum+prev-e.total)<0.01;
+}
+async function autoApply(e){
+  e.busy=true;e.msg="Passt eindeutig – wird übernommen …";drawProof();
+  try{const res=await applyProofCore(e);S.lastProof=res;render();scheduleSync();proofResult(res)}
+  catch(err){e.busy=false;e.msg="Automatisch übernehmen ging nicht. Bitte prüfen und selbst übernehmen.";drawProof()}
+}
+function proofSummary(res){
+  const b=res.b,k=b.k,sum=bescheidSum(b),parts=[];
+  const items=b.items.map(it=>({it,inv:S.inv.find(x=>x.id===it.invId)})).filter(x=>x.inv);
+  for(const {it,inv} of items){const s=side(inv,k);if(s.diff<=0.004)continue;
+    const why=REASON_TEXT[s.reason]||"gekürzt";
+    parts.push(`${inv.patient} ${title(inv).split(" (")[0]}: ${r2(it.refund)<=0.004?"abgelehnt":eur(s.diff)+" weniger"} (${why})`)}
+  return `${SN(k)} hat ${eur(sum)} für ${items.length} Rechnung${items.length===1?"":"en"} festgesetzt.`+(parts.length?` ${parts.join("; ")}.`:" Alles wie erwartet.");
+}
+function proofResult(res){
+  const b=res.b,k=b.k;
+  S.edit={mode:"result",urls:[],texts:[]};
+  const invs=res.sel.map(r=>S.inv.find(x=>x.id===r.id)).filter(Boolean);
+  const rows=invs.map(inv=>{const s=side(inv,k),it=s.item,ai=(inv.log||[]).filter(l=>l.text.startsWith(`KI zum ${SN(k)}-Bescheid`)).pop();
+    return `<div class="srow"><span class="l"><b>${esc(title(inv))}</b><span>${esc(inv.patient)}${ai?" · "+esc(ai.text.replace(/^KI zum [^:]+: /,"")):""}</span></span><span class="a${s.diff>0.004?" bad":""}">${eur(it?.refund)}</span><span class="chev"></span></div>`}).join("");
+  const tasks=invs.flatMap(inv=>calc(inv).klaeren.filter(x=>!x.k||x.k===k).map(x=>({inv,x})));
+  const tl=tasks.map(({inv,x})=>`<button type="button" class="srow" data-open="${esc(inv.id)}" data-task="${esc(taskKey(x))}"><span class="l"><b>${esc(TASK_SHORT[x.t]||TASK_LABEL[x.t])}</b><span>${esc(title(inv))} · ${esc(inv.patient)} · Text liegt bereit</span></span>${CHEV}</button>`).join("");
+  sheet("Bescheid übernommen",`
+    <div class="sec"><p style="margin:0;line-height:1.5">${esc(proofSummary(res))}</p>
+      ${b.moneyIn?"":`<p class="status" style="margin:0">Das Geld kommt in den nächsten Tagen. Dann auf der Startseite „Geld ist da“ tippen.</p>`}</div>
+    <div class="sec"><h3>Rechnungen</h3>${rows}</div>
+    ${tl?`<div class="sec"><h3>Neue Aufgaben</h3>${tl}</div>`:""}
+    <div class="sec"><div class="btnrow"><button type="button" class="btn" data-act="pundo">Rückgängig</button></div></div>`,
+    `<button type="button" class="btn primary" data-act="pdone">Fertig</button>`);
+  $("#scrim").addEventListener("click",async ev=>{
+    const o=ev.target.closest("[data-open]");if(o){closeSheet();return openView(o.dataset.open,o.dataset.task||null)}
+    const a=ev.target.closest("[data-act]");if(!a)return;
+    if(a.dataset.act==="pdone"){closeSheet();return render()}
+    if(a.dataset.act==="pundo"){a.disabled=true;await undoProof(res);closeSheet();render();toast("Bescheid zurückgenommen")}});
+}
+async function undoProof(res){
+  const cur=S.besch.find(x=>x.id===res.b.id);if(cur)await deleteBescheid(cur);
+  for(const m of res.before.manual){delete S.deleted[m.id];await saveBescheid(structuredClone(m),true)}
+  for(const inv of res.before.inv)await saveInvoice(structuredClone(inv),true);
+  await dbPut("meta",{key:"deleted",items:S.deleted});reindex();scheduleSync();S.lastProof=null;
 }
 /* ================= Ansicht eines Bescheids ================= */
 function openBescheid(id){
