@@ -592,6 +592,16 @@ details.mehr[open]>summary::after{content:"▾"}
 details.mehr h4{margin:16px 0 8px;font-size:13px;font-weight:600;color:var(--muted)}
 .srow .a.bad{color:var(--bad)}
 .sec>.srow:first-child{border-top:0}
+/* v94: Einstellungen eingeklappt */
+details.fold{display:block}
+details.fold>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary h3{flex:none}
+details.fold>summary .status{flex:1;margin:0;text-align:right;font-size:13px}
+details.fold>summary::after{content:"▸";color:var(--muted);margin-left:auto}
+details.fold[open]>summary::after{content:"▾"}
+details.fold[open]>summary{margin-bottom:10px}
+details.fold>*+*{margin-top:10px}
 </style>
 </head>
 <body>
@@ -2885,19 +2895,19 @@ function openSettings(focus){
       <div class="btnrow"><button type="button" class="btn primary" data-act="import" ${tokenValid()?"":"disabled"}>${PROD?"Daten übernehmen":"Kopie aus Drive holen"}</button></div>
       ${tokenValid()?"":`<p class="status" style="margin:0">Dafür erst bei Google Drive anmelden.</p>`}
       <div id="importBox"></div></div>`:""}
-    <div class="sec"><h3>Google Drive</h3>
+    <details class="sec fold"><summary><h3>Google Drive</h3><span class="status">${s.driveLinked?(tokenValid()?"verbunden":"Anmeldung abgelaufen"):"nicht verbunden"}</span></summary>
       <div class="setline"><span class="status" id="driveStatus" style="margin:0"></span>
       ${s.driveLinked&&tokenValid()?`<button type="button" class="btn" data-act="sync">Jetzt abgleichen</button>`:PROD?`<button type="button" class="btn primary" data-act="link">Verbinden</button>`:""}</div>
       ${PROD?"":`<p class="status" style="margin:0">${tok==="eigen"?"Angemeldet in der Testversion.":tok==="app"?"Angemeldet über die normale App (ca. 1 Stunde).":"Nicht angemeldet."}</p>
-      <div class="btnrow"><a class="btn" href="../" target="_blank" rel="noopener">Normale App öffnen</a><button type="button" class="btn" data-act="tokcheck">Anmeldung übernehmen</button><button type="button" class="btn" data-act="link">Direkt anmelden</button></div>`}</div>
-    <div class="sec"><h3>Familie</h3>${rows}
-      <h3 style="margin-top:6px">Anteile</h3>${rates}<p class="status" style="margin:0">Gilt für neue Rechnungen.</p></div>
-    <div class="sec"><h3>Fristen</h3><div class="grid2">${field("Zahlungsfrist (Tage)","payD",s.payDays,"number")}${field("Warnen vorher (Tage)","warnD",s.warnDays??7,"number")}</div></div>
-    <div class="sec"><h3>KI-Hilfe</h3>
+      <div class="btnrow"><a class="btn" href="../" target="_blank" rel="noopener">Normale App öffnen</a><button type="button" class="btn" data-act="tokcheck">Anmeldung übernehmen</button><button type="button" class="btn" data-act="link">Direkt anmelden</button></div>`}</details>
+    <details class="sec fold"><summary><h3>Familie</h3><span class="status">${s.people.length} Personen</span></summary>${rows}
+      <h3 style="margin-top:6px">Anteile</h3>${rates}<p class="status" style="margin:0">Gilt für neue Rechnungen.</p></details>
+    <details class="sec fold"><summary><h3>Fristen</h3><span class="status">${s.payDays} Tage, Warnung ${s.warnDays??7} Tage vorher</span></summary><div class="grid2">${field("Zahlungsfrist (Tage)","payD",s.payDays,"number")}${field("Warnen vorher (Tage)","warnD",s.warnDays??7,"number")}</div></details>
+    <details class="sec fold"><summary><h3>KI-Hilfe</h3><span class="status">${s.aiKey?"eingerichtet":"nicht eingerichtet"}</span></summary>
       ${s.aiKey&&!S.edit.aiEdit?`<div class="setline"><span class="status" style="margin:0">Eingerichtet</span><button type="button" class="btn" data-act="aiedit">Ändern</button></div>`
       :`<label class="f">Schlüssel (APP_KEY aus Cloudflare)<input id="aiKey" type="password" autocomplete="off" value="${esc(s.aiKey||"")}" placeholder="noch nicht eingetragen"></label>
-      <p class="status" style="margin:0">Kostenlos über Cloudflare. Daten werden dort nicht gespeichert.</p>`}</div>
-    <details class="sec notfall"><summary><h3>Notfall</h3></summary>
+      <p class="status" style="margin:0">Kostenlos über Cloudflare. Daten werden dort nicht gespeichert.</p>`}</details>
+    <details class="sec fold notfall"><summary><h3>Notfall</h3></summary>
       <p class="status" style="margin:0"><b>Wiederherstellen ersetzt alle Daten auf allen Geräten.</b> Nur benutzen, wenn Daten verloren sind. Sicherungen liegen in Drive › Arztrechnungen › _App-Daten › Sicherungen.</p>
       <div class="btnrow"><button type="button" class="btn" data-act="importfile">Aus Sicherungsdatei wiederherstellen</button></div>
       ${firstRun?"":`<div id="importBox"></div>`}
