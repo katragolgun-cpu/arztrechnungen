@@ -591,6 +591,7 @@ details.mehr>summary::after{content:"▸";color:var(--muted)}
 details.mehr[open]>summary::after{content:"▾"}
 details.mehr h4{margin:16px 0 8px;font-size:13px;font-weight:600;color:var(--muted)}
 .srow .a.bad{color:var(--bad)}
+.sec>.srow:first-child{border-top:0}
 </style>
 </head>
 <body>
@@ -1882,7 +1883,7 @@ async function editClick(e){
   if(act==="cancel"){const id=S.edit.inv.id;closeSheet();if(id)openView(id);return}
   if(act==="confok"){const x=S.edit.conf?.[b.dataset.f];if(x)x.done=true;return drawConf()}
   if(act==="aifill")return aiFillInvoice();
-  if(act==="aisugf"){const a=S.edit.aiFill,s=a?.sug?.[+b.dataset.i];if(!s)return;readForm();S.edit.inv[s.f]=s.val;S.edit.conf=S.edit.conf||{};S.edit.conf[s.f]={lvl:"check",msg:"Vorschlag der KI übernommen."};
+  if(act==="aisugf"){const a=S.edit.aiFill,s=a?.sug?.[+b.dataset.i];if(!s)return;readForm();S.edit.inv[s.f]=s.val;if(s.f==="patient"){const r=rateFor(s.val);S.edit.inv.pkv.rate=r.pkv;S.edit.inv.bh.rate=r.bh;S.edit.patientLocked=true}S.edit.conf=S.edit.conf||{};S.edit.conf[s.f]={lvl:"check",msg:"Vorschlag der KI übernommen."};
     a.sug=a.sug.filter(x=>x!==s);drawEditor();if(["doctor","billing"].includes(s.f))suggestFrom();if(s.f==="iban")checkKnownIban();return}
   if(act==="dupopen"){const id=S.edit.dup?.id;closeSheet();if(id)openView(id);return}
   if(act==="dupsave"){S.edit.dupOk=true;$("#dupBox").innerHTML="";return editClick({target:$("#btnSave")})}
@@ -1947,7 +1948,9 @@ async function ocr(input){
     if(inv.doctor||inv.billing)suggestFrom();
     checkKnownIban();
     setStatus(filled.length?`Erkannt: ${filled.join(", ")}. Bitte prüfen.`:"Nichts sicher erkannt. Bitte Felder ausfüllen.");
-    if(S.settings.aiKey&&S.edit.ocrText)aiFillInvoice();else drawAiBox();
+    const e=S.edit;
+    if(S.settings.aiKey&&e.ocrText)await aiFillInvoice();else drawAiBox();
+    if(S.edit===e&&e.mode==="edit")await autoInvoice(e);
   }catch(err){setStatus("Texterkennung nicht verfügbar (offline?). Bitte Felder ausfüllen.")}
 }
 /* ---- KI ergänzt fehlende Felder beim Erfassen ---- */
@@ -1971,7 +1974,7 @@ async function aiFillInvoice(){
   const people=S.settings.people.map(p=>p.name);
   const q=`Lies die Arztrechnung und gib die Angaben zurück. Personen der Familie: ${people.join(", ")} (Nachname Katrag). Ist die Rechnung von einer Abrechnungsstelle (z. B. PVS, Mediserv, DZR, PAS), ist "abrechnungsstelle" deren Name und "arzt" der behandelnde Arzt.
 "art" ist "rechnung", wenn Einzelleistungen (z. B. GOÄ/GOZ-Ziffern) aufgeführt sind, "mahnung" bei Zahlungserinnerung oder Mahnung ohne Einzelleistungen, sonst "sonstiges". "betrag" ist der Rechnungsbetrag ohne Mahngebühren.
-Antworte NUR mit JSON: {"art":"rechnung","person":"","arzt":"","abrechnungsstelle":"","rechnungsdatum":"TT.MM.JJJJ","behandlung":"TT.MM.JJJJ oder Zeitraum","betrag":0.00,"rechnungsnummer":"","iban":"","faellig":"TT.MM.JJJJ"}. Unbekannte Felder leer lassen, nichts erfinden.`;
+Antworte NUR mit JSON: {"art":"rechnung","person":"","arzt":"","abrechnungsstelle":"","rechnungsdatum":"TT.MM.JJJJ","behandlung":"TT.MM.JJJJ oder Zeitraum","betrag":0.00,"rechnungsnummer":"","iban":"","faellig":"TT.MM.JJJJ","mahngebuehr":0.00}. Bei einer Mahnung: "rechnungsnummer" und "rechnungsdatum" der ursprünglichen Rechnung, "mahngebuehr" die Mahn- oder Säumnisgebühr. Unbekannte Felder leer lassen, nichts erfinden.`;
   try{let ans=await aiCall(q,"Rechnung:\n"+(e.ocrText||"").slice(0,9000),600);
     if(typeof ans==="string"){const m=ans.match(/\{[\s\S]*\}/);if(!m)throw new Error("Die KI hat keine verwertbare Antwort geliefert.");ans=JSON.parse(m[0])}
     if(Array.isArray(ans))ans=ans[0]||{};
@@ -1989,12 +1992,83 @@ Antworte NUR mit JSON: {"art":"rechnung","person":"","arzt":"","abrechnungsstell
     set("treatDate",String(ans.behandlung||"").trim(),"Behandlungsdatum");set("invoiceNo",String(ans.rechnungsnummer||"").trim(),"Rechnungsnummer");
     const ib=String(ans.iban||"").replace(/\s/g,"").toUpperCase();if(/^DE\d{20}$/.test(ib))set("iban",ib,"IBAN");
     const p=people.find(n=>n.toLowerCase()===String(ans.person||"").trim().split(/\s+/)[0].toLowerCase());
+    e.aiAns=ans;e.personSure=e.ocrPatient?(!p||p===inv.patient):!!p;
+    if(p&&e.ocrPatient&&p!==inv.patient)sug.push({f:"patient",label:"Person",val:p,curTxt:inv.patient,valTxt:p});
     if(p&&!e.ocrPatient&&!e.patientLocked){inv.patient=p;const r=rateFor(p);inv.pkv.rate=r.pkv;inv.bh.rate=r.bh;got.push("Person")}
     const art=String(ans.art||"").toLowerCase();
     e.aiFill={sug,warn:art==="mahnung"?"Das ist eine Zahlungserinnerung oder Mahnung, keine Rechnung mit Einzelleistungen. Beihilfe und AXA erstatten darauf nichts. Bitte die Originalrechnung oder ein Duplikat anfordern.":"",
       msg:got.length?`KI hat ergänzt: ${got.join(", ")}.${sug.length?" Abweichungen oben prüfen.":" Bitte prüfen."}`:sug.length?"Die KI hat Abweichungen gefunden.":"Die KI hat gegengelesen: keine Abweichungen."};
     const st=$("#edStatus")?.textContent||"";drawEditor();if(st)setStatus(st);if(inv.doctor||inv.billing)suggestFrom();checkKnownIban();drawAiBox();}
   catch(err){e.aiFill={msg:err.message||"Fehler bei der KI-Anfrage",err:true};drawAiBox()}
+}
+
+/* ================= v92: Rechnung automatisch anlegen, Mahnung zuordnen ================= */
+async function autoInvoice(e){
+  const a=e.aiFill;if(!S.settings.aiKey||!a||a.err||a.busy||!e.aiAns)return;
+  readForm();const inv=e.inv,art=String(e.aiAns.art||"").toLowerCase();
+  if(art==="mahnung")return autoMahnung(e);
+  const why=[];
+  if(art!=="rechnung")why.push("Art der Rechnung unklar");
+  if(!(+inv.amount>0))why.push("Betrag");if(!inv.doctor)why.push("Arzt");if(!inv.invoiceDate)why.push("Rechnungsdatum");
+  if(!e.personSure)why.push("Person");
+  if(a.sug?.length)why.push("Texterkennung und KI lesen Unterschiedliches");
+  if(!ibanOk(inv.iban)||e.conf?.iban?.lvl==="warn")why.push("IBAN");
+  if(findDuplicate(inv))why.push("vermutlich schon vorhanden");
+  if(why.length){setStatus(`Bitte prüfen: ${why.join(", ")}. Der Rest ist ausgefüllt.`);return}
+  setStatus("Alles eindeutig – wird angelegt …");
+  try{
+    if(e.file){const blob=await shrink(e.file,2200,0.85);inv.doc={fileId:await storeFile(blob,fname(inv,blob)),own:true};e.file=null;
+      if(e.thumb0)inv.thumbFileId=await storeFile(await shrink(e.thumb0,900,0.7),"vorschau.jpg")}
+    inv.log=[...(inv.log||[]),{date:today(),text:"Automatisch angelegt: Texterkennung und KI haben dasselbe gelesen."}];
+    await saveInvoice(inv,true);render();scheduleSync();invoiceResult(inv.id);
+  }catch(err){setStatus("Automatisch speichern ging nicht. Bitte selbst speichern.",true)}
+}
+function invoiceResult(id){
+  const inv=S.inv.find(x=>x.id===id);if(!inv)return;const c=calc(inv);
+  S.edit={mode:"result",urls:[]};
+  const L=[["Rechnungsdatum",dfmt(inv.invoiceDate)],["Rechnungsnummer",inv.invoiceNo||"–"],["Fällig",c.due?dfmt(c.due):"–"],["IBAN",inv.iban?"…"+inv.iban.slice(-6):"–"],
+    ["Erwartet AXA",eur(c.pkv.expected)],["Erwartet Beihilfe",eur(c.bh.expected)]];
+  sheet("Rechnung angelegt",`
+    <div class="sec"><p style="margin:0;line-height:1.5"><b>${esc(title(inv))}</b>${inv.billing?` über ${esc(inv.billing)}`:""} · ${esc(inv.patient)} · ${eur(c.amount)}</p>
+      <p class="status" style="margin:0">Texterkennung und KI haben dasselbe gelesen.</p></div>
+    <div class="sec">${L.map(([l,v])=>`<div class="srow"><span class="l"><span>${l}</span></span><span class="a">${esc(v)}</span></div>`).join("")}</div>
+    <div class="sec"><div class="btnrow"><button type="button" class="btn primary" data-act="rsub">Jetzt einreichen</button><button type="button" class="btn" data-act="redit">Bearbeiten</button><button type="button" class="btn" data-act="rundo">Rückgängig</button></div></div>`,
+    `<button type="button" class="btn" data-act="rdone">Fertig</button>`);
+  $("#scrim").addEventListener("click",async ev=>{const b=ev.target.closest("[data-act]");if(!b)return;
+    if(b.dataset.act==="rdone"){closeSheet();return render()}
+    if(b.dataset.act==="rsub"){closeSheet();return openView(id)}
+    if(b.dataset.act==="redit"){closeSheet();return openEditor(structuredClone(S.inv.find(x=>x.id===id)))}
+    if(b.dataset.act==="rundo"){b.disabled=true;const v=S.inv.find(x=>x.id===id);if(v){await dbDel("invoices",id);for(const f of [v.doc?.fileId,v.thumbFileId])if(f)await dbDel("files",f).catch(()=>{});
+      S.deleted[id]=nowIso();await dbPut("meta",{key:"deleted",items:S.deleted});S.inv=S.inv.filter(x=>x.id!==id);reindex();scheduleSync()}
+      closeSheet();render();toast("Rechnung entfernt")}});
+}
+// Mahnung: passende offene Rechnung über Rechnungsnummer oder Empfänger + Betrag finden
+function findMahnTarget(m){
+  const no=normNo(m.invoiceNo),pay=payee(m).trim().toLowerCase(),words=new Set([...provWords(m.doctor),...provWords(m.billing)]);
+  const open=S.inv.filter(x=>calc(x).unpaid);
+  let hit=no.length>=3?open.filter(x=>normNo(x.invoiceNo)===no):[];
+  if(!hit.length)hit=open.filter(x=>r2(x.amount)===r2(m.amount)&&(x.iban&&x.iban===m.iban||payee(x).trim().toLowerCase()===pay||[...provWords(x.doctor),...provWords(x.billing)].some(w=>words.has(w)))&&(!m.invoiceDate||!x.invoiceDate||x.invoiceDate===m.invoiceDate));
+  return hit.length===1?hit[0]:null;
+}
+async function autoMahnung(e){
+  readForm();const m=e.inv,ans=e.aiAns||{};const t=findMahnTarget(m);
+  if(!t){setStatus("Das ist eine Mahnung. Eine passende offene Rechnung habe ich nicht eindeutig gefunden. Bitte prüfen.",true);return}
+  const before=structuredClone(t),c=structuredClone(t);
+  const fee=r2(+String(ans.mahngebuehr??"").replace(",",".")||0);
+  if(fee>0)c.fee=r2(Math.max(+c.fee||0,fee));
+  if(m.dueDate&&m.dueDate>(c.dueDate||""))c.dueDate=m.dueDate;
+  c.log=[...(c.log||[]),{date:today(),text:`Mahnung erhalten${fee>0?`, Mahngebühr ${eur(fee)}`:""}${m.dueDate?`, neue Frist ${dfmt(m.dueDate)}`:""}.`,short:"Mahnung erhalten"}];
+  await saveInvoice(c,true);render();scheduleSync();
+  const cc=calc(c);S.edit={mode:"result",urls:[]};
+  sheet("Mahnung zugeordnet",`
+    <div class="sec"><p style="margin:0;line-height:1.5">Mahnung zu <b>${esc(title(c))}</b> · ${esc(c.patient)} · Rechnung vom ${dfmt(c.invoiceDate)} über ${eur(c.amount)}.</p>
+      <p class="status" style="margin:0">${fee>0?`Mahngebühr ${eur(fee)} eingetragen. `:""}Jetzt offen: ${eur(cc.open)}${cc.due?`, fällig ${dfmt(cc.due)}`:""}. Die Mahngebühr erstatten AXA und Beihilfe nicht.</p></div>
+    <div class="sec"><div class="btnrow"><button type="button" class="btn primary" data-act="mopen">Rechnung öffnen</button><button type="button" class="btn" data-act="mundo">Rückgängig</button></div></div>`,
+    `<button type="button" class="btn" data-act="mdone">Fertig</button>`);
+  $("#scrim").addEventListener("click",async ev=>{const b=ev.target.closest("[data-act]");if(!b)return;
+    if(b.dataset.act==="mdone"){closeSheet();return render()}
+    if(b.dataset.act==="mopen"){closeSheet();return openView(c.id)}
+    if(b.dataset.act==="mundo"){b.disabled=true;await saveInvoice(before,true);scheduleSync();closeSheet();render();toast("Mahnung zurückgenommen")}});
 }
 
 /* ================= Bescheid erfassen: ein Bescheid -> mehrere Rechnungen ================= */
