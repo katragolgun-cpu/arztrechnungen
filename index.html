@@ -567,6 +567,29 @@ details.notfall>*+*{margin-top:10px}
 .h-money .h-hi .btn{flex:none}
 #people{display:none!important} /* v89: Personen-Leiste entfernt, Suche findet Personen */
 #list{padding-bottom:96px}
+/* v90: Rechnungsansicht ruhiger */
+.prog{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:6px}
+.pstep{display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:var(--muted)}
+.pstep i{display:block;height:6px;border-radius:3px;background:var(--surface-high,var(--sunken))}
+.pstep.on i{background:var(--primary,var(--accent))}.pstep.on{color:var(--on-surface,var(--ink))}
+.pstep.now i{background:var(--primary-container,var(--wait-soft))}.pstep.now{color:var(--primary,var(--accent));font-weight:600}
+.srow{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;border-top:1px solid var(--sunken);padding:8px 0;font:inherit;color:inherit;text-align:left}
+.sec>h3+.srow{border-top:0}
+button.srow{cursor:pointer}
+.srow .l{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.srow .l b{font-size:15px;font-weight:600}.srow .l span{font-size:13px;color:var(--muted)}
+.srow .a{font-size:15px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.srow .a.est{color:var(--muted);font-weight:500}
+.srow .chev{width:18px;height:18px;flex:none;color:var(--muted)}
+.srow b.bad,.srow .bad{color:var(--bad)}.srow b.wait{color:var(--wait,var(--primary))}
+.srx{margin:-6px 0 6px}
+.sec:has(>.srow){gap:6px}
+details.mehr{display:block}
+details.mehr>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between}
+details.mehr>summary::-webkit-details-marker{display:none}
+details.mehr>summary::after{content:"▸";color:var(--muted)}
+details.mehr[open]>summary::after{content:"▾"}
+details.mehr h4{margin:16px 0 8px;font-size:13px;font-weight:600;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -1329,16 +1352,13 @@ function drawView(thumb){
       <div class="big">${eur(c.amount)}</div>
       <div class="meta"><span class="pchip">${avatarFor(inv.patient)}${esc(inv.patient)}</span>${dfmt(inv.invoiceDate)}${inv.invoiceNo?" · Nr. "+esc(inv.invoiceNo):""}</div>
       ${inv.billing?`<div class="via">Rechnung über ${esc(inv.billing)}${inv.treatDate?" · Behandlung "+esc(inv.treatDate):""}</div>`:inv.treatDate?`<div class="via">Behandlung ${esc(inv.treatDate)}</div>`:""}
-      <div class="steps">${stepDots(c)}</div>
-      <div class="stamps">${stampPay(c,inv)}${stampSide(c.pkv)}${stampSide(c.bh)}</div>
+      <div class="prog">${stepDots(c)}</div>
     </div>
     <div class="sec nextstep"><h3>Nächster Schritt · ${esc(STEP_LABEL[c.step])}</h3>${nextHtml(inv,c)}</div>
     ${klaerenHtml(inv,c)}
     <div class="sec"><h3>Stand</h3>${statusLine(inv,c.pkv)}${statusLine(inv,c.bh)}${payLine(inv,c)}</div>
     ${S.edit.thumb?`<div class="sec">${S.edit.thumb}</div>`:""}
-    ${aiHtml(inv,c)}
-    ${historyHtml(inv,c)}
-    ${moreHtml(inv,c)}
+    ${mehrHtml(inv,c)}
     ${toolbarHtml(inv)}
   `,`<button type="button" class="btn" data-act="close">Schließen</button>`);
   $("#scrim").addEventListener("click",viewClick);
@@ -1366,7 +1386,7 @@ function toolbarScroll(){
 function stepDots(c){
   const order=["einreichen","bescheid","geld","bezahlen","erledigt"],at=order.indexOf(c.step);
   const L=["Eingereicht","Bescheid","Geld da","Bezahlt"];
-  return L.map((l,i)=>`<span class="dot2 ${i<at?"on":""}">${l}</span>`).join("");
+  return L.map((l,i)=>`<span class="pstep ${i<at?"on":""}${i===at?" now":""}"><i></i>${l}</span>`).join("");
 }
 /* ---- Genau ein nächster Schritt ---- */
 function nextHtml(inv,c){
@@ -1377,7 +1397,7 @@ function nextHtml(inv,c){
   if(S.edit.feeAsk)return feeAskHtml(c);
   if(c.step==="einreichen")return submitHtml(inv,c);
   if(c.step==="bescheid"){const w=[c.pkv,c.bh].filter(x=>x.state==="wait");
-    return P(w.map(x=>`${SN(x.k)}: ${eur(x.expected)} erwartet · eingereicht ${dfmt(x.s.submitted)}`+(x.waitDays>ASK_DAYS?` · <b style="color:var(--warn)">seit ${x.waitDays} Tagen</b>`:"")).join("<br>")+"<br>Kommt ein Bescheid, hier oder unter „Läuft“ erfassen.")
+    return P(`Warten auf den Bescheid von ${w.map(x=>SN(x.k)).join(" und ")}. Ist er da, hier erfassen.`)
       +`<div class="btnrow">${w.map(x=>one("proofcap",`Bescheid ${SN(x.k)} erfassen`,x.k)).join("")}</div>`}
   if(c.step==="geld"){const x=[c.pkv,c.bh].find(y=>y.moneyOpen);const b=x.b,n=b.items.length;
     return P(`Ist die Erstattung von ${SN(x.k)} auf dem Konto?<br><b>${eur(bescheidSum(b))}</b> laut Bescheid vom ${dfmt(b.date)}${n>1?` (${n} Rechnungen, davon diese ${eur(x.received)})`:""}.<br>Erst wenn das Geld da ist, bezahlst du den Arzt.`)
@@ -1406,9 +1426,7 @@ function submitHtml(inv,c){
     const btn=k==="bh"?`<button type="button" class="btn primary" data-act="subshare" ${f?"":"disabled"}>① PDF an Beihilfe-App senden</button>`
       :inDrive?`<a class="btn primary" href="${AXA_APP}">① AXA-App öffnen</a>`
       :`<button type="button" class="btn primary" data-act="subsave" ${f?"":"disabled"}>① PDF aufs Handy speichern</button><a class="btn" href="${AXA_APP}">AXA-App öffnen</a>`;
-    const axaHint=inDrive?`In der AXA-App Person ${esc(inv.patient)} wählen, dann aus Google Drive: <b>${esc(FOLDER_NAME)} › Zum Einreichen › AXA › ${esc(inv.patient)}</b>${inv.doc.name?` › ${esc(inv.doc.name)}`:""}`
-      :`In der AXA-App Person ${esc(inv.patient)} wählen, Datei aus Downloads`;
-    return `<div class="line" style="${active?"":"opacity:.5"}"><div><div class="t">${i+1}. ${n}</div><div class="s">${k==="bh"?"Antragsart: Beihilfe":axaHint}</div></div></div>
+    return `<div class="line" style="${active?"":"opacity:.5"}"><div><div class="t">${i+1}. ${n}</div></div></div>
       ${active?`<div class="btnrow">${btn}<button type="button" class="btn done" data-act="sub" data-k="${k}">② Erledigt – bei ${n} eingereicht</button></div>${k==="pkv"&&S.edit.subSaved?`<p class="status" style="margin:4px 0 0;color:var(--ok)">Im Ordner Downloads gespeichert.</p>`:""}`:""}`}).join("");
   const note=f===null?"Beleg wird geladen …":f===false?(inv.doc?.driveId&&!tokenValid()?"Beleg liegt in Drive. Für das Senden bitte in den Einstellungen anmelden.":"Kein Beleg vorhanden. Unten in der Leiste über „Beleg“ hinzufügen."):"";
   const y=+today().slice(0,4);
@@ -1495,23 +1513,26 @@ function objHtml(inv,x){const o=x.s.obj;if(!o)return "";
 }
 /* ---- Stand je Seite ---- */
 function statusLine(inv,x){
-  let info;const s=x.s;
-  if(x.state==="na")info="Kein Anspruch";
-  else if(x.state==="todo")info=`${eur(x.expected)} erwartet · noch nicht eingereicht`;
-  else if(x.state==="wait"){info=`${eur(x.expected)} erwartet · eingereicht ${dfmt(s.submitted)}${s.antrag?` · Antrag ${esc(s.antrag)}`:""}`;
-    if(x.k==="bh"&&antragMissing(inv))info+=`<br><span class="status">Die Antragsnummer aus der Beihilfe-App hier eintragen. Damit ordnet die App den Bescheid später zu.</span>${antragInput(inv.id,"antraginv",' data-k="bh"')}`}
-  else{const b=x.b;
-    info=`${eur(x.received)} laut <button type="button" class="btn link inl" data-bid="${esc(b.id)}">Bescheid vom ${dfmt(b.date)}</button>`
-      +(x.diff>0.004?` · <b style="color:var(--bad)">${eur(x.diff)} weniger als erwartet</b>`:x.diff<-0.004?` · ${eur(-x.diff)} mehr als erwartet`:"")
-      +(x.moneyOpen?` · <b style="color:var(--wait)">Geld noch nicht da</b>`:b.moneyIn?` · Geld da am ${dfmt(b.moneyIn)}`:"");
-    if(x.list.length>1)info+=`<br><span class="status">${x.list.length} Bescheide, der neueste gilt</span>`;
-    if(s.obj)info+=`<br>Widerspruch vom ${dfmt(s.obj.date)}: ${!s.obj.result?"Ergebnis offen":s.obj.result==="nachzahlung"?"Nachzahlung erhalten":"abgelehnt"}`+(!s.obj.result?objHtml(inv,x):"");
-    else if(s.cutOk&&x.diff>0.004)info+="<br>Kürzung akzeptiert";}
-  return `<div class="line"><div><div class="t">${SN(x.k)}</div><div class="s">${info}</div></div></div>`;
+  const s=x.s;let st,amt="",extra="",bid="";
+  if(x.state==="na"){st="kein Anspruch"}
+  else if(x.state==="todo"){st="noch nicht eingereicht";amt=`${eur(x.expected)}`}
+  else if(x.state==="wait"){st=`eingereicht ${dfmt(s.submitted).slice(0,6)}${s.antrag?` · Antrag ${esc(s.antrag)}`:""}${x.waitDays>ASK_DAYS?` · <b class="wait">seit ${x.waitDays} Tagen</b>`:""}`;amt=eur(x.expected);
+    if(x.k==="bh"&&antragMissing(inv))extra=`<div class="srx"><span class="status">Antragsnummer aus der Beihilfe-App:</span>${antragInput(inv.id,"antraginv",' data-k="bh"')}</div>`}
+  else{const b=x.b;bid=b.id;amt=eur(x.received);
+    st=`Bescheid ${dfmt(b.date).slice(0,6)} · ${x.moneyOpen?'<b class="wait">Geld fehlt</b>':b.moneyIn?"Geld da":"kein Geld"}`
+      +(x.diff>0.004?` · <b class="bad">${eur(x.diff)} weniger</b>`:"");
+    if(x.list.length>1)st+=` · ${x.list.length} Bescheide`;
+    if(s.obj)extra=`<div class="srx status">Widerspruch vom ${dfmt(s.obj.date)}: ${!s.obj.result?"Ergebnis offen":s.obj.result==="nachzahlung"?"Nachzahlung erhalten":"abgelehnt"}</div>`+(!s.obj.result?objHtml(inv,x):"");
+    else if(s.cutOk&&x.diff>0.004)st+=" · akzeptiert"}
+  const left=`<span class="l"><b>${SN(x.k)}</b><span>${st}</span></span><span class="a${x.state==="wait"||x.state==="todo"?" est":""}">${amt}</span>`;
+  return (bid?`<button type="button" class="srow" data-bid="${esc(bid)}">${left}${CHEV}</button>`:`<div class="srow">${left}<span class="chev"></span></div>`)+extra;
 }
 function payLine(inv,c){
-  const info=c.unpaid?`${eur(c.open)} offen`:(c.open<-0.004?`${eur(-c.open)} zu viel überwiesen`:isApo(inv)&&!inv.payment?.date?"In der Apotheke bezahlt":`Bezahlt am ${dfmt(inv.payment?.date)}`);
-  return `<div class="line"><div><div class="t">Zahlung an ${esc(payee(inv)||"Arzt")}</div><div class="s">${info}${c.fee>0?` · inkl. ${eur(c.fee)} Mahngebühr`:""}</div>${dueText(c)}</div></div>`;
+  const paid=!c.unpaid;
+  let st=paid?(c.open<-0.004?`${eur(-c.open)} zu viel überwiesen`:isApo(inv)&&!inv.payment?.date?"in der Apotheke bezahlt":`bezahlt ${dfmt(inv.payment?.date)}`)
+    :c.overdue?`<b class="bad">überfällig seit ${dfmt(c.due)}</b>`:c.due?`${c.dueSoon?'<b class="wait">':""}fällig ${dfmt(c.due)}${c.dueSoon?"</b>":""}`:"offen";
+  if(c.fee>0)st+=` · inkl. ${eur(c.fee)} Mahngebühr`;
+  return `<div class="srow"><span class="l"><b>Arzt</b><span>${esc(payee(inv)||"Arzt")} · ${st}</span></span><span class="a">${paid?eur(inv.payment?.amount||c.amount):eur(c.open)}</span><span class="chev"></span></div>`;
 }
 /* ---- KI-Hilfe (Cloudflare Worker, siehe worker.js) ---- */
 const AI_URL="https://pkv-beihilfe-ki.katrag-olgun.workers.dev/";
@@ -1530,13 +1551,13 @@ function aiContext(inv,c){
 }
 function aiHtml(inv,c){
   const a=S.edit.ai||{};
-  if(!S.settings.aiKey)return `<details class="sec"><summary><b>KI fragen</b></summary><p class="status" style="margin:8px 0 0">Zuerst in den Einstellungen unter „KI-Hilfe“ den Schlüssel eintragen.</p></details>`;
-  return `<details class="sec"${a.open?" open":""}><summary><b>KI fragen</b></summary>
+  if(!S.settings.aiKey)return `<p class="status" style="margin:0">Zuerst in den Einstellungen unter „KI-Hilfe“ den Schlüssel eintragen.</p>`;
+  return `
     <div class="btnrow" style="margin-top:8px"><button type="button" class="btn" data-act="aiask" data-q="Was muss ich bei dieser Rechnung als Nächstes tun?">Was ist zu tun?</button><button type="button" class="btn" data-act="aiask" data-q="Erkläre den Text aus dem Bescheid in einfachen Worten und sag, ob sich ein Widerspruch lohnt.">Bescheid erklären</button><button type="button" class="btn" data-act="aisuggest">Aktion vorschlagen</button></div>
     ${a.sug?`<div class="task" style="margin-top:8px"><div class="t">Vorschlag der KI: ${esc(a.sug.label)}</div><p class="status" style="margin:2px 0 6px">${esc(a.sug.why||"")}</p><div class="btnrow"><button type="button" class="btn primary" data-act="aisugdo">Ausführen</button><button type="button" class="btn" data-act="aisugno">Verwerfen</button></div></div>`:a.sugNone?`<p class="status" style="margin-top:6px">${esc(a.sugNone)}</p>`:""}
     <label class="f">Eigene Frage<input id="aiQ" placeholder="z. B. Muss ich die Mahngebühr selbst zahlen?" value="${esc(a.q||"")}"></label>
     <div class="btnrow"><button type="button" class="btn primary" data-act="aiask">Fragen</button></div>
-    ${a.busy?`<p class="status">Die KI denkt nach …</p>`:a.err?`<p class="status" style="color:var(--bad)">${esc(a.err)}</p>`:a.answer?`<div class="status" style="white-space:pre-wrap;margin-top:6px;color:var(--ink,inherit)">${esc(a.answer)}</div><p class="status" style="margin:4px 0 0;font-size:12px">Antwort einer KI – bei wichtigen Entscheidungen den Bescheid selbst prüfen.</p>`:""}</details>`;
+    ${a.busy?`<p class="status">Die KI denkt nach …</p>`:a.err?`<p class="status" style="color:var(--bad)">${esc(a.err)}</p>`:a.answer?`<div class="status" style="white-space:pre-wrap;margin-top:6px;color:var(--ink,inherit)">${esc(a.answer)}</div><p class="status" style="margin:4px 0 0;font-size:12px">Antwort einer KI – bei wichtigen Entscheidungen den Bescheid selbst prüfen.</p>`:""}`;
 }
 async function aiOverview(){
   const open=S.inv.map(i=>({i,c:calc(i)})).filter(r=>r.c.step!=="erledigt");
@@ -1598,22 +1619,17 @@ function historyHtml(inv,c){
   for(const l of inv.log||[])add(l.date,`<b>${esc(l.text)}</b>`);
   if(!ev.length)return "";
   ev.sort((a,b)=>a[0].localeCompare(b[0]));
-  return `<div class="sec"><details${(inv.log||[]).length?" open":""}><summary><b>Verlauf</b> · ${ev.length} Einträge</summary>
-    <div style="margin-top:8px">${ev.map(([d,t])=>`<div class="hrow"><span class="num">${dfmt(d)}</span><span>${t}</span></div>`).join("")}</div></details></div>`;
+  return `<div>${ev.map(([d,t])=>`<div class="hrow"><span class="num">${dfmt(d)}</span><span>${t}</span></div>`).join("")}</div>`;
 }
 /* ---- Weitere Aktionen ---- */
 function moreHtml(inv,c){
   const b=(act,label,k)=>`<button type="button" class="btn" data-act="${act}"${k?` data-k="${k}"`:""}>${label}</button>`,L=[];
-  if(inv.doc?.fileId||inv.doc?.driveId||inv.doc?.url)L.push(b("opendoc","Rechnung öffnen"));else L.push(b("adddoc","Beleg hinzufügen"));
   for(const x of [c.pkv,c.bh]){if(x.state==="na")continue;
     if(x.state==="wait")L.push(b("ask",`${SN(x.k)}: Betrag ohne Bescheid eintragen`,x.k));
     if(x.state==="wait"||x.state==="done")L.push(b("resub",`${SN(x.k)}: erneut einreichen`,x.k));}
   if(c.unpaid&&c.step!=="bezahlen"&&!S.edit.showPay)L.push(b("paysec","Schon jetzt überweisen"));
   if(c.unpaid)L.push(b("feeask",c.fee>0?"Mahngebühr ändern":"Mahnung erhalten"));
-  L.push(b("logadd","Eintrag zum Verlauf hinzufügen"));
-  L.push(b("issueadd","Punkt zum Klären hinzufügen"));
-  L.push(b("edit","Details bearbeiten"));
-  return `<details class="sec more"${S.edit.moreOpen?" open":""}><summary><b>Weitere Aktionen</b></summary>
+  return `
     ${S.edit.issueAsk?`<div class="sec" style="margin-top:10px"><label class="f">Art<select id="isKind">${["fehlbuchung","nachreichen","original","nachfrage","sonst"].map(k=>`<option value="${k}">${esc(TASK_LABEL[k])}</option>`).join("")}</select></label>
       <label class="f">Was ist zu klären?<input id="isText" placeholder="z. B. AXA hat auf Olgun statt Ikra gebucht"></label>
       <div class="btnrow"><button type="button" class="btn primary" data-act="issuesave">Hinzufügen</button><button type="button" class="btn" data-act="issueno">Abbrechen</button></div></div>`:""}
@@ -1621,7 +1637,15 @@ function moreHtml(inv,c){
       <label class="f">Was wurde gemacht? (Verlauf)<input id="lgText" placeholder="z. B. Formular mit Steuerbescheid an die Beihilfe, Antrag 9981190"></label>
       <label class="f">Kurzer Stand für die Karte (optional)<input id="lgShort" placeholder="z. B. Nachweis bei der Beihilfe eingereicht"></label>
       <div class="btnrow"><button type="button" class="btn primary" data-act="logsave">Eintragen</button><button type="button" class="btn" data-act="logno">Abbrechen</button></div></div>`:""}
-    <div class="morelist">${L.join("")}</div></details>`;
+    <div class="morelist">${L.join("")}</div>`;
+}
+/* v90: KI, Verlauf und Aktionen in einem eingeklappten Kasten „Mehr“ */
+function mehrHtml(inv,c){
+  const open=S.edit.moreOpen||S.edit.ai?.open||S.edit.logAsk||S.edit.issueAsk;
+  return `<details class="sec mehr"${open?" open":""} ontoggle="if(S.edit)S.edit.moreOpen=this.open"><summary><h3>Mehr</h3></summary>
+    ${moreHtml(inv,c).includes("data-act")?`<h4>Aktionen</h4>${moreHtml(inv,c)}`:moreHtml(inv,c)}
+    <h4>Verlauf</h4>${historyHtml(inv,c)||'<p class="status" style="margin:0">Noch keine Einträge.</p>'}
+    <h4>KI fragen</h4>${aiHtml(inv,c)}</details>`;
 }
 async function viewClick(e){
   const bb=e.target.closest("[data-bid]");if(bb&&!bb.dataset.act){openBescheid(bb.dataset.bid);return}
