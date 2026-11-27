@@ -531,6 +531,12 @@ body{padding-bottom:calc(104px + env(safe-area-inset-bottom,0px))}
 .ftb button.main{background:var(--primary);color:var(--on-primary);border-radius:24px}
 .ftb button.main:active{border-radius:14px}
 .ftb svg{width:22px;height:22px}
+/* v87: Antragsnummer eintragen */
+.antragrow{display:flex;gap:8px;align-items:center;width:100%;margin-top:6px}
+.antragrow input{flex:1;min-width:0;padding:10px 12px}
+.antragrow .btn{flex:none}
+.h-task.antrag{flex-wrap:wrap}
+.h-task.antrag .t b{white-space:normal}
 </style>
 </head>
 <body>
@@ -652,6 +658,24 @@ function side(inv,k){
   const askDue=state==="wait"&&waitDays>ASK_DAYS&&!(s.asked&&days(s.asked,today())<=ASK_DAYS);
   return {k,rate,expected,state,received,diff,b,item:last?.it||null,list,moneyOpen,objOpen,cutOpen,reason,waitDays,askDue,s};
 }
+/* Antragsnummer (v87): Die Beihilfe-App vergibt sie erst nach dem Einreichen, deshalb wird sie danach eingetragen.
+   Der Bescheid nennt sie als „AppID“. Bei einer Nachreichung gibt es eine neue Nummer, der Bescheid nennt aber weiter
+   die des ursprünglichen Antrags. Deshalb zählen: aktuelle Nummer (antrag), frühere Nummern (antragPrev) und die AppIDs
+   der Bescheide, die schon zur Rechnung gehören. */
+const ANTRAG_FROM="2026-11-25"; // ältere Einreichungen nicht nachträglich abfragen
+const antragOk=v=>/^\d{5,10}$/.test(String(v||""));
+function antragIds(inv,k){const s=inv[k]||{};const ids=new Set([s.antrag,...(s.antragPrev||[])].filter(Boolean).map(String));
+  for(const {b} of itemsOf(inv.id,k))if(b.appId)ids.add(String(b.appId));return ids}
+function antragMissing(inv,k="bh"){const s=inv[k]||{};return !s.antrag&&!!s.submitted&&s.submitted>=ANTRAG_FROM&&side(inv,k).state==="wait"}
+function antragGroups(rows){const g=new Map();
+  for(const {i} of rows)if(antragMissing(i)){const d=i.bh.submitted;if(!g.has(d))g.set(d,[]);g.get(d).push(i)}
+  return [...g.entries()].sort((a,b)=>b[0].localeCompare(a[0]))}
+const antragInput=(key,btnAct,extra="")=>`<span class="antragrow"><input inputmode="numeric" autocomplete="off" placeholder="Antragsnummer, z. B. 9991863" data-antrag-in="${esc(key)}" aria-label="Antragsnummer"><button type="button" class="btn primary" data-act="${btnAct}" data-d="${esc(key)}"${extra}>Speichern</button></span>`;
+async function saveAntrag(key,ids){
+  const inp=document.querySelector(`[data-antrag-in="${CSS.escape(key)}"]`);const v=String(inp?.value||"").replace(/\D/g,"");
+  if(!antragOk(v)){toast("Bitte die Antragsnummer aus der Beihilfe-App eintragen (nur Ziffern).");inp?.focus();return 0}
+  let n=0;for(const id of ids){const i=S.inv.find(x=>x.id===id);if(!i)continue;const c=structuredClone(i);c.bh.antrag=v;await saveInvoice(c,true);n++}
+  scheduleSync();toast(`Antrag ${v} bei ${n} Rechnung${n===1?"":"en"} eingetragen`);return n}
 /* Gründe für Kürzung/Ablehnung aus dem Bescheid-Text erkennen (feste Regeln, keine KI).
    Die Hinweis-Nummern sind je Bescheid verschieden, deshalb zählt nur der Text.
    ok = akzeptieren ohne Aufgabe (Eigenbehalt, rezeptfrei, Höchstbetrag, § 48). */
@@ -786,7 +810,7 @@ function avatarSvg(kind,name=""){
 function matchQ(i,q){
   const words=q.toLowerCase().split(/\s+/).filter(Boolean);if(!words.length)return true;
   const amt=+i.amount||0;const amtTxt=[amt.toFixed(2).replace(".",","),amt.toFixed(2),eur(amt).toLowerCase(),String(amt)].join(" ");
-  const ids=SIDES.flatMap(([k])=>itemsOf(i.id,k).map(x=>x.b.appId||"")).join(" ");
+  const ids=SIDES.flatMap(([k])=>[...antragIds(i,k)]).join(" ");
   const hay=[i.doctor,i.billing,i.treatDate,i.invoiceNo,(i.invoiceNo||"").replace(/[^0-9a-z]/gi,""),i.patient,i.reason,i.note,dfmt(i.invoiceDate),dfmt(i.receivedDate),i.invoiceDate,amtTxt,ids].join(" ").toLowerCase();
   return words.every(w=>{
     if(/^\d+([.,]\d{1,2})?$/.test(w)&&/[.,]/.test(w)){const n=+w.replace(",",".");if(Math.abs(n-amt)<0.005)return true}
@@ -874,7 +898,9 @@ function homeHtml(rows){
     <button type="button" class="h-tile mint" data-act="ovopen" data-f="in"><span class="l">${wSum>0.004?"Kommt bald":"Beantragt"}</span><span class="v">${eur(wSum>0.004?wSum:rSum)}</span><span class="s">${wSum>0.004?W.map(g=>g.lab.split("-Bescheid")[0]).filter((v,j,a)=>a.indexOf(v)===j).join(" und ")+" · Bescheid da":"Bescheid fehlt noch"}</span></button>
     <button type="button" class="h-tile sand" data-act="ovopen" data-f="pay"><span class="l">Zu tun</span><span class="v">${tasks.length} Aufgabe${tasks.length===1?"":"n"}</span><span class="s">${nextDue?`nächste Zahlung bis ${dfmt(nextDue.d)}`:tasks.length?"jetzt erledigen":"alles erledigt"}</span></button></div>`;
   h+=`<section class="h-sec"><h2>Was muss ich tun?</h2>`;
-  if(!tasks.length)h+=`<div class="h-box"><div class="h-task"><span class="t"><b>Nichts zu tun</b><span>Alles wartet auf andere oder ist erledigt.</span></span></div></div>`;
+  const AG=antragGroups(rows);
+  if(AG.length)h+=`<div class="h-box" style="margin-bottom:10px">${AG.map(([d,list])=>`<div class="h-task antrag"><span class="t"><b>Antragsnummer eintragen</b><span>Beihilfe, eingereicht am ${dfmt(d)} · ${list.map(x=>esc(title(x))+" ("+esc(x.patient)+")").join(", ")}</span></span>${antragInput(d,"antragsave")}</div>`).join("")}</div>`;
+  if(!tasks.length&&!AG.length)h+=`<div class="h-box"><div class="h-task"><span class="t"><b>Nichts zu tun</b><span>Alles wartet auf andere oder ist erledigt.</span></span></div></div>`;
   else{h+=`<div class="h-box">${tasks.map(x=>`<div class="h-task">${ini(x.i.patient)}<button type="button" class="t" data-open="${esc(x.i.id)}"><b>${esc(title(x.i))}</b><span>${esc(x.i.patient)} · ${esc(x.sub)}</span></button><button type="button" class="btn ${x.cls||"primary"}" data-open="${esc(x.i.id)}">${x.btn}</button></div>`).join("")}</div>`;
     const ein=tasks.filter(x=>x.t.t==="einreichen").length;
     if(ein>1)h+=`<button type="button" class="h-more" data-act="selstart">Mehrere auf einmal als eingereicht markieren</button>`}
@@ -1146,6 +1172,7 @@ document.addEventListener("click",e=>{
     if(act==="selnone"){S.select=null;return render()}
     if(act==="selall"){S.select=new Set([...document.querySelectorAll(".card[data-sel]")].map(x=>x.dataset.id));return render()}
     if(act==="bulk")return bulkSubmit(a.dataset.k);
+    if(act==="antragsave"){const d=a.dataset.d;const ids=S.inv.filter(i=>antragMissing(i)&&i.bh.submitted===d).map(i=>i.id);return saveAntrag(d,ids).then(n=>{if(n)render()})}
     if(act==="proofstart")return startProof(a.dataset.k);
     if(act==="guidestart")return guideStart();
     if(act==="aioverview")return aiOverview();
@@ -1350,7 +1377,7 @@ function submitHtml(inv,c){
   const inDrive=!!(inv.doc?.driveId&&inv.doc.folder===folderKey(inv));
   let open=false;
   const rows=steps.map(([k,n],i)=>{const x=c[k];
-    if(x.state!=="todo")return `<div class="line"><div><div class="t">${i+1}. ${n}</div><div class="s" style="color:var(--ok)">Eingereicht am ${dfmt(x.s.submitted)}</div></div></div>`;
+    if(x.state!=="todo")return `<div class="line"><div><div class="t">${i+1}. ${n}</div><div class="s" style="color:var(--ok)">Eingereicht am ${dfmt(x.s.submitted)}${x.s.antrag?` · Antrag ${esc(x.s.antrag)}`:""}</div>${k==="bh"&&antragMissing(inv)?`<div class="s">Antragsnummer aus der Beihilfe-App:</div>${antragInput(inv.id,"antraginv",' data-k="bh"')}`:""}</div></div>`;
     const active=!open;open=true;
     const btn=k==="bh"?`<button type="button" class="btn primary" data-act="subshare" ${f?"":"disabled"}>① PDF an Beihilfe-App senden</button>`
       :inDrive?`<a class="btn primary" href="${AXA_APP}">① AXA-App öffnen</a>`
@@ -1424,7 +1451,7 @@ function taskBody(inv,c,x){
       +why+`<div class="btnrow"><button type="button" class="btn primary" data-act="cutok" data-k="${x.k}">Kürzung akzeptieren</button></div>`}
   if(x.t==="nachfragen"){const s=c[x.k];
     return `<p class="status" style="margin:2px 0 6px">Eingereicht am ${dfmt(s.s.submitted)}, seit ${s.waitDays} Tagen kein Bescheid.</p>`
-      +textBox(`Nachfrage an ${SN(x.k)}`,L(["Sehr geehrte Damen und Herren,","",`am ${dfmt(s.s.submitted)} habe ich die ${rech} für ${inv.patient} eingereicht.`,"Bisher habe ich dazu keinen Bescheid erhalten. Bitte teilen Sie mir den Bearbeitungsstand mit.",...SIG]))
+      +textBox(`Nachfrage an ${SN(x.k)}`,L(["Sehr geehrte Damen und Herren,","",`am ${dfmt(s.s.submitted)} habe ich die ${rech} für ${inv.patient} eingereicht${x.k==="bh"&&s.s.antrag?` (Antrag ${s.s.antrag})`:""}.`,"Bisher habe ich dazu keinen Bescheid erhalten. Bitte teilen Sie mir den Bearbeitungsstand mit.",...SIG]))
       +`<div class="btnrow"><button type="button" class="btn primary" data-act="asked" data-k="${x.k}">Nachgefragt</button></div>`}
   if(x.t==="zahlung"){
     if(inv.refundDue)return `<p class="status" style="margin:2px 0 6px"><b>${eur(-c.open)} zu viel bezahlt</b> – beim Arzt zurückfordern.</p><div class="btnrow"><button type="button" class="btn primary" data-act="refundok">Geld zurückerhalten</button></div>`;
@@ -1447,7 +1474,8 @@ function statusLine(inv,x){
   let info;const s=x.s;
   if(x.state==="na")info="Kein Anspruch";
   else if(x.state==="todo")info=`${eur(x.expected)} erwartet · noch nicht eingereicht`;
-  else if(x.state==="wait")info=`${eur(x.expected)} erwartet · eingereicht ${dfmt(s.submitted)}`;
+  else if(x.state==="wait"){info=`${eur(x.expected)} erwartet · eingereicht ${dfmt(s.submitted)}${s.antrag?` · Antrag ${esc(s.antrag)}`:""}`;
+    if(x.k==="bh"&&antragMissing(inv))info+=`<br><span class="status">Die Antragsnummer aus der Beihilfe-App hier eintragen. Damit ordnet die App den Bescheid später zu.</span>${antragInput(inv.id,"antraginv",' data-k="bh"')}`}
   else{const b=x.b;
     info=`${eur(x.received)} laut <button type="button" class="btn link inl" data-bid="${esc(b.id)}">Bescheid vom ${dfmt(b.date)}</button>`
       +(x.diff>0.004?` · <b style="color:var(--bad)">${eur(x.diff)} weniger als erwartet</b>`:x.diff<-0.004?` · ${eur(-x.diff)} mehr als erwartet`:"")
@@ -1537,7 +1565,7 @@ async function askAI(inv,c,q){
 function historyHtml(inv,c){
   const ev=[];const add=(d,t)=>{if(d)ev.push([String(d).slice(0,10),t])};
   add(inv.createdAt,inv.origin==="kopie"?"Erfasst (Kopie aus der echten App)":"Erfasst");
-  for(const x of [c.bh,c.pkv]){const n=SN(x.k),s=x.s;add(s.submitted,`Bei ${n} eingereicht`);
+  for(const x of [c.bh,c.pkv]){const n=SN(x.k),s=x.s;add(s.submitted,`Bei ${n} eingereicht${s.antrag?` (Antrag ${esc(s.antrag)})`:""}`);
     for(const {b,it} of x.list){add(b.date,`Bescheid ${n}: ${eur(it.refund)}${b.appId?` (Antrag ${esc(b.appId)})`:""}`);if(b.moneyIn)add(b.moneyIn,`Geld von ${n} da`)}
     if(s.asked)add(s.asked,`Bei ${n} nachgefragt`);
     if(s.obj){add(s.obj.date,`Widerspruch bei ${n} eingelegt`);if(s.obj.result)add(s.obj.resultDate,`Widerspruch ${n}: ${s.obj.result==="nachzahlung"?"Nachzahlung":"abgelehnt"}`)}}
@@ -1584,7 +1612,8 @@ async function viewClick(e){
     case "edit":{const urls=S.edit.urls;S.edit.urls=[];urls.forEach(u=>URL.revokeObjectURL(u));return openEditor(inv)}
     case "sub":{if((inv.log||[]).some(l=>/^Neu einzureichen bei/.test(l.text)&&l.date<=today())&&!(inv.log||[]).some(l=>l.short&&l.date===today()&&l.short.includes(SN(k))))inv.log=[...inv.log,{date:today(),text:`Bei ${SN(k)} neu eingereicht`,short:`Bei ${SN(k)} neu eingereicht`}];
       inv[k].submitted=today();await saveInvoice(inv);const c1=calc(inv);
-      toast(c1.step==="einreichen"?`${SN(k)}: eingereicht. Jetzt ${SN(k==="pkv"?"bh":"pkv")}.`:"Eingereicht. Die Rechnung wartet jetzt unter „Läuft“ auf den Bescheid.");return again()}
+      toast(k==="bh"?"Beihilfe: eingereicht. Jetzt die Antragsnummer aus der Beihilfe-App eintragen.":c1.step==="einreichen"?`${SN(k)}: eingereicht. Jetzt ${SN(k==="pkv"?"bh":"pkv")}.`:"Eingereicht. Die Rechnung wartet jetzt unter „Läuft“ auf den Bescheid.");return again()}
+    case "antraginv":{const n=await saveAntrag(b.dataset.d,[b.dataset.d]);if(n){render();again()}return}
     case "subsave":{const f=S.edit.subFile;if(!f)return;const u=URL.createObjectURL(f);const a=document.createElement("a");a.href=u;a.download=/\.pdf$/i.test(f.name)?f.name:f.name+".pdf";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),10000);
       S.edit.subSaved=true;toast("PDF gespeichert. Jetzt die AXA-App öffnen.");return again()}
     case "subshare":{const f=S.edit.subFile;if(!f)return;if(navigator.canShare?.({files:[f]})){try{await navigator.share({files:[f],title:f.name})}catch{}}else toast("Teilen wird hier nicht unterstützt");return}
@@ -1602,6 +1631,7 @@ async function viewClick(e){
       {const sd=side(inv,k),lb=sd.b;inv.log=[...(inv.log||[]),{date:today(),text:`Neu einzureichen bei ${SN(k)}${lb?.date?` – Bescheid vom ${dfmt(lb.date)}: ${eur(sd.received)}${sd.item?.note?" ("+(REASON_TEXT[sd.reason]||"gekürzt")+")":""}`:""}${inv[k].submitted?`, erste Einreichung ${dfmt(inv[k].submitted)}`:""}`}]}for(const {b:bs} of itemsOf(inv.id,k)){const nb=structuredClone(bs);nb.items=nb.items.filter(it=>it.invId!==inv.id);
         if(nb.items.length)await saveBescheid(nb,true);else await deleteBescheid(nb)}
       const was=`Erste Einreichung bei ${SN(k)} ${dfmt(inv[k].submitted)}`;inv.note=inv.note?`${inv.note} · ${was}`:was;
+      if(inv[k].antrag){inv[k].antragPrev=[...new Set([...(inv[k].antragPrev||[]),inv[k].antrag])];delete inv[k].antrag}
       inv[k].submitted=null;delete inv[k].cutOk;delete inv[k].obj;delete inv[k].asked;S.edit.resub=null;await saveInvoice(inv);toast(`${SN(k)}: wieder bei „Einreichen“`);return again()}
     case "asked":inv[k].asked=today();await saveInvoice(inv);toast("Nachfrage eingetragen. In 4 Wochen erinnert die App wieder.");return again();
     case "objset":inv[k].obj={date:today(),result:null};await saveInvoice(inv);toast("Widerspruch eingetragen. Er steht jetzt unter „Läuft“.");return again();
@@ -1693,7 +1723,9 @@ function sideForm(k){
   return `<div class="sec"><h3>${SN(k)}</h3><div class="grid2">
       ${field("Anteil in %",`${k}_rate`,Math.round((+s.rate||0)*100),"number")}
       ${field("Abzug (€)",`${k}_deduction`,s.deduction||"","number")}
-      ${field("Eingereicht am",`${k}_submitted`,s.submitted,"date","full")}</div>
+      ${field("Eingereicht am",`${k}_submitted`,s.submitted,"date","full")}
+      ${k==="bh"?field("Antragsnummer (aus der Beihilfe-App)","bh_antrag",s.antrag||"","text","full",'inputmode="numeric" autocomplete="off"'):""}</div>
+    ${k==="bh"&&s.antragPrev?.length?`<p class="status" style="margin:0 0 6px">Frühere Anträge: ${s.antragPrev.map(esc).join(", ")}</p>`:""}
     <div class="calc"><span>Erwartet</span><span class="num" id="${k}_exp">${eur(x.expected)}</span></div>
     <p class="status" style="margin:0">Erstattete Beträge kommen aus den Bescheiden.</p></div>`;
 }
@@ -1791,6 +1823,7 @@ function readForm(){
   inv.kind=v("kind")||inv.kind||"arzt";
   inv.iban=inv.iban.replace(/\s+/g,"").toUpperCase();
   for(const k of ["pkv","bh"]){const s=inv[k]=inv[k]||{};s.rate=r2((+numIn(v(k+"_rate"))||0)/100);s.deduction=numIn(v(k+"_deduction"))||0;s.submitted=v(k+"_submitted")||null}
+  if($("#bh_antrag")){const a=String(v("bh_antrag")).replace(/\D/g,"");if(a)inv.bh.antrag=a;else delete inv.bh.antrag}
   inv.payment={...(inv.payment||{}),date:v("pay_date")||null,amount:numIn(v("pay_amount"))};
   inv.fee=numIn(v("fee"))||0;
 }
@@ -1916,12 +1949,18 @@ Antworte NUR mit JSON: {"art":"rechnung","person":"","arzt":"","abrechnungsstell
 }
 
 /* ================= Bescheid erfassen: ein Bescheid -> mehrere Rechnungen ================= */
-function matchInvoices(text,k){
+// Mit Antragsnummer (AppID): zuerst nur unter den Rechnungen dieses Antrags suchen; findet sich dort nichts, unter allen.
+function matchInvoices(text,k,appId){
+  if(appId){const pool=S.inv.filter(i=>antragIds(i,k).has(String(appId)));
+    if(pool.length){const r=matchInvoices0(text,k,pool);if(r.length){r.byAntrag=true;return r}}}
+  return matchInvoices0(text,k,S.inv);
+}
+function matchInvoices0(text,k,pool){
   const low=text.toLowerCase(),lines=text.split("\n");
   const tw=new Set(provWords(text));
   const amtRe=a=>{const f1=a.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2}).replace(/\./g,"\\.?");return new RegExp("(?<![\\d.,])"+f1+"(?![\\d])")};
   const cands=[];
-  for(const inv of S.inv){const s=side(inv,k);if(s.state==="na")continue;
+  for(const inv of pool){const s=side(inv,k);if(s.state==="na")continue;
     const a=r2(inv.amount);let score=0,refund=null,eligible=null,hints=[];
     const re=a>0?amtRe(a):null;const li=re?lines.findIndex(l=>re.test(l)):-1;
     if(li>=0){score+=2;
@@ -1980,7 +2019,7 @@ function proofMsg(){
 }
 function dupBescheid(){const e=S.edit;return S.besch.find(b=>b.k===e.k&&((e.appId&&b.appId===e.appId&&b.date===e.date)||(e.total!=null&&b.total!=null&&r2(b.total)===r2(e.total)&&b.date===e.date)))||null}
 function fillProofRows(){const e=S.edit,k=e.k;
-  const ms=matchInvoices(e.text||"",k);
+  const ms=matchInvoices(e.text||"",k,e.appId);e.byAntrag=!!ms.byAntrag;
   e.rows=ms.map(m=>{const inv=S.inv.find(x=>x.id===m.id);const s=side(inv,k);
     const note=(m.hints||[]).map(h=>e.notes?.[h]).filter(Boolean).join(" ");
     return {id:m.id,already:s.state==="done"&&!e.correction,on:!m.ambiguous,ambiguous:!!m.ambiguous,rejected:m.refund===0,eligible:m.eligible,note,
@@ -2009,7 +2048,7 @@ function drawProof(){
   const cmp=e.total==null?"":(Math.abs(sum+prev-e.total)<0.01?`<span style="color:var(--ok);font-weight:600">passt zum Bescheid</span>`:`<span style="color:var(--warn);font-weight:600">Bescheid: ${eur(e.total)}, Differenz ${eur(r2(e.total-sum-prev))}</span>`);
   sheet(`Bescheid ${SN(k)}`,`
     <div id="edStatus" class="status" style="margin-top:10px">${esc(e.msg||"")}</div>
-    ${e.appId||e.correction?`<div class="status" style="margin-top:6px">${e.appId?`Antrag ${esc(e.appId)}`:""}${e.correction?`${e.appId?" · ":""}<b>Korrektur-Bescheid:</b> ausgezahlt ${eur(e.payout)}${e.before!=null?`, ${eur(e.before)} kamen schon früher`:""}.`:""}</div>`:""}
+    ${e.appId||e.correction?`<div class="status" style="margin-top:6px">${e.appId?`Antrag ${esc(e.appId)}${e.byAntrag?" · Rechnungen über die Antragsnummer gefunden":""}`:""}${e.correction?`${e.appId?" · ":""}<b>Korrektur-Bescheid:</b> ausgezahlt ${eur(e.payout)}${e.before!=null?`, ${eur(e.before)} kamen schon früher`:""}.`:""}</div>`:""}
     <div class="sec">
       <div class="btnrow"><button type="button" class="btn ${k==="pkv"?"primary":""}" data-act="pside" data-k="pkv">AXA</button><button type="button" class="btn ${k==="bh"?"primary":""}" data-act="pside" data-k="bh">Beihilfe</button></div>
       ${field("Datum des Bescheids","pdate",e.date,"date")}
@@ -2054,7 +2093,8 @@ function aiJsonArray(ans){
 async function proofMatchAI(){
   const e=S.edit,k=e.k;e.aim={busy:true};drawProof();
   const used=new Set(e.rows.map(r=>r.id));
-  const cand=S.inv.filter(x=>{const s=side(x,k);return s.state==="wait"||(s.state==="todo"&&s.rate>0)}).slice(0,40);
+  const pool=e.appId?S.inv.filter(x=>antragIds(x,k).has(String(e.appId))):[];
+  const cand=[...new Set([...pool,...S.inv.filter(x=>{const s=side(x,k);return s.state==="wait"||(s.state==="todo"&&s.rate>0)})])].slice(0,40);
   const list=cand.map((x,j)=>`R${j+1}: ${x.patient}, ${title(x)}${x.billing?` über ${x.billing}`:""}, Rechnung vom ${dfmt(x.invoiceDate)}${x.treatDate?`, Behandlung ${x.treatDate}`:""}, Betrag ${eur(r2(x.amount))}, erwartete Erstattung ${eur(side(x,k).expected)}${used.has(x.id)?" (schon zugeordnet)":""}`).join("\n");
   const q=`Ordne die Erstattungen im ${k==="bh"?"Beihilfe-Bescheid":"AXA-Bescheid (Leistungsabrechnung)"} den offenen Rechnungen R1, R2 … zu.
 Regeln: Eine Rechnung kann im Bescheid auf mehrere Zeilen aufgeteilt sein (z. B. Fallpauschale + Zimmer) – dann zusammenzählen. Achte auf Person und Rechnungsbetrag. Krankenhaustagegeld gehört zu keiner Rechnung. Steht bei einer Zahlung ein anderer Empfänger als Olgun Katrag (z. B. eine Klinik), gib ihn als "zahlung_an" an. Ordne nur zu, was sicher passt.
