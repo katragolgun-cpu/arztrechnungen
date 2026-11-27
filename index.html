@@ -537,6 +537,21 @@ body{padding-bottom:calc(104px + env(safe-area-inset-bottom,0px))}
 .antragrow .btn{flex:none}
 .h-task.antrag{flex-wrap:wrap}
 .h-task.antrag .t b{white-space:normal}
+/* v88: Einstellungen aufgeräumt */
+.setrow{display:grid;grid-template-columns:1fr 9.5em;gap:8px}
+.setline{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.setline .status{flex:1;min-width:0}
+.ratetab{display:grid;grid-template-columns:1fr 5.5em 5.5em;gap:6px 8px;align-items:center}
+.ratetab>span{font-size:13px;color:var(--muted)}
+.ratetab>span:nth-child(-n+3){font-size:12px}
+.ratetab input{text-align:right;padding:8px 10px}
+details.notfall{display:block}
+details.notfall>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between}
+details.notfall>summary::-webkit-details-marker{display:none}
+details.notfall>summary::after{content:"▸";color:var(--muted)}
+details.notfall[open]>summary::after{content:"▾"}
+details.notfall[open]>summary{margin-bottom:10px}
+details.notfall>*+*{margin-top:10px}
 </style>
 </head>
 <body>
@@ -2686,38 +2701,40 @@ function giroText(p){return ["BCD","002","1","SCT","",p.name.slice(0,70),p.iban,
 async function saveSettings(){S.settings.updatedAt=nowIso();await dbPut("meta",{key:"settings",...S.settings});scheduleSync()}
 function openSettings(focus){
   const s=S.settings;S.edit={mode:"settings",urls:[]};
-  const rows=s.people.map((p,i)=>`<div class="grid2">
-    <label class="f">Name<input id="pn${i}" value="${esc(p.name)}"></label>
-    <label class="f">Gruppe<select id="pg${i}">${Object.entries(GROUPS).map(([k,v])=>`<option value="${k}" ${k===p.group?"selected":""}>${v}</option>`).join("")}</select></label></div>`).join("");
-  const rates=Object.entries(GROUPS).map(([g,v])=>`<div class="grid2">${field(v+" · AXA %","rp"+g,Math.round((s.rates[g]?.pkv||0)*100),"number")}${field(v+" · Beihilfe %","rb"+g,Math.round((s.rates[g]?.bh||0)*100),"number")}</div>`).join("");
+  // v88: aufgeräumt – Drive, Familie, Fristen, KI, Notfall (eingeklappt)
+  const rows=s.people.map((p,i)=>`<div class="setrow"><input id="pn${i}" value="${esc(p.name)}" aria-label="Name"><select id="pg${i}" aria-label="Gruppe">${Object.entries(GROUPS).map(([k,v])=>`<option value="${k}" ${k===p.group?"selected":""}>${v}</option>`).join("")}</select></div>`).join("");
+  const pct=(g,k)=>Math.round((s.rates[g]?.[k]||0)*100);
+  const rates=`<div class="ratetab"><span></span><span>AXA %</span><span>Beihilfe %</span>${Object.entries(GROUPS).map(([g,v])=>`<span>${v}</span><input id="rp${g}" class="num" inputmode="decimal" value="${pct(g,"pkv")}" aria-label="${v} AXA %"><input id="rb${g}" class="num" inputmode="decimal" value="${pct(g,"bh")}" aria-label="${v} Beihilfe %">`).join("")}</div>`;
   const tok=tokenSource();
+  const firstRun=!s.importedAt;
+  const glog=(()=>{try{return JSON.parse(LS.get("glog")||"[]").join("\n")}catch{return ""}})()||"Noch keine Einträge.";
   sheet("Einstellungen",`
     <div id="edStatus" class="status" style="margin-top:10px"></div>
     ${PROD?"":`<div class="sec"><h3>Testversion 2</h3>
-      <p class="status" style="margin:0">Diese Version hat eigene Daten: einen eigenen Speicher auf dem Gerät und einen eigenen Drive-Ordner „${FOLDER_NAME}“. Die echte App und der Ordner „Arztrechnungen“ werden nicht verändert. Belege der echten App werden nur gelesen.</p></div>`}
-    <div class="sec" id="secImport"><h3>${PROD?"Daten aus der bisherigen App":"Kopie der echten Daten"}</h3>
-      <p class="status" style="margin:0">${s.importedAt?`${PROD?"Übernommen":"Letzte Kopie"}: ${dfmt(s.importedAt)} um ${new Date(s.importedAt).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})} Uhr. `:""}${PROD?(s.importedAt?"<b>„Aus Sicherungsdatei“ ersetzt alle Daten auf allen Geräten. Nur im Notfall benutzen.</b>":"Liest die bisherige Datendatei aus Drive. Sie bleibt als Sicherung liegen."):"Eine neue Kopie ersetzt alle Daten dieser Testversion."}</p>
-      <div class="btnrow">${PROD&&s.importedAt?"":`<button type="button" class="btn primary" data-act="import" ${tokenValid()?"":"disabled"}>${PROD?"Daten übernehmen":"Kopie aus Drive holen"}</button>`}<button type="button" class="btn" data-act="importfile">Aus Sicherungsdatei</button></div>
-      ${tokenValid()?"":`<p class="status" style="margin:0">Dafür erst unten bei Google Drive anmelden. Oder eine Sicherungsdatei wählen (Drive › Arztrechnungen › _App-Daten › Sicherungen).</p>`}
-      <div id="importBox"></div></div>
+      <p class="status" style="margin:0">Eigene Daten auf dem Gerät und im Drive-Ordner „${FOLDER_NAME}“. Die echte App bleibt unverändert.</p></div>`}
+    ${firstRun?`<div class="sec" id="secImport"><h3>${PROD?"Daten aus der bisherigen App":"Kopie der echten Daten"}</h3>
+      <p class="status" style="margin:0">Liest die bisherige Datendatei aus Drive. Sie bleibt als Sicherung liegen.</p>
+      <div class="btnrow"><button type="button" class="btn primary" data-act="import" ${tokenValid()?"":"disabled"}>${PROD?"Daten übernehmen":"Kopie aus Drive holen"}</button></div>
+      ${tokenValid()?"":`<p class="status" style="margin:0">Dafür erst bei Google Drive anmelden.</p>`}
+      <div id="importBox"></div></div>`:""}
     <div class="sec"><h3>Google Drive</h3>
-      <p class="status" id="driveStatus" style="margin:0;font-weight:600"></p>
-      ${PROD?`<div class="btnrow">${s.driveLinked&&tokenValid()?`<button type="button" class="btn primary" data-act="sync">Jetzt abgleichen</button>`:`<button type="button" class="btn primary" data-act="link">Mit Google Drive verbinden</button>`}</div>`
-      :`<p class="status" style="margin:0">${tok==="eigen"?"Angemeldet in der Testversion.":tok==="app"?"Angemeldet über die normale App (gleiches Google-Konto, gilt ca. 1 Stunde).":"Nicht angemeldet."}</p>
-      <div class="btnrow">${s.driveLinked&&tokenValid()?`<button type="button" class="btn primary" data-act="sync">Jetzt abgleichen</button>`:""}
-        <a class="btn ${tokenValid()?"":"primary"}" href="../" target="_blank" rel="noopener">Normale App öffnen</a>
-        <button type="button" class="btn" data-act="tokcheck">Anmeldung übernehmen</button></div>
-      <p class="status" style="margin:0">So geht die Anmeldung: normale App öffnen, dort ist man bei Google angemeldet. Zurück hierher wechseln und „Anmeldung übernehmen“ tippen.</p>
-      <details><summary class="status">Direkt anmelden</summary><p class="status" style="margin:6px 0">Klappt nur, wenn die Adresse dieser Testversion in der Google Cloud Console eingetragen ist (Anmeldedaten › OAuth-Client › Autorisierte Weiterleitungs-URIs: <span class="num">${esc(REDIRECT_URI)}</span>).</p>
-        <div class="btnrow"><button type="button" class="btn" data-act="link">Direkt bei Google anmelden</button></div></details>`}
-      <details><summary class="status">Verlauf anzeigen</summary><pre class="status" style="white-space:pre-wrap;margin:6px 0 0;font-size:12px">${esc((()=>{try{return JSON.parse(LS.get("glog")||"[]").join("\n")}catch{return ""}})()||"Noch keine Einträge.")}</pre></details></div>
-    <div class="sec"><h3>Anteile</h3>${rates}<p class="status" style="margin:0">Gilt für neue Rechnungen.</p></div>
-    <div class="sec"><h3>Personen</h3>${rows}</div>
-    <div class="sec"><h3>KI-Hilfe</h3><p class="status" style="margin:0 0 6px">Kostenlos über Cloudflare Workers AI. Rechnungsdaten der gewählten Rechnung gehen dabei an Cloudflare, werden dort nicht gespeichert und nicht zum Training genutzt.</p>
-      <label class="f">Schlüssel (APP_KEY aus Cloudflare)<input id="aiKey" type="password" autocomplete="off" value="${esc(s.aiKey||"")}" placeholder="noch nicht eingetragen"></label></div>
-    <div class="sec"><h3>Regeln</h3><div class="grid2">${field("Zahlungsfrist (Tage)","payD",s.payDays,"number")}${field("Warnen vor Fälligkeit (Tage)","warnD",s.warnDays??7,"number")}</div></div>
-    ${PROD?"":`<div class="sec"><h3>Testdaten</h3><p class="status" style="margin:0">Löscht alle Daten dieser Testversion auf dem Gerät und in ihrem Drive-Ordner. Die echte App bleibt unberührt.</p>
-      <div class="btnrow"><button type="button" class="btn danger" data-act="wipe">Alle Testdaten löschen</button></div></div>`}
+      <div class="setline"><span class="status" id="driveStatus" style="margin:0"></span>
+      ${s.driveLinked&&tokenValid()?`<button type="button" class="btn" data-act="sync">Jetzt abgleichen</button>`:PROD?`<button type="button" class="btn primary" data-act="link">Verbinden</button>`:""}</div>
+      ${PROD?"":`<p class="status" style="margin:0">${tok==="eigen"?"Angemeldet in der Testversion.":tok==="app"?"Angemeldet über die normale App (ca. 1 Stunde).":"Nicht angemeldet."}</p>
+      <div class="btnrow"><a class="btn" href="../" target="_blank" rel="noopener">Normale App öffnen</a><button type="button" class="btn" data-act="tokcheck">Anmeldung übernehmen</button><button type="button" class="btn" data-act="link">Direkt anmelden</button></div>`}</div>
+    <div class="sec"><h3>Familie</h3>${rows}
+      <h3 style="margin-top:6px">Anteile</h3>${rates}<p class="status" style="margin:0">Gilt für neue Rechnungen.</p></div>
+    <div class="sec"><h3>Fristen</h3><div class="grid2">${field("Zahlungsfrist (Tage)","payD",s.payDays,"number")}${field("Warnen vorher (Tage)","warnD",s.warnDays??7,"number")}</div></div>
+    <div class="sec"><h3>KI-Hilfe</h3>
+      ${s.aiKey&&!S.edit.aiEdit?`<div class="setline"><span class="status" style="margin:0">Eingerichtet</span><button type="button" class="btn" data-act="aiedit">Ändern</button></div>`
+      :`<label class="f">Schlüssel (APP_KEY aus Cloudflare)<input id="aiKey" type="password" autocomplete="off" value="${esc(s.aiKey||"")}" placeholder="noch nicht eingetragen"></label>
+      <p class="status" style="margin:0">Kostenlos über Cloudflare. Daten werden dort nicht gespeichert.</p>`}</div>
+    <details class="sec notfall"><summary><h3>Notfall</h3></summary>
+      <p class="status" style="margin:0"><b>Wiederherstellen ersetzt alle Daten auf allen Geräten.</b> Nur benutzen, wenn Daten verloren sind. Sicherungen liegen in Drive › Arztrechnungen › _App-Daten › Sicherungen.</p>
+      <div class="btnrow"><button type="button" class="btn" data-act="importfile">Aus Sicherungsdatei wiederherstellen</button></div>
+      ${firstRun?"":`<div id="importBox"></div>`}
+      <details><summary class="status">Abgleich-Verlauf</summary><pre class="status" style="white-space:pre-wrap;margin:6px 0 0;font-size:12px">${esc(glog)}</pre></details></details>
+    ${PROD?"":`<div class="sec"><h3>Testdaten</h3><div class="btnrow"><button type="button" class="btn danger" data-act="wipe">Alle Testdaten löschen</button></div></div>`}
   `,`<button type="button" class="btn" data-act="close">Abbrechen</button><button type="button" class="btn primary" data-act="save">Speichern</button>`);
   updateChip();
   if(focus==="import")$("#secImport")?.scrollIntoView({block:"start"});
@@ -2726,6 +2743,7 @@ function openSettings(focus){
     const n=id=>+String($("#"+id).value).replace(",",".")||0;
     switch(b.dataset.act){
       case "close":return closeSheet();
+      case "aiedit":{const ae=document.createElement("div");ae.innerHTML=`<label class="f">Schlüssel (APP_KEY aus Cloudflare)<input id="aiKey" type="password" autocomplete="off" value="${esc(S.settings.aiKey||"")}"></label>`;b.closest(".setline").replaceWith(ae.firstElementChild);$("#aiKey").focus();return}
       case "link":closeSheet();return connectDrive();
       case "tokcheck":{pickToken();if(tokenValid()){if(!S.settings.driveLinked){S.settings.driveLinked=true;await dbPut("meta",{key:"settings",...S.settings})}toast("Anmeldung übernommen");closeSheet();render();syncNow();openSettings()}
         else toast("Keine gültige Anmeldung gefunden. Erst die normale App öffnen.");return}
