@@ -552,6 +552,21 @@ details.notfall>summary::after{content:"▸";color:var(--muted)}
 details.notfall[open]>summary::after{content:"▾"}
 details.notfall[open]>summary{margin-bottom:10px}
 details.notfall>*+*{margin-top:10px}
+/* v89: Startseite ruhiger */
+.h-row{width:100%;border:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.h-row .t{cursor:pointer}
+.h-task .chev,.h-mrow .chev{width:18px;height:18px;flex:none;color:var(--muted)}
+.h-task .t span.warn,.h-mrow .l span.warn{color:var(--bad);font-weight:600}
+.h-money{gap:4px;padding:8px 16px}
+.h-mrow{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;border-top:1px solid var(--sunken);padding:14px 0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.h-money>.h-mrow:first-child{border-top:0}
+.h-mrow .l{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.h-mrow .l b{font-size:15px;font-weight:600}.h-mrow .l span{font-size:13px;color:var(--muted)}
+.h-mrow .a{font-size:16px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.h-money .h-hi{margin:0 0 10px}
+.h-money .h-hi .btn{flex:none}
+#people{display:none!important} /* v89: Personen-Leiste entfernt, Suche findet Personen */
+#list{padding-bottom:96px}
 </style>
 </head>
 <body>
@@ -565,7 +580,7 @@ details.notfall>*+*{margin-top:10px}
   <div class="sumbar" id="sumBar"></div>
   <div class="search" id="searchRow" role="search" hidden><input type="text" inputmode="search" id="q" placeholder="Suchen: Nummer, Betrag, Arzt, Person, Datum" aria-label="Rechnungen durchsuchen" autocomplete="off" enterkeyhint="search"><button type="button" id="qClear" aria-label="Suche leeren" hidden>×</button></div>
   <nav class="bnav" id="bnav" role="group" aria-label="Bereiche"></nav>
-  <nav class="people" id="people" aria-label="Personen"></nav>
+  <nav class="people" id="people" aria-label="Personen" hidden></nav>
   <section class="list" id="list" aria-live="polite"><div class="empty">Wird geladen …</div></section>
 </div>
 <div class="split" id="fabWrap"><button class="fab" id="btnAdd" type="button" aria-label="Rechnung fotografieren"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Fotografieren</button><button class="more" id="btnAddMore" type="button" aria-label="Weitere Wege zum Erfassen" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></button></div>
@@ -685,7 +700,7 @@ function antragMissing(inv,k="bh"){const s=inv[k]||{};return !s.antrag&&!!s.subm
 function antragGroups(rows){const g=new Map();
   for(const {i} of rows)if(antragMissing(i)){const d=i.bh.submitted;if(!g.has(d))g.set(d,[]);g.get(d).push(i)}
   return [...g.entries()].sort((a,b)=>b[0].localeCompare(a[0]))}
-const antragInput=(key,btnAct,extra="")=>`<span class="antragrow"><input inputmode="numeric" autocomplete="off" placeholder="Antragsnummer, z. B. 9991863" data-antrag-in="${esc(key)}" aria-label="Antragsnummer"><button type="button" class="btn primary" data-act="${btnAct}" data-d="${esc(key)}"${extra}>Speichern</button></span>`;
+const antragInput=(key,btnAct,extra="")=>`<span class="antragrow"><input inputmode="numeric" autocomplete="off" placeholder="Antragsnummer" data-antrag-in="${esc(key)}" aria-label="Antragsnummer"><button type="button" class="btn primary" data-act="${btnAct}" data-d="${esc(key)}"${extra}>Speichern</button></span>`;
 async function saveAntrag(key,ids){
   const inp=document.querySelector(`[data-antrag-in="${CSS.escape(key)}"]`);const v=String(inp?.value||"").replace(/\D/g,"");
   if(!antragOk(v)){toast("Bitte die Antragsnummer aus der Beihilfe-App eintragen (nur Ziffern).");inp?.focus();return 0}
@@ -894,45 +909,39 @@ function grp(key,label,sub,right,inner,defOpen=true){
 function sectionHead(t,n,extra=""){return `<div class="area-h"><h2>${esc(t)}</h2>${n!=null?`<span class="cnt">${n}</span>`:""}${extra}</div>`}
 
 /* ---- Startseite (neues Aussehen): Was muss ich tun? Wo steht mein Geld? ---- */
+const TASK_SHORT={r_ehe:"Formular Ehepartner/in nachreichen",r_doppelt:"Doppelt eingereicht – ansehen",r_original:"Original anfordern",r_gebuehr:"Gebührenfehler – ansehen",
+  kuerzung:"Kürzung ansehen",fehlbuchung:"Fehlbuchung melden",nachreichen:"Unterlagen nachreichen",original:"Original anfordern",nachfrage:"Nachfragen",
+  nachfragen:"Lange kein Bescheid – nachfragen",zahlung:"Zahlung klären",sonst:"Klären"};
 function homeTasks(rows){
   const out=[];
   for(const {i,c} of rows)for(const t of c.tasks){
-    let sub,btn,cls="";
-    if(t.t==="einreichen"){const s=[c.pkv,c.bh].filter(x=>x.state==="todo").map(x=>SN(x.k));sub=`bei ${s.join(" und ")} einreichen`;btn="Einreichen"}
-    else if(t.t==="bezahlen"){sub=`${eur(c.open)} bezahlen${c.due?`, fällig ${dfmt(c.due)}`:""}`;btn="Bezahlen";cls=c.overdue||c.dueSoon?"":"ghost"}
-    else{sub=TASK_LABEL[t.t]||"Klären";btn="Ansehen";cls="ghost"}
-    out.push({i,c,t,sub,btn,cls,ord:taskOrder(t),due:c.due||"9"})}
+    let sub,warn=false;
+    if(t.t==="einreichen"){const s=[c.pkv,c.bh].filter(x=>x.state==="todo").map(x=>SN(x.k));sub=s.length===2?"Einreichen":`Einreichen bei ${s[0]}`}
+    else if(t.t==="bezahlen"){sub=`${eur(c.open)} bezahlen${c.due?` bis ${dfmt(c.due).slice(0,6)}`:""}`;warn=c.overdue||c.dueSoon;if(c.overdue)sub+=" · überfällig"}
+    else sub=(t.k?SN(t.k)+": ":"")+(TASK_SHORT[t.t]||"Klären");
+    out.push({i,c,t,sub,warn,ord:taskOrder(t),due:c.due||"9"})}
   return out.sort((a,b)=>a.ord-b.ord||a.due.localeCompare(b.due));
 }
+const CHEV=`<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`;
+/* ---- Startseite (v89): Was muss ich tun? Wo steht mein Geld? Ohne doppelte Kacheln. ---- */
 function homeHtml(rows){
-  const tasks=homeTasks(rows),m=moneyModel(rows);
-  const W=[...m.way.values()],R=[...m.req.values()].sort((a,b)=>b.lab.localeCompare(a.lab));
-  const wSum=tot(W),rSum=tot(R),inSum=wSum+rSum;
-  const nextDue=m.pay.filter(x=>x.i.dueDate||calc(x.i).due).map(x=>({x,d:calc(x.i).due})).sort((a,b)=>a.d.localeCompare(b.d))[0];
-  let h=`<div class="h-tiles">
-    <button type="button" class="h-tile mint" data-act="ovopen" data-f="in"><span class="l">${wSum>0.004?"Kommt bald":"Beantragt"}</span><span class="v">${eur(wSum>0.004?wSum:rSum)}</span><span class="s">${wSum>0.004?W.map(g=>g.lab.split("-Bescheid")[0]).filter((v,j,a)=>a.indexOf(v)===j).join(" und ")+" · Bescheid da":"Bescheid fehlt noch"}</span></button>
-    <button type="button" class="h-tile sand" data-act="ovopen" data-f="pay"><span class="l">Zu tun</span><span class="v">${tasks.length} Aufgabe${tasks.length===1?"":"n"}</span><span class="s">${nextDue?`nächste Zahlung bis ${dfmt(nextDue.d)}`:tasks.length?"jetzt erledigen":"alles erledigt"}</span></button></div>`;
-  h+=`<section class="h-sec"><h2>Was muss ich tun?</h2>`;
-  const AG=antragGroups(rows);
-  if(AG.length)h+=`<div class="h-box" style="margin-bottom:10px">${AG.map(([d,list])=>`<div class="h-task antrag"><span class="t"><b>Antragsnummer eintragen</b><span>Beihilfe, eingereicht am ${dfmt(d)} · ${list.map(x=>esc(title(x))+" ("+esc(x.patient)+")").join(", ")}</span></span>${antragInput(d,"antragsave")}</div>`).join("")}</div>`;
-  if(!tasks.length&&!AG.length)h+=`<div class="h-box"><div class="h-task"><span class="t"><b>Nichts zu tun</b><span>Alles wartet auf andere oder ist erledigt.</span></span></div></div>`;
-  else{h+=`<div class="h-box">${tasks.map(x=>`<div class="h-task">${ini(x.i.patient)}<button type="button" class="t" data-open="${esc(x.i.id)}"><b>${esc(title(x.i))}</b><span>${esc(x.i.patient)} · ${esc(x.sub)}</span></button><button type="button" class="btn ${x.cls||"primary"}" data-open="${esc(x.i.id)}">${x.btn}</button></div>`).join("")}</div>`;
-    const ein=tasks.filter(x=>x.t.t==="einreichen").length;
-    if(ein>1)h+=`<button type="button" class="h-more" data-act="selstart">Mehrere auf einmal als eingereicht markieren</button>`}
-  h+=`</section><section class="h-sec"><h2>Wo steht mein Geld?</h2>`;
-  if(inSum>0.004){
-    h+=`<div class="h-money"><div class="hd"><span>Kommt rein</span><b>${eur(inSum)}</b></div>
-      <div class="h-bar">${wSum>0.004?`<i style="width:${Math.max(4,Math.round(wSum/inSum*100))}%"></i>`:""}<i style="flex:1"></i></div>`;
-    for(const g of W)h+=`<div class="h-hi"><div><b>${esc(g.lab)}</b><span>kommt in den nächsten Tagen · ${g.items.length} Rechnung${g.items.length>1?"en":""}</span></div><span class="a">${eur(g.amt)}</span></div>
-      ${g.bid?`<button type="button" class="btn go" data-act="bmoney" data-bid="${esc(g.bid)}">${eur(g.amt)} sind angekommen</button>`:""}`;
-    if(R.length)h+=`<div style="display:flex;flex-direction:column;gap:10px">${R.map(g=>`<div class="h-line"><div><span style="color:var(--ink);font-size:14px;font-weight:500">${esc(g.lab)}</span><span>${g.items.length} Rechnung${g.items.length>1?"en":""} · Bescheid fehlt · geschätzt</span></div><span class="a">${eur(g.amt)}</span></div>`).join("")}</div>`;
-    h+=`<button type="button" class="h-more" data-act="ovopen" data-f="in">Alle Rechnungen dahinter</button></div>`}
-  h+=`<div class="h-tiles">
-    <button type="button" class="h-tile white" data-act="ovopen" data-f="you"><span class="l">Wartet auf dich</span><span class="v">${eur(tot(m.you))}</span><span class="s">${m.you.length?"kommt, wenn du handelst":"nichts offen"}</span></button>
-    <button type="button" class="h-tile white" data-act="ovopen" data-f="pay"><span class="l">Geht raus an Ärzte</span><span class="v">${eur(tot(m.pay))}</span><span class="s" style="${nextDue&&calc(nextDue.x.i).dueSoon?"color:var(--warn)":""}">${nextDue?`${esc(title(nextDue.x.i).split(" (")[0])} fällig ${dfmt(nextDue.d)}`:"nichts offen"}</span></button></div>`;
-  if(tot(m.old)>0.004)h+=`<button type="button" class="h-tile white" data-act="ovopen" data-f="old"><span class="l">Geld prüfen</span><span class="v">${eur(tot(m.old))}</span><span class="s">Bescheid älter als 3 Wochen, Eingang nie bestätigt</span></button>`;
-  h+=`</section>`;
-  if(S.person==="alle"&&S.settings.aiKey)h+=`<button type="button" class="h-more" data-act="aioverview">KI-Überblick: Was steht an?</button>`;
+  const tasks=homeTasks(rows),m=moneyModel(rows),AG=antragGroups(rows);
+  const W=[...m.way.values()],wSum=tot(W),inSum=wSum+tot([...m.req.values()]);
+  const nextDue=m.pay.map(x=>({x,c:calc(x.i)})).filter(o=>o.c.due).sort((a,b)=>a.c.due.localeCompare(b.c.due))[0];
+  let h=`<section class="h-sec"><h2>Was muss ich tun?</h2>`;
+  if(AG.length)h+=`<div class="h-box">${AG.map(([d,list])=>`<div class="h-task antrag"><span class="t"><b>Antragsnummer eintragen</b><span>Beihilfe vom ${dfmt(d)} · ${list.map(x=>esc(title(x).split(" (")[0])+" ("+esc(x.patient)+")").join(", ")}</span></span>${antragInput(d,"antragsave")}</div>`).join("")}</div>`;
+  if(tasks.length)h+=`<div class="h-box">${tasks.map(x=>`<button type="button" class="h-task h-row" data-open="${esc(x.i.id)}">${ini(x.i.patient)}<span class="t"><b>${esc(title(x.i))}</b><span${x.warn?' class="warn"':""}>${esc(x.i.patient)} · ${esc(x.sub)}</span></span>${CHEV}</button>`).join("")}</div>`;
+  else if(!AG.length)h+=`<div class="h-box"><div class="h-task"><span class="t"><b>Nichts zu tun</b><span>Alles wartet auf andere oder ist erledigt.</span></span></div></div>`;
+  if(tasks.filter(x=>x.t.t==="einreichen").length>1)h+=`<button type="button" class="h-more" data-act="selstart">Mehrere als eingereicht markieren</button>`;
+  h+=`</section><section class="h-sec"><h2>Wo steht mein Geld?</h2><div class="h-money">`;
+  const line=(f,l,v,s,cls="")=>`<button type="button" class="h-mrow" data-act="ovopen" data-f="${f}"><span class="l"><b>${l}</b><span${cls?` class="${cls}"`:""}>${s}</span></span><span class="a">${eur(v)}</span>${CHEV}</button>`;
+  h+=line("in","Kommt rein",inSum,inSum<=0.004?"nichts offen":wSum>0.004?`${eur(wSum)} mit Bescheid, Rest geschätzt`:"Bescheid fehlt noch · geschätzt");
+  for(const g of W)if(g.bid)h+=`<div class="h-hi"><div><b>${esc(g.lab)}</b><span>${g.items.length} Rechnung${g.items.length>1?"en":""} · ${eur(g.amt)}</span></div><button type="button" class="btn go" data-act="bmoney" data-bid="${esc(g.bid)}">Geld ist da</button></div>`;
+  h+=line("you","Wartet auf dich",tot(m.you),m.you.length?"kommt, wenn du handelst":"nichts offen");
+  const od=nextDue&&nextDue.c.overdue;
+  h+=line("pay","Geht raus an Ärzte",tot(m.pay),nextDue?`${esc(title(nextDue.x.i).split(" (")[0])} ${od?"überfällig seit":"fällig"} ${dfmt(nextDue.c.due)}`:"nichts offen",nextDue&&(od||nextDue.c.dueSoon)?"warn":"");
+  if(tot(m.old)>0.004)h+=line("old","Geld prüfen",tot(m.old),"Bescheid älter als 3 Wochen, Eingang nie bestätigt","warn");
+  h+=`</div></section>`;
   return h;
 }
 /* ---- Zu tun: was ich selbst machen muss ---- */
